@@ -26,10 +26,12 @@ const translations = {
     'onboarding.err_list_models': 'Could not list models.',
     'onboarding.fallback_models_hint': 'Using built-in model list — pick carefully; invalid ids will fail at runtime.',
     'onboarding.err_conn':      'Connection error:',
+    'onboarding.btn_no_api_key': 'Play without API Key',
 
     // Setup
     'setup.title':        'Society Setup',
     'setup.hint':         'Describe the society you want, or pick a starting point',
+    'setup.hint_no_api':  'Pick a preset to start — AI events are disabled in this mode',
     'setup.preset_nordic': '🏔 Nordic',
     'setup.preset_cap':    '💹 Free Market',
     'setup.preset_soc':    '🏭 Planned Economy',
@@ -77,6 +79,7 @@ const translations = {
 
     // Chat
     'chat.ph': 'Talk to the world... ("create a storm", "why is the population unstable?")',
+    'chat.disabled': 'AI chat disabled — running without API key',
 
     // Modal
     'modal.confirm_btn': 'Confirm',
@@ -264,10 +267,12 @@ const translations = {
     'onboarding.err_list_models': 'Không lấy được danh sách model.',
     'onboarding.fallback_models_hint': 'Đang dùng danh sách model mặc định — chọn cẩn thận; model sai sẽ lỗi khi gọi API.',
     'onboarding.err_conn':      'Lỗi kết nối:',
+    'onboarding.btn_no_api_key': 'Chơi không cần API Key',
 
     // Setup
     'setup.title':        'Thiết lập xã hội',
     'setup.hint':         'Mô tả xã hội bạn muốn, hoặc chọn điểm xuất phát',
+    'setup.hint_no_api':  'Chọn một preset để bắt đầu — sự kiện AI bị tắt trong chế độ này',
     'setup.preset_nordic': '🏔 Bắc Âu',
     'setup.preset_cap':    '💹 Tư bản tự do',
     'setup.preset_soc':    '⚙ XHCN tập trung',
@@ -315,6 +320,7 @@ const translations = {
 
     // Chat
     'chat.ph': 'Nói chuyện với thế giới... ("tạo cơn bão to", "tại sao dân bất ổn?")',
+    'chat.disabled': 'Chat AI bị tắt — đang chạy không có API key',
 
     // Modal
     'modal.confirm_btn': 'Xác nhận',
