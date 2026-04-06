@@ -38,6 +38,68 @@ let getWorld: (() => WorldState | null) | null = null
 let getConfig: (() => AIConfig | null) | null = null
 let animFrame: number | null = null
 let hoveredNPCId: number | null = null
+let frameCount = 0
+
+// ── NPC visual state (separate from sim data) ──────────────────────────────
+
+interface NPCVisual {
+  x: number   // current canvas-normalised position (0–1)
+  y: number
+  tx: number  // target position
+  ty: number
+  moveIn: number  // frames until next target pick
+}
+
+const npcVisuals = new Map<number, NPCVisual>()
+
+function getOrInitVisual(npc: { id: number; x: number; y: number; zone: string }): NPCVisual {
+  if (!npcVisuals.has(npc.id)) {
+    const z = ZONE_LAYOUT[npc.zone]
+    if (!z) return { x: npc.x, y: npc.y, tx: npc.x, ty: npc.y, moveIn: 0 }
+    const cx = z.x + npc.x * z.w
+    const cy = z.y + npc.y * z.h
+    npcVisuals.set(npc.id, { x: cx, y: cy, tx: cx, ty: cy, moveIn: Math.random() * 120 | 0 })
+  }
+  return npcVisuals.get(npc.id)!
+}
+
+function randomPosInZone(zone: string): { x: number; y: number } {
+  const z = ZONE_LAYOUT[zone]
+  if (!z) return { x: 0.5, y: 0.5 }
+  const margin = 0.02
+  return {
+    x: z.x + margin + Math.random() * (z.w - margin * 2),
+    y: z.y + margin + Math.random() * (z.h - margin * 2),
+  }
+}
+
+const ACTION_SPEED: Record<string, number> = {
+  working:    0.0008,
+  resting:    0.0002,
+  socializing:0.0014,
+  organizing: 0.0018,
+  fleeing:    0.003,
+  confront:   0.002,
+  complying:  0.0006,
+}
+
+function stepVisual(v: NPCVisual, action: string, zone: string) {
+  v.moveIn--
+  if (v.moveIn <= 0) {
+    const t = randomPosInZone(zone)
+    v.tx = t.x
+    v.ty = t.y
+    // resting moves rarely; fleeing/socializing moves often
+    const freqMap: Record<string, number> = {
+      resting: 240, working: 90, socializing: 40,
+      organizing: 50, fleeing: 20, confront: 30, complying: 100,
+    }
+    v.moveIn = (freqMap[action] ?? 90) + (Math.random() * 30 | 0)
+  }
+  const speed = ACTION_SPEED[action] ?? 0.001
+  v.x += (v.tx - v.x) * speed * 60
+  v.y += (v.ty - v.y) * speed * 60
+}
 
 // ── Init ───────────────────────────────────────────────────────────────────
 
@@ -73,6 +135,7 @@ function resizeCanvas() {
 // ── Draw loop ──────────────────────────────────────────────────────────────
 
 function drawLoop() {
+  frameCount++
   draw()
   animFrame = requestAnimationFrame(drawLoop)
 }
@@ -133,24 +196,92 @@ function drawZones(W: number, H: number) {
 function drawNPCs(world: WorldState, W: number, H: number) {
   if (!ctx) return
 
+  // Build visual position lookup this frame
+  const posMap = new Map<number, { px: number; py: number }>()
+
   for (const npc of world.npcs) {
     if (!npc.lifecycle.is_alive) continue
+    if (!ZONE_LAYOUT[npc.zone]) continue
 
-    const zoneRect = ZONE_LAYOUT[npc.zone]
-    if (!zoneRect) continue
+    const v = getOrInitVisual(npc)
+    stepVisual(v, npc.action_state, npc.zone)
 
-    // Map npc.x/y (0–1 within zone) to canvas coordinates
-    const px = (zoneRect.x + npc.x * zoneRect.w) * W
-    const py = (zoneRect.y + npc.y * zoneRect.h) * H
+    const px = v.x * W
+    const py = v.y * H
+    posMap.set(npc.id, { px, py })
+  }
+
+  // ── Social relationship lines ──────────────────────────────────────────
+  // Draw strong-tie lines for socializing/organizing pairs; faint lines when just working
+  const drawnPairs = new Set<string>()
+  const pulse = 0.5 + 0.5 * Math.sin(frameCount * 0.05)  // 0–1 pulsing
+
+  for (const npc of world.npcs) {
+    if (!npc.lifecycle.is_alive) continue
+    const aPos = posMap.get(npc.id)
+    if (!aPos) continue
+
+    for (const tid of npc.strong_ties) {
+      const pairKey = npc.id < tid ? `${npc.id}-${tid}` : `${tid}-${npc.id}`
+      if (drawnPairs.has(pairKey)) continue
+      drawnPairs.add(pairKey)
+
+      const bNpc = world.npcs[tid]
+      if (!bNpc?.lifecycle.is_alive) continue
+      const bPos = posMap.get(bNpc.id)
+      if (!bPos) continue
+
+      // Canvas-space distance
+      const dist = Math.hypot(aPos.px - bPos.px, aPos.py - bPos.py)
+      if (dist > 120) continue  // only draw lines for nearby pairs
+
+      const isSocializing = npc.action_state === 'socializing' || bNpc.action_state === 'socializing'
+      const isOrganizing  = npc.action_state === 'organizing'  || bNpc.action_state === 'organizing'
+      const isFleeing     = npc.action_state === 'fleeing'
+
+      let lineColor: string
+      let alpha: number
+
+      if (isOrganizing) {
+        lineColor = `rgba(239,159,39,${0.3 + pulse * 0.3})`  // amber — mobilising
+        alpha = 1
+      } else if (isSocializing) {
+        lineColor = `rgba(93,202,165,${0.25 + pulse * 0.2})`  // teal — socialising
+        alpha = 1
+      } else if (isFleeing) {
+        lineColor = `rgba(226,75,75,0.15)`  // red dim — panic network
+        alpha = 1
+      } else {
+        lineColor = `rgba(255,255,255,0.05)`  // near-invisible working ties
+        alpha = 1
+      }
+
+      ctx.beginPath()
+      ctx.moveTo(aPos.px, aPos.py)
+      ctx.lineTo(bPos.px, bPos.py)
+      ctx.strokeStyle = lineColor
+      ctx.lineWidth = isSocializing || isOrganizing ? 1 : 0.5
+      ctx.globalAlpha = alpha
+      ctx.stroke()
+      ctx.globalAlpha = 1
+    }
+  }
+
+  // ── NPC dots ────────────────────────────────────────────────────────────
+  for (const npc of world.npcs) {
+    if (!npc.lifecycle.is_alive) continue
+    const pos = posMap.get(npc.id)
+    if (!pos) continue
+    const { px, py } = pos
 
     const color = ROLE_COLORS[npc.role]
     const isHovered = npc.id === hoveredNPCId
-    const radius = isHovered ? 5 : 3
+    const radius = isHovered ? 5 : 2.5
 
     // Stress ring
     if (npc.stress > 60) {
       ctx.beginPath()
-      ctx.arc(px, py, radius + 3, 0, Math.PI * 2)
+      ctx.arc(px, py, radius + 2.5, 0, Math.PI * 2)
       ctx.strokeStyle = `rgba(226,75,75,${(npc.stress - 60) / 40 * 0.6})`
       ctx.lineWidth = 1.5
       ctx.stroke()
@@ -176,6 +307,9 @@ function drawNPCs(world: WorldState, W: number, H: number) {
       ctx.fillText(label, bx + 4, by + 11)
     }
   }
+
+  // Update hovered NPC canvas position for interaction
+  _posMapCache = posMap
 }
 
 function drawLegend(H: number) {
@@ -203,18 +337,17 @@ function drawLegend(H: number) {
 
 // ── Interaction ────────────────────────────────────────────────────────────
 
-function getNPCAtPosition(world: WorldState, mx: number, my: number, W: number, H: number): number | null {
+let _posMapCache = new Map<number, { px: number; py: number }>()
+
+function getNPCAtPosition(world: WorldState, mx: number, my: number, _W: number, _H: number): number | null {
   let closest: number | null = null
   let closestDist = 12 // px hit-radius
 
   for (const npc of world.npcs) {
     if (!npc.lifecycle.is_alive) continue
-    const zoneRect = ZONE_LAYOUT[npc.zone]
-    if (!zoneRect) continue
-
-    const px = (zoneRect.x + npc.x * zoneRect.w) * W
-    const py = (zoneRect.y + npc.y * zoneRect.h) * H
-    const d = Math.sqrt((px - mx) ** 2 + (py - my) ** 2)
+    const pos = _posMapCache.get(npc.id)
+    if (!pos) continue
+    const d = Math.hypot(pos.px - mx, pos.py - my)
     if (d < closestDist) {
       closestDist = d
       closest = npc.id

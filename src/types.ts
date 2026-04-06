@@ -6,11 +6,11 @@ export type ActionState = 'working' | 'resting' | 'socializing' | 'organizing' |
 export type DeathCause = 'natural' | 'accident' | 'disease' | 'violence'
 export type InstitutionId = 'government' | 'market' | 'opposition' | 'community' | 'guard'
 export type EventType =
-  | 'storm' | 'drought' | 'flood' | 'epidemic' | 'resource_boom' | 'harsh_winter'
+  | 'storm' | 'drought' | 'flood' | 'tsunami' | 'epidemic' | 'resource_boom' | 'harsh_winter'
   | 'trade_offer' | 'refugee_wave' | 'ideology_import' | 'external_threat' | 'blockade'
-  | 'scandal_leak' | 'charismatic_npc' | 'martyr' | 'tech_shift'
+  | 'scandal_leak' | 'charismatic_npc' | 'martyr' | 'tech_shift' | 'wildfire' | 'earthquake'
 export type EventSource = 'player' | 'institution' | 'natural' | 'cascade'
-export type MemoryType = 'trust_broken' | 'helped' | 'harmed' | 'crisis' | 'windfall' | 'loss'
+export type MemoryType = 'trust_broken' | 'helped' | 'harmed' | 'crisis' | 'windfall' | 'loss' | 'illness' | 'crime' | 'accident'
 export type MessageChannel = 'public' | 'private' | 'signal' | 'rumor'
 export type MessageType = 'proposal' | 'warning' | 'commitment' | 'info' | 'appeal' | 'ultimatum'
 export type FeedSeverity = 'info' | 'warning' | 'critical' | 'political' | 'player'
@@ -119,6 +119,12 @@ export interface NPC {
   grievance: number
   dissonance_acc: number
   susceptible: boolean
+
+  // Individual life events
+  sick: boolean                 // currently ill — reduces productivity, can spread
+  sick_ticks: number            // ticks remaining sick
+  criminal_record: boolean      // has a crime record — reduces trust, social ties
+  community_group: number | null // id of community group they belong to (-1 = none)
 }
 
 // ── Constitution ───────────────────────────────────────────────────────────
@@ -303,12 +309,15 @@ export interface WorldState {
 
 // ── AI Types ───────────────────────────────────────────────────────────────
 
-export type AIProvider = 'gemini' | 'anthropic' | 'openai'
+export type AIProvider = 'gemini' | 'anthropic' | 'openai' | 'ollama' | 'ollama_cloud'
+export type TokenMode = 'events_only' | 'events_plus_npc_control' | 'unlimited'
 
 export interface AIConfig {
   provider: AIProvider
   key: string
   model?: string
+  token_mode: TokenMode
+  base_url?: string
 }
 
 // ── NPC Intervention ───────────────────────────────────────────────────────

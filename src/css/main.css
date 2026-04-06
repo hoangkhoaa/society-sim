@@ -143,7 +143,7 @@ body {
 .setup-header { display: flex; flex-direction: column; gap: 4px; }
 .setup-title { font-size: 16px; font-weight: 600; color: #eee; }
 .setup-hint { font-size: 11px; color: #555; }
-.preset-row { display: flex; gap: 8px; }
+.preset-row { display: flex; gap: 6px; flex-wrap: wrap; }
 .btn-preset {
   background: #1a1a1a;
   border: 1px solid #2a2a2a;
@@ -245,6 +245,15 @@ body {
 }
 .btn-top:hover { background: #1a1a1a; color: #ccc; }
 
+#ai-usage {
+  font-size: 10px;
+  color: #444;
+  white-space: nowrap;
+  padding: 0 4px;
+  border-left: 1px solid #222;
+  line-height: 1;
+}
+
 /* Main area */
 #main-area {
   flex: 1;
@@ -261,14 +270,97 @@ body {
 }
 #map-canvas { display: block; }
 
-/* Feed */
-#feed-panel {
+/* Demographics overlay — bottom-left of map */
+#demographics {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  width: 164px;
+  background: #0f0f0f;
+  border: 1px solid #1e1e1e;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 11px;
+  z-index: 5;
+}
+.demo-title {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #444;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #1a1a1a;
+  margin-bottom: 6px;
+}
+.demo-grid {
+  display: grid;
+  grid-template-columns: auto auto;
+  column-gap: 8px;
+  row-gap: 2px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.demo-label {
+  color: #555;
+  font-size: 10px;
+}
+.demo-grid b {
+  color: #bbb;
+  font-size: 11px;
+  font-weight: 500;
+}
+.demo-ages {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.age-bar-row {
+  display: grid;
+  grid-template-columns: 30px 1fr 26px;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+}
+.age-bar-row .age-label {
+  color: #555;
+  text-align: right;
+}
+.age-bar-row .age-track {
+  height: 5px;
+  background: #1a1a1a;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.age-bar-row .age-fill {
+  height: 100%;
+  background: #2a6;
+  border-radius: 2px;
+  transition: width .4s ease;
+}
+.age-bar-row .age-pct {
+  color: #444;
+  text-align: right;
+}
+
+/* Right sidebar (feed + chronicle) */
+#right-sidebar {
   width: 280px;
   border-left: 1px solid #1e1e1e;
   display: flex;
   flex-direction: column;
-  background: #0f0f0f;
   flex-shrink: 0;
+  background: #0f0f0f;
+  overflow: hidden;
+}
+
+/* Feed */
+#feed-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #0f0f0f;
+  min-height: 0;
 }
 #feed-header {
   padding: 10px 12px;
@@ -303,6 +395,47 @@ body {
 .feed-entry.warning .feed-text { color: #ef9f27; }
 .feed-entry.political .feed-text { color: #7f77dd; }
 .feed-entry.player .feed-text { color: #5dcaa5; }
+
+/* Chronicle panel */
+#chronicle-panel {
+  height: 190px;
+  border-top: 1px solid #1e1e1e;
+  display: flex;
+  flex-direction: column;
+  background: #0a0a0a;
+  flex-shrink: 0;
+}
+#chronicle-header {
+  padding: 7px 12px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #3a3a3a;
+  border-bottom: 1px solid #141414;
+  flex-shrink: 0;
+}
+#chronicle-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+#chronicle-log::-webkit-scrollbar { width: 2px; }
+#chronicle-log::-webkit-scrollbar-thumb { background: #1a1a1a; border-radius: 2px; }
+.chronicle-entry {
+  padding: 4px 12px;
+  font-size: 11px;
+  color: #444;
+  line-height: 1.5;
+  border-bottom: 1px solid #111;
+}
+.chronicle-time {
+  color: #2a2a2a;
+  font-size: 10px;
+}
 
 /* Chat bar */
 #chatbar {

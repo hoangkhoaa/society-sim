@@ -184,6 +184,10 @@ export function createNPC(idx: number, total: number, constitution: Constitution
     grievance: rand(0, 20),
     dissonance_acc: 0,
     susceptible: false,
+    sick: false,
+    sick_ticks: 0,
+    criminal_record: false,
+    community_group: null,
   }
 
   return {
@@ -194,7 +198,7 @@ export function createNPC(idx: number, total: number, constitution: Constitution
 
 // ── Per-tick NPC update ────────────────────────────────────────────────────
 
-export function tickNPC(npc: NPC, state: WorldState): void {
+export function tickNPC(npc: NPC, state: WorldState, events?: IndividualEvent[]): void {
   if (!npc.lifecycle.is_alive) return
   decayNeeds(npc, state)
   npc.stress    = computeStress(npc)
@@ -203,7 +207,7 @@ export function tickNPC(npc: NPC, state: WorldState): void {
   updateWorldview(npc, state)
   npc.action_state = selectAction(npc, state)
   wealthTick(npc, state)
-  checkLifecycle(npc, state)
+  checkLifecycle(npc, state, events)
 }
 
 // ── Needs Decay ────────────────────────────────────────────────────────────
@@ -213,7 +217,7 @@ function decayNeeds(npc: NPC, state: WorldState): void {
   const violenceActive = state.active_events.some(e => e.type === 'epidemic' || e.type === 'external_threat')
 
   npc.hunger     += 0.5
-  npc.exhaustion += 0.3
+  npc.exhaustion += npc.sick ? 0.6 : 0.3   // sick NPCs tire faster
   npc.isolation  += 0.2
   npc.fear       += violenceActive ? 2.0 : -0.3
 
@@ -369,7 +373,8 @@ export function computeProductivity(npc: NPC, _state: WorldState): number {
   const fairness       = clamp(npc.wealth / expected, 0, 1.5)
   const fairnessBonus  = (fairness - 1.0) * 0.2
   const stressPenalty  = npc.stress / 200
-  return Math.max(0, npc.base_skill * motivation * (1 + fairnessBonus) * (1 - stressPenalty))
+  const sickPenalty    = npc.sick ? 0.5 : 0   // sick → half productivity
+  return Math.max(0, npc.base_skill * motivation * (1 + fairnessBonus) * (1 - stressPenalty) * (1 - sickPenalty))
 }
 
 function wealthTick(npc: NPC, state: WorldState): void {
@@ -380,7 +385,9 @@ function wealthTick(npc: NPC, state: WorldState): void {
 
 // ── Lifecycle checks ───────────────────────────────────────────────────────
 
-function checkLifecycle(npc: NPC, state: WorldState): void {
+export type IndividualEvent = { type: 'accident' | 'illness' | 'recovery' | 'crime'; npc: NPC }
+
+function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[]): void {
   // Natural death by age
   if (npc.age > 70) {
     const deathChance = (npc.age - 70) * 0.0001   // per tick
@@ -388,6 +395,7 @@ function checkLifecycle(npc: NPC, state: WorldState): void {
       npc.lifecycle.is_alive   = false
       npc.lifecycle.death_cause = 'natural'
       npc.lifecycle.death_tick  = state.tick
+      return
     }
   }
 
@@ -396,9 +404,107 @@ function checkLifecycle(npc: NPC, state: WorldState): void {
     npc.lifecycle.is_alive   = false
     npc.lifecycle.death_cause = 'disease'
     npc.lifecycle.death_tick  = state.tick
+    return
   }
 
-  // Age up once per sim-year (360 ticks × 24 = 8640 ticks/year)
+  // ★ Illness tick-down & death
+  if (npc.sick) {
+    npc.sick_ticks--
+    if (npc.sick_ticks <= 0) {
+      npc.sick = false
+      events?.push({ type: 'recovery', npc })
+    } else if (npc.sick_ticks % 24 === 0) {
+      // Daily mortality while sick: base 0.1% + hunger/exhaustion factor
+      const deathP = 0.001 + (npc.hunger / 100 + npc.exhaustion / 100) * 0.002
+      if (Math.random() < deathP) {
+        npc.lifecycle.is_alive   = false
+        npc.lifecycle.death_cause = 'disease'
+        npc.lifecycle.death_tick  = state.tick
+        return
+      }
+    }
+  }
+
+  // ★ Random illness onset (~0.02% per tick in normal conditions)
+  if (!npc.sick) {
+    const sicknessP = 0.0002
+      * (1 + npc.exhaustion / 80)
+      * (1 + npc.hunger / 80)
+      * (1 + (state.active_events.some(e => e.type === 'epidemic') ? 4 : 0))
+    if (Math.random() < sicknessP) {
+      npc.sick = true
+      npc.sick_ticks = (5 + Math.random() * 10 | 0) * 24   // 5–15 sim-days
+      npc.exhaustion = clamp(npc.exhaustion + 30, 0, 100)
+      events?.push({ type: 'illness', npc })
+    }
+  }
+
+  // ★ Accident (risk scales with fear, exhaustion, fleeing/confront action)
+  if (state.tick % 3 === npc.id % 3) {   // stagger checks: every 3 ticks per NPC
+    const dangerMod = npc.action_state === 'fleeing' || npc.action_state === 'confront' ? 3 : 1
+    const accP = 0.00005
+      * dangerMod
+      * (1 + npc.exhaustion / 100)
+      * (1 + npc.fear / 100)
+    if (Math.random() < accP) {
+      const fatal = Math.random() < 0.15   // 15% of accidents are fatal
+      if (fatal) {
+        npc.lifecycle.is_alive   = false
+        npc.lifecycle.death_cause = 'accident'
+        npc.lifecycle.death_tick  = state.tick
+        return
+      }
+      npc.exhaustion = clamp(npc.exhaustion + 40, 0, 100)
+      npc.fear       = clamp(npc.fear + 20, 0, 100)
+      npc.wealth     = clamp(npc.wealth - npc.wealth * 0.15, 0, 5000)  // medical cost
+      npc.memory.push({ event_id: 'accident_' + state.tick, type: 'accident', emotional_weight: -40, tick: state.tick })
+      if (npc.memory.length > 10) npc.memory.shift()
+      events?.push({ type: 'accident', npc })
+    }
+  }
+
+  // ★ Crime: high grievance + low trust in government + low wealth → crime attempt
+  if (!npc.criminal_record && state.tick % 6 === npc.id % 6) {
+    const govTrust = (npc.trust_in.government.competence + npc.trust_in.government.intention) / 2
+    const crimeP = 0.00004
+      * Math.max(0, npc.grievance - 50) / 50
+      * (1 - govTrust)
+      * (npc.wealth < 30 ? 2 : 1)
+    if (Math.random() < crimeP) {
+      npc.criminal_record = true
+      // Reward: wealth gain; risk: trust penalty from community/government
+      npc.wealth = clamp(npc.wealth + 15 + Math.random() * 20, 0, 5000)
+      npc.trust_in.government.intention = clamp(npc.trust_in.government.intention - 0.10, 0, 1)
+      npc.trust_in.community.intention  = clamp(npc.trust_in.community.intention  - 0.08, 0, 1)
+      npc.grievance = clamp(npc.grievance - 15, 0, 100)   // crime relieves frustration temporarily
+      npc.memory.push({ event_id: 'crime_' + state.tick, type: 'crime', emotional_weight: -20, tick: state.tick })
+      if (npc.memory.length > 10) npc.memory.shift()
+      // Nearby NPCs lose trust if they witness it
+      for (const tid of npc.strong_ties.slice(0, 3)) {
+        const witness = state.npcs[tid]
+        if (witness?.lifecycle.is_alive) {
+          witness.trust_in.community.intention = clamp(witness.trust_in.community.intention - 0.04, 0, 1)
+          witness.grievance = clamp(witness.grievance + 5, 0, 100)
+        }
+      }
+      events?.push({ type: 'crime', npc })
+    }
+  }
+
+  // ★ Illness contagion: sick NPC infects strong-tie contacts
+  if (npc.sick && state.tick % 24 === npc.id % 24) {   // once per sim-day
+    const spreadP = 0.08 * (npc.sick_ticks / 240)  // more contagious when recently infected
+    for (const tid of npc.strong_ties) {
+      const contact = state.npcs[tid]
+      if (contact?.lifecycle.is_alive && !contact.sick && Math.random() < spreadP) {
+        contact.sick       = true
+        contact.sick_ticks = (4 + Math.random() * 8 | 0) * 24
+        contact.exhaustion = clamp(contact.exhaustion + 20, 0, 100)
+      }
+    }
+  }
+
+  // Age up once per sim-year (360 days × 24 = 8640 ticks/year)
   if (state.tick > 0 && state.tick % 8640 === npc.id % 8640) {
     npc.age++
     npc.lifecycle.fertility = fertilityByAge(npc.age, npc.gender)

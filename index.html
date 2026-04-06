@@ -22,18 +22,41 @@
 
       <div class="onboarding-form">
         <div class="form-row">
-          <label>Provider</label>
+          <label data-i18n="onboarding.provider">Provider</label>
           <select id="provider-select">
-            <option value="gemini">Gemini Flash 2.5 (free)</option>
-            <option value="anthropic">Claude Haiku</option>
-            <option value="openai">GPT-4o Mini</option>
+            <option value="gemini">Gemini</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="openai">OpenAI</option>
+            <option value="ollama">Ollama (local)</option>
+            <option value="ollama_cloud">Ollama (cloud / remote)</option>
           </select>
         </div>
-        <div class="form-row">
+        <div class="form-row" id="base-url-row" style="display:none">
+          <label data-i18n="onboarding.base_url">Base URL</label>
+          <input type="text" id="base-url-input"
+            data-i18n-ph="onboarding.base_url_ph"
+            placeholder="http://your-server:11434">
+        </div>
+        <div class="form-row" id="api-key-row">
           <label data-i18n="onboarding.api_key">API Key</label>
           <input type="password" id="api-key-input"
             data-i18n-ph="onboarding.api_key_ph"
             placeholder="Enter your API key...">
+        </div>
+        <div class="form-row">
+          <button type="button" id="btn-list-models" class="btn-ghost" style="width:100%" data-i18n="onboarding.btn_list_models">List available models</button>
+        </div>
+        <div class="form-row">
+          <label data-i18n="onboarding.model">Model</label>
+          <select id="model-select" disabled></select>
+        </div>
+        <div class="form-row">
+          <label data-i18n="onboarding.token_mode">Token mode</label>
+          <select id="token-mode-select">
+            <option value="events_only" selected>1) Events only — lowest cost</option>
+            <option value="events_plus_npc_control">2) Events + NPC control</option>
+            <option value="unlimited">3) Unlimited — max capability</option>
+          </select>
         </div>
         <button id="btn-start" class="btn-primary" data-i18n="onboarding.btn_start">Begin →</button>
         <div id="onboarding-error" class="error-msg hidden"></div>
@@ -52,6 +75,12 @@
         <button class="btn-preset" data-preset="nordic" data-i18n="setup.preset_nordic">🏔 Nordic</button>
         <button class="btn-preset" data-preset="capitalist" data-i18n="setup.preset_cap">💹 Free Market</button>
         <button class="btn-preset" data-preset="socialist" data-i18n="setup.preset_soc">⚙ Planned Economy</button>
+        <button class="btn-preset" data-preset="feudal" data-i18n="setup.preset_feudal">⚔️ Feudalism</button>
+        <button class="btn-preset" data-preset="theocracy" data-i18n="setup.preset_theocracy">⛪ Theocracy</button>
+        <button class="btn-preset" data-preset="technocracy" data-i18n="setup.preset_technocracy">🧠 Technocracy</button>
+        <button class="btn-preset" data-preset="warlord" data-i18n="setup.preset_warlord">🗡 Warlord State</button>
+        <button class="btn-preset" data-preset="commune" data-i18n="setup.preset_commune">🌿 Commune</button>
+        <button class="btn-preset" data-preset="marxist" data-i18n="setup.preset_marxist">☭ Marxist</button>
       </div>
       <div id="setup-messages" class="message-list"></div>
       <div class="setup-input-row">
@@ -70,14 +99,15 @@
     <div id="topbar">
       <span id="clock-label">–</span>
       <div class="top-divider"></div>
-      <span class="macro-stat" id="stat-stability">Stability <b id="v-stability">–</b></span>
-      <span class="macro-stat" id="stat-food">Food <b id="v-food">–</b></span>
-      <span class="macro-stat" id="stat-trust">Trust <b id="v-trust">–</b></span>
-      <span class="macro-stat" id="stat-gini">Gini <b id="v-gini">–</b></span>
+      <span class="macro-stat" id="stat-stability"><span data-i18n="topbar.stat_stability">Stability</span> <b id="v-stability">–</b></span>
+      <span class="macro-stat" id="stat-food"><span data-i18n="topbar.stat_food">Food</span> <b id="v-food">–</b></span>
+      <span class="macro-stat" id="stat-trust"><span data-i18n="topbar.stat_trust">Trust</span> <b id="v-trust">–</b></span>
+      <span class="macro-stat" id="stat-gini"><span data-i18n="topbar.stat_gini">Gini</span> <b id="v-gini">–</b></span>
       <div class="top-spacer"></div>
       <button class="btn-top" id="btn-pause">⏸</button>
       <button class="btn-top" id="btn-speed">1×</button>
       <button class="btn-top" id="btn-constitution" data-i18n="topbar.constitution">📜 Constitution</button>
+      <span id="ai-usage" title="AI requests · tokens used">0 req</span>
     </div>
 
     <!-- Main area: map + feed -->
@@ -86,6 +116,18 @@
       <!-- Map placeholder (PixiJS canvas will go here in Phase 3) -->
       <div id="map-container">
         <canvas id="map-canvas"></canvas>
+
+        <!-- Demographics panel — bottom-left overlay -->
+        <div id="demographics">
+          <div class="demo-title" data-i18n="demo.title">📊 Population</div>
+          <div class="demo-grid">
+            <span class="demo-label" data-i18n="demo.pop">Total</span><b id="d-pop">–</b>
+            <span class="demo-label" data-i18n="demo.male">♂ Male</span><b id="d-male">–</b>
+            <span class="demo-label" data-i18n="demo.female">♀ Female</span><b id="d-female">–</b>
+            <span class="demo-label" data-i18n="demo.deaths">Deaths</span><b id="d-deaths">–</b>
+          </div>
+          <div class="demo-ages" id="d-ages"></div>
+        </div>
 
         <!-- NPC Spotlight Panel — opened on NPC click -->
         <div id="spotlight" class="panel hidden">
@@ -106,10 +148,19 @@
         </div>
       </div>
 
-      <!-- Narrative Feed -->
-      <div id="feed-panel">
-        <div id="feed-header" data-i18n="feed.header">Event Log</div>
-        <div id="feed-log"></div>
+      <!-- Narrative Feed + Chronicle sidebar -->
+      <div id="right-sidebar">
+
+        <div id="feed-panel">
+          <div id="feed-header" data-i18n="feed.header">Event Log</div>
+          <div id="feed-log"></div>
+        </div>
+
+        <div id="chronicle-panel">
+          <div id="chronicle-header" data-i18n="chronicle.header">📖 Chronicle</div>
+          <div id="chronicle-log"></div>
+        </div>
+
       </div>
 
     </div>

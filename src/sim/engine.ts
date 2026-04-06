@@ -1,9 +1,13 @@
 import type { WorldState, Constitution, NPC, SimEvent, NarrativeEntry, NPCIntervention } from '../types'
 import { createNPC, tickNPC, computeProductivity } from './npc'
+import type { IndividualEvent } from './npc'
 import { buildNetwork } from './network'
 import { initInstitutions, clamp } from './constitution'
-import { addFeedRaw } from '../ui/feed'
+import { addFeedRaw, addChronicle } from '../ui/feed'
 import { t, tf } from '../i18n'
+
+// ── Event death accumulator ────────────────────────────────────────────────
+let eventDeathsThisDay = 0
 
 // ── World Initialization ────────────────────────────────────────────────────
 
@@ -67,9 +71,29 @@ export function tick(state: WorldState): void {
     }
   }
 
-  // Tick all living NPCs
+  // Tick all living NPCs, collecting individual life events
+  const indivEvents: IndividualEvent[] = []
   for (const npc of state.npcs) {
-    if (npc.lifecycle.is_alive) tickNPC(npc, state)
+    if (npc.lifecycle.is_alive) tickNPC(npc, state, indivEvents)
+  }
+
+  // Chronicle individual events (at most 3 per tick to avoid spam)
+  let chronicled = 0
+  for (const ev of indivEvents) {
+    if (chronicled >= 3) break
+    if (ev.type === 'accident') {
+      addChronicle(tf('engine.accident', { name: ev.npc.name }) as string, state.year, state.day)
+      chronicled++
+    } else if (ev.type === 'illness') {
+      addChronicle(tf('engine.fell_ill', { name: ev.npc.name }) as string, state.year, state.day)
+      chronicled++
+    } else if (ev.type === 'recovery') {
+      addChronicle(tf('engine.recovered', { name: ev.npc.name }) as string, state.year, state.day)
+      chronicled++
+    } else if (ev.type === 'crime') {
+      addChronicle(tf('engine.crime', { name: ev.npc.name }) as string, state.year, state.day)
+      chronicled++
+    }
   }
 
   // Tick active events
@@ -80,24 +104,73 @@ export function tick(state: WorldState): void {
     state.macro = computeMacroStats(state)
     state.drift_score = computeDriftScore(state)
     checkCrisis(state)
+
+    // Flush event-caused deaths to chronicle
+    if (eventDeathsThisDay > 0) {
+      addChronicle(`💀 ${eventDeathsThisDay} người tử vong do thiên tai.`, state.year, state.day)
+      eventDeathsThisDay = 0
+    }
   }
 
-  // Lifecycle events (birth/marriage) — check once per day
+  // Lifecycle events (birth/marriage/divorce/community) — check once per day
   if (state.tick % 24 === 0) {
     checkLifecycleEvents(state)
+    checkCommunityGroups(state)
   }
 }
 
 // ── Events ──────────────────────────────────────────────────────────────────
 
+// All 9 zones for epidemic full-spread reference
+const ALL_ZONES = [
+  'north_farm', 'south_farm', 'workshop_district', 'market_square',
+  'scholar_quarter', 'residential_east', 'residential_west', 'guard_post', 'plaza',
+]
+
+// Adjacent zones for contagion spread
+const ZONE_ADJACENCY: Record<string, string[]> = {
+  north_farm:        ['south_farm', 'residential_west'],
+  south_farm:        ['north_farm', 'market_square'],
+  workshop_district: ['market_square', 'residential_east'],
+  market_square:     ['south_farm', 'workshop_district', 'plaza'],
+  scholar_quarter:   ['plaza', 'residential_east'],
+  residential_east:  ['residential_west', 'workshop_district', 'scholar_quarter'],
+  residential_west:  ['residential_east', 'north_farm', 'guard_post'],
+  guard_post:        ['residential_west', 'plaza'],
+  plaza:             ['market_square', 'guard_post', 'scholar_quarter'],
+}
+
 function tickEvents(state: WorldState): void {
   for (const ev of state.active_events) {
     ev.elapsed_ticks++
+
+    // Epidemic zone spread: every 48 ticks (2 sim-days), spread to adjacent zone
+    if (ev.type === 'epidemic' && ev.elapsed_ticks % 48 === 0 && ev.zones.length < ALL_ZONES.length) {
+      const spreadChance = ev.intensity * 0.6
+      if (Math.random() < spreadChance) {
+        const neighbours = new Set<string>()
+        for (const z of ev.zones) {
+          for (const adj of (ZONE_ADJACENCY[z] ?? [])) {
+            if (!ev.zones.includes(adj)) neighbours.add(adj)
+          }
+        }
+        const candidates = [...neighbours]
+        if (candidates.length > 0) {
+          ev.zones.push(candidates[Math.floor(Math.random() * candidates.length)])
+        }
+      }
+    }
 
     // Apply per-tick effects to NPCs in affected zones
     const affectedNPCs = state.npcs.filter(
       n => n.lifecycle.is_alive && (ev.zones.length === 0 || ev.zones.includes(n.zone)),
     )
+
+    // Epidemic uses a higher mortality multiplier calibrated to give ~30% deaths at intensity=1
+    // over a default 7-day event (168 ticks): per-tick rate ≈ intensity * 0.0024
+    const mortalityPerTick = ev.type === 'epidemic'
+      ? ev.effects_per_tick.displacement_chance * 0.006
+      : ev.effects_per_tick.displacement_chance * 0.002
 
     for (const npc of affectedNPCs) {
       npc.hunger     = clamp(npc.hunger     + ev.effects_per_tick.stress_delta * 0.3, 0, 100)
@@ -106,6 +179,13 @@ function tickEvents(state: WorldState): void {
         npc.trust_in.government.intention + ev.effects_per_tick.trust_delta / 100,
         0, 1,
       )
+      // Sustained event mortality (epidemic, flood, etc.)
+      if (mortalityPerTick > 0 && Math.random() < mortalityPerTick) {
+        npc.lifecycle.is_alive    = false
+        npc.lifecycle.death_cause = ev.type === 'epidemic' ? 'disease' : 'accident'
+        npc.lifecycle.death_tick  = state.tick
+        eventDeathsThisDay++
+      }
     }
 
     // Food stock
@@ -141,17 +221,21 @@ export function spawnEvent(state: WorldState, partial: Partial<SimEvent>): void 
 
 function defaultEffects(type: string, intensity: number): SimEvent['effects_per_tick'] {
   const i = intensity
+  // displacement_chance: per-tick mortality rate factor (applied in tickEvents as × 0.002)
   const map: Record<string, SimEvent['effects_per_tick']> = {
-    storm:           { food_stock_delta: -i * 50,  stress_delta: i * 2,  trust_delta: -i * 3,  displacement_chance: i * 0.1 },
+    storm:           { food_stock_delta: -i * 50,  stress_delta: i * 2,  trust_delta: -i * 3,  displacement_chance: i * 0.10 },
     drought:         { food_stock_delta: -i * 80,  stress_delta: i * 1,  trust_delta: -i * 2,  displacement_chance: i * 0.05 },
-    flood:           { food_stock_delta: -i * 60,  stress_delta: i * 3,  trust_delta: -i * 4,  displacement_chance: i * 0.15 },
-    epidemic:        { food_stock_delta: 0,         stress_delta: i * 4,  trust_delta: -i * 5,  displacement_chance: i * 0.2 },
+    flood:           { food_stock_delta: -i * 60,  stress_delta: i * 3,  trust_delta: -i * 4,  displacement_chance: i * 0.20 },
+    tsunami:         { food_stock_delta: -i * 200, stress_delta: i * 8,  trust_delta: -i * 6,  displacement_chance: i * 0.80 },
+    earthquake:      { food_stock_delta: -i * 100, stress_delta: i * 6,  trust_delta: -i * 5,  displacement_chance: i * 0.50 },
+    wildfire:        { food_stock_delta: -i * 70,  stress_delta: i * 4,  trust_delta: -i * 3,  displacement_chance: i * 0.25 },
+    epidemic:        { food_stock_delta: 0,         stress_delta: i * 4,  trust_delta: -i * 5,  displacement_chance: i * 0.40 },
     resource_boom:   { food_stock_delta: +i * 100, stress_delta: -i * 2, trust_delta: +i * 3,  displacement_chance: 0 },
-    harsh_winter:    { food_stock_delta: -i * 70,  stress_delta: i * 2,  trust_delta: -i * 2,  displacement_chance: i * 0.05 },
+    harsh_winter:    { food_stock_delta: -i * 70,  stress_delta: i * 2,  trust_delta: -i * 2,  displacement_chance: i * 0.08 },
     trade_offer:     { food_stock_delta: +i * 60,  stress_delta: -i * 1, trust_delta: +i * 2,  displacement_chance: 0 },
     refugee_wave:    { food_stock_delta: -i * 30,  stress_delta: i * 2,  trust_delta: -i * 1,  displacement_chance: 0 },
     ideology_import: { food_stock_delta: 0,         stress_delta: i * 1,  trust_delta: -i * 4,  displacement_chance: 0 },
-    external_threat: { food_stock_delta: -i * 20,  stress_delta: i * 5,  trust_delta: -i * 3,  displacement_chance: i * 0.1 },
+    external_threat: { food_stock_delta: -i * 20,  stress_delta: i * 5,  trust_delta: -i * 3,  displacement_chance: i * 0.10 },
     blockade:        { food_stock_delta: -i * 90,  stress_delta: i * 3,  trust_delta: -i * 5,  displacement_chance: i * 0.05 },
     scandal_leak:    { food_stock_delta: 0,         stress_delta: i * 2,  trust_delta: -i * 10, displacement_chance: 0 },
     charismatic_npc: { food_stock_delta: 0,         stress_delta: -i * 1, trust_delta: +i * 2,  displacement_chance: 0 },
@@ -242,11 +326,12 @@ export function computeMacroStats(state: WorldState): WorldState['macro'] {
   const npcs = state.npcs.filter(n => n.lifecycle.is_alive)
   if (npcs.length === 0) return state.macro
 
-  // Food production
-  const dailyProduction = npcs
-    .filter(n => n.role === 'farmer')
-    .reduce((s, n) => s + computeProductivity(n, state), 0) / 10
-  state.food_stock = clamp((state.food_stock ?? 0) + dailyProduction - npcs.length * 0.04, 0, 999999)
+  // Food production — each farmer at average productivity feeds ~3-4 people
+  const farmers = npcs.filter(n => n.role === 'farmer')
+  const scarcityFactor = 1 - state.constitution.resource_scarcity * 0.5
+  const dailyProduction = farmers.reduce((s, n) => s + computeProductivity(n, state), 0) * 4 * scarcityFactor
+  const dailyConsumption = npcs.length * 0.5
+  state.food_stock = clamp((state.food_stock ?? 0) + dailyProduction - dailyConsumption, 0, 999999)
   const food = clamp(state.food_stock / (npcs.length * 30) * 100, 0, 100)
 
   // Gini
@@ -285,13 +370,10 @@ function computeGini(sorted: number[]): number {
   if (n === 0) return 0
   const total = sorted.reduce((a, b) => a + b, 0)
   if (total === 0) return 0
-  let sumAbs = 0
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < n; j++) {
-      sumAbs += Math.abs(sorted[i] - sorted[j])
-    }
-  }
-  return sumAbs / (2 * n * total)
+  // O(n) formula for sorted array: gini = (2*sum((i+1)*x[i]) - (n+1)*total) / (n*total)
+  let weightedSum = 0
+  for (let i = 0; i < n; i++) weightedSum += (i + 1) * sorted[i]
+  return (2 * weightedSum - (n + 1) * total) / (n * total)
 }
 
 // ── Constitutional Crisis ────────────────────────────────────────────────────
@@ -299,25 +381,31 @@ function computeGini(sorted: number[]): number {
 function computeDriftScore(state: WorldState): number {
   const C = state.constitution
   const m = state.macro
-  return (
-    Math.abs(m.gini - C.gini_start) * 2.0 +
-    Math.abs(m.trust - C.base_trust * 100) / 100 * 1.5 +
-    (m.political_pressure > 70 ? 0.20 : 0) +
-    (m.stability < 30 ? 0.15 : 0)
-  )
+
+  // Gini drift: allow ±0.15 natural fluctuation before counting
+  const giniDrift = Math.max(0, Math.abs(m.gini - C.gini_start) - 0.15) * 1.2
+
+  // Trust drift: only care when trust DROPS significantly below founding level
+  const trustDrift = Math.max(0, (C.base_trust * 100 - m.trust) / 100 - 0.10) * 1.0
+
+  // Acute political indicators
+  const pressureBonus = m.political_pressure > 70 ? 0.15 : 0
+  const instabilityBonus = m.stability < 25 ? 0.15 : 0
+
+  return giniDrift + trustDrift + pressureBonus + instabilityBonus
 }
 
 let driftDaysHigh = 0
 
 function checkCrisis(state: WorldState): void {
-  if (state.drift_score > 0.35) {
+  if (state.drift_score > 0.55) {
     driftDaysHigh++
-    if (driftDaysHigh >= 30 && !state.crisis_pending) {
+    if (driftDaysHigh >= 90 && !state.crisis_pending) {
       state.crisis_pending = true
       emitCrisisEvent(state)
     }
   } else {
-    driftDaysHigh = Math.max(0, driftDaysHigh - 1)
+    driftDaysHigh = Math.max(0, driftDaysHigh - 2)
   }
 }
 
@@ -340,33 +428,73 @@ function emitCrisisEvent(state: WorldState): void {
 
 // ── Lifecycle Events (birth / marriage) ─────────────────────────────────────
 
+function computeBirthChancePerDay(a: NPC, b: NPC, state: WorldState): number {
+  const baseFertility = Math.min(a.lifecycle.fertility, b.lifecycle.fertility)
+  if (baseFertility <= 0) return 0
+
+  const avgHappiness = (a.happiness + b.happiness) / 2
+  const avgStress = (a.stress + b.stress) / 2
+  const avgFear = (a.fear + b.fear) / 2
+  const avgHunger = (a.hunger + b.hunger) / 2
+  const avgExhaustion = (a.exhaustion + b.exhaustion) / 2
+  const avgWealth = (a.wealth + b.wealth) / 2
+  const avgTrustGov =
+    ((a.trust_in.government.intention + a.trust_in.government.competence) +
+     (b.trust_in.government.intention + b.trust_in.government.competence)) / 4
+
+  // Multipliers tune "readiness to have children" from micro + macro conditions.
+  const happinessFactor = clamp(0.75 + avgHappiness / 200, 0.65, 1.25)
+  const stressFactor = clamp(1 - avgStress / 120, 0.2, 1)
+  const fearFactor = clamp(1 - avgFear / 140, 0.25, 1)
+  const needsFactor = clamp(1 - ((avgHunger * 0.6 + avgExhaustion * 0.4) / 150), 0.25, 1)
+  const wealthFactor = clamp(0.6 + avgWealth / 200, 0.6, 1.2)
+  const trustFactor = clamp(0.75 + avgTrustGov * 0.35, 0.75, 1.1)
+  const foodFactor = clamp(0.55 + state.macro.food / 150, 0.55, 1.2)
+
+  const chance = 0.025 * baseFertility
+    * happinessFactor
+    * stressFactor
+    * fearFactor
+    * needsFactor
+    * wealthFactor
+    * trustFactor
+    * foodFactor
+
+  return clamp(chance, 0, 0.06)
+}
+
 function checkLifecycleEvents(state: WorldState): void {
   const living = state.npcs.filter(n => n.lifecycle.is_alive)
 
-  // Birth check: married couples with fertility
+  // Birth check: married couples with fertility (one roll per couple per day — lower id is canonical)
   for (const npc of living) {
-    if (!npc.lifecycle.spouse_id) continue
-    const spouse = state.npcs[npc.lifecycle.spouse_id]
+    if (npc.lifecycle.spouse_id === null) continue
+    const sid = npc.lifecycle.spouse_id
+    if (npc.id > sid) continue
+    const spouse = state.npcs[sid]
     if (!spouse?.lifecycle.is_alive) continue
 
-    const fertility = Math.min(npc.lifecycle.fertility, spouse.lifecycle.fertility)
-    if (fertility > 0 && Math.random() < fertility * 0.0003) {
+    const birthChance = computeBirthChancePerDay(npc, spouse, state)
+    if (birthChance > 0 && Math.random() < birthChance) {
       spawnBirth(state, npc)
     }
   }
 
   // Marriage check: single adults
   const singles = living.filter(n =>
-    !n.lifecycle.spouse_id &&
+    n.lifecycle.spouse_id === null &&
     n.age >= 18 &&
     n.age <= 45,
   )
   for (const npc of singles) {
-    if (Math.random() > 0.0001) continue
+    if (npc.lifecycle.spouse_id !== null) continue
+    // ~0.4% per single per day (~0.2–0.8 marriage attempts/day at N≈500; was 0.01%)
+    if (Math.random() > 0.004) continue
     const candidate = singles.find(s =>
       s.id !== npc.id &&
-      !s.lifecycle.spouse_id &&
-      Math.abs(s.age - npc.age) <= 10 &&
+      s.lifecycle.spouse_id === null &&
+      s.gender !== npc.gender &&
+      Math.abs(s.age - npc.age) <= 12 &&
       npc.strong_ties.includes(s.id),
     )
     if (candidate) {
@@ -374,7 +502,29 @@ function checkLifecycleEvents(state: WorldState): void {
       candidate.lifecycle.spouse_id = npc.id
       npc.strong_ties              = [...new Set([...npc.strong_ties, candidate.id])]
       candidate.strong_ties        = [...new Set([...candidate.strong_ties, npc.id])]
-      addFeedRaw(tf('engine.married', { a: npc.name, b: candidate.name }), 'info', state.year, state.day)
+      addChronicle(tf('engine.married', { a: npc.name, b: candidate.name }) as string, state.year, state.day)
+    }
+  }
+
+  // Divorce check: high combined stress + low happiness
+  for (const npc of living) {
+    if (npc.lifecycle.spouse_id === null) continue
+    if (npc.id > npc.lifecycle.spouse_id) continue  // avoid double-processing
+    const spouse = state.npcs[npc.lifecycle.spouse_id]
+    if (!spouse?.lifecycle.is_alive) {
+      npc.lifecycle.spouse_id = null  // widowed — clear ref
+      continue
+    }
+    const avgStress    = (npc.stress + spouse.stress) / 2
+    const avgHappiness = (npc.happiness + spouse.happiness) / 2
+    // Chance ramps up sharply above stress=70, happiness<30
+    const divorceChance = Math.max(0, (avgStress - 70) / 100) * Math.max(0, (50 - avgHappiness) / 50) * 0.003
+    if (divorceChance > 0 && Math.random() < divorceChance) {
+      npc.lifecycle.spouse_id   = null
+      spouse.lifecycle.spouse_id = null
+      npc.grievance    = clamp(npc.grievance    + 20, 0, 100)
+      spouse.grievance = clamp(spouse.grievance + 20, 0, 100)
+      addChronicle(tf('engine.divorced', { a: npc.name, b: spouse.name }) as string, state.year, state.day)
     }
   }
 }
@@ -398,5 +548,52 @@ function spawnBirth(state: WorldState, parent: NPC): void {
   baby.strong_ties = [parent.id]
 
   npcs.push(baby)
-  addFeedRaw(tf('engine.birth', { parent: parent.name }), 'info', state.year, state.day)
+  addChronicle(tf('engine.birth', { parent: parent.name }) as string, state.year, state.day)
+}
+
+// ── Community Groups ─────────────────────────────────────────────────────────
+
+let nextGroupId = 1
+
+function checkCommunityGroups(state: WorldState): void {
+  // Formation: 3+ socializing NPCs with mutual strong ties who have no group yet
+  // Only run occasionally (every 24 ticks = daily) and with low probability per check
+  if (Math.random() > 0.05) return  // ~5% chance per day a new group forms
+
+  const candidates = state.npcs.filter(n =>
+    n.lifecycle.is_alive &&
+    n.community_group === null &&
+    n.action_state === 'socializing',
+  )
+
+  for (const npc of candidates) {
+    if (npc.community_group !== null) continue
+    // Find at least 2 strong-tie socializing neighbours also without a group
+    const coMembers = npc.strong_ties
+      .map(id => state.npcs[id])
+      .filter(n => n?.lifecycle.is_alive && n.community_group === null && n.action_state === 'socializing')
+    if (coMembers.length < 2) continue
+
+    const groupId = nextGroupId++
+    npc.community_group = groupId
+    for (const m of coMembers.slice(0, 4)) {   // cap at 5 members (npc + 4)
+      m.community_group = groupId
+    }
+    addChronicle(tf('engine.community_formed', {}) as string, state.year, state.day)
+    break  // only one new group per daily check
+  }
+
+  // Dissolution: groups where fewer than 2 members are alive
+  const groupCounts = new Map<number, number>()
+  for (const npc of state.npcs) {
+    if (npc.community_group !== null && npc.lifecycle.is_alive) {
+      groupCounts.set(npc.community_group, (groupCounts.get(npc.community_group) ?? 0) + 1)
+    }
+  }
+  for (const npc of state.npcs) {
+    if (npc.community_group !== null) {
+      const count = groupCounts.get(npc.community_group) ?? 0
+      if (count < 2) npc.community_group = null
+    }
+  }
 }

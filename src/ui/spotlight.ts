@@ -137,7 +137,20 @@ function renderStatic(npc: NPC, _state: WorldState): string {
         <span class="sp-label">${t('sp.influence')}</span>
         <span class="sp-value">${Math.round(npc.influence_score * 100)}%</span>
       </div>
+      ${npc.community_group !== null ? `
+      <div class="sp-row">
+        <span class="sp-label">${t('sp.community_group')}</span>
+        <span class="sp-value" style="color:#5dcaa5">${t('sp.group')} #${npc.community_group}</span>
+      </div>` : ''}
     </div>
+
+    <!-- Status flags -->
+    ${(npc.sick || npc.criminal_record) ? `
+    <div class="sp-section">
+      <div class="sp-section-title">${t('sp.flags')}</div>
+      ${npc.sick ? `<div class="sp-row"><span class="sp-label" style="color:#ef9f27">🤒 ${t('sp.sick')}</span><span class="sp-value">${Math.ceil(npc.sick_ticks / 24)} ${t('sp.days_remaining')}</span></div>` : ''}
+      ${npc.criminal_record ? `<div class="sp-row"><span class="sp-label" style="color:#e24b4b">⚠ ${t('sp.criminal_record')}</span></div>` : ''}
+    </div>` : ''}
 
     <!-- Daily thought (LLM, filled async above) -->
     <div class="sp-section">

@@ -3,6 +3,7 @@ import { FEED_ICONS } from '../types'
 import { tf } from '../i18n'
 
 const log = document.getElementById('feed-log')!
+const chronicleLog = document.getElementById('chronicle-log')!
 
 export function addFeedEntry(entry: NarrativeEntry) {
   const el = document.createElement('div')
@@ -57,4 +58,20 @@ export function addFeedThinking(text = 'Processing...') {
   el.innerHTML = `<div class="feed-text" style="color:#444;font-style:italic">${text}</div>`
   log.prepend(el)
   return () => el.remove()
+}
+
+export function addChronicle(text: string, year: number, day: number) {
+  const month = Math.ceil(day / 30)
+  const dayOfMonth = day % 30 || 30
+  const timeLabel = tf('topbar.clock', { y: year, m: month, d: dayOfMonth })
+
+  const el = document.createElement('div')
+  el.className = 'chronicle-entry'
+  el.innerHTML = `<span class="chronicle-time">${timeLabel}</span> ${text}`
+  chronicleLog.prepend(el)
+
+  // Cap at 80 entries
+  while (chronicleLog.children.length > 80) {
+    chronicleLog.removeChild(chronicleLog.lastChild!)
+  }
 }

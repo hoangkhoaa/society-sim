@@ -15,6 +15,15 @@ function addHistory(role: 'user' | 'assistant', content: string) {
   if (history.length > 40) history.splice(0, 2)
 }
 
+// ── In-game chat history (separate from setup, resets each game) ───────────
+
+interface InGameTurn { user: string; answer: string }
+const inGameHistory: InGameTurn[] = []
+
+export function resetInGameHistory() {
+  inGameHistory.length = 0
+}
+
 // ── Language directive ─────────────────────────────────────────────────────
 
 function langDirective(): string {
@@ -134,16 +143,45 @@ When receiving input from The Architect, decide what kind of response is most ap
 ━━━ ZONES ━━━
 Valid zone names: "north_farm", "south_farm", "workshop_district", "market_square", "scholar_quarter", "residential_east", "residential_west", "guard_post", "plaza"
 
+━━━ CRITICAL RULE — KILLING NPCs ━━━
+type "event" NEVER kills NPCs directly. It only affects morale, food stocks, stress, and trust over time.
+To kill NPCs you MUST use type "intervention" with kill:true and count:<number>.
+For mass-casualty events (tsunami, nuclear bomb, massacre, plague), ALWAYS use type "intervention" with kills + a companion event.
+
+━━━ SCALE GUIDE (population ~500) ━━━
+- Minor incident: kill 5–20
+- Serious disaster: kill 30–80
+- Major catastrophe (tsunami, nuclear bomb): kill 150–280
+- Extinction-level: kill 350–450
+
 ━━━ INTERVENTION EXAMPLES ━━━
-- "Nuclear bomb" → kill 150-250 NPCs (target:all, count:200), companion epidemic event (radiation/disease, intensity 0.9, 30d)
-- "Start a protest" → set action_state:"organizing" for 30-60 NPCs in plaza/residential zones, raise grievance by 20
+- "Tsunami" → type "intervention", kill ~250 (target:all, count:250, kill_cause:"accident"), companion flood event (intensity:0.95, duration: 24 ticks), answer describes the wave
+- "Nuclear bomb" → kill 200 (target:all, count:200), companion epidemic (intensity:0.95, 720 ticks=30d), stress+80, fear+80
+- "Severe plague" → kill 80 (target:all, count:80, kill_cause:"disease"), companion epidemic event (intensity:0.85, 480 ticks=20d)
+- "Massacre in the plaza" → kill 30 (target:zone, zones:["plaza"], count:30, kill_cause:"violence"), fear+60, grievance+50
+- "Start a protest" → action_state:"organizing" for 40 NPCs in plaza/residential, grievance+20
 - "Make farmers pessimistic" → worldview_delta: {authority_trust: -0.3, risk_tolerance: -0.2} on role:farmer
 - "Inspire the people" → happiness_delta: +30, memory: {type:"helped", emotional_weight: 60} on target:all
-- "Plague kills the elderly" → kill NPCs (target:all, count:40) + epidemic event
 
 Be the god of this world. React with narrative drama. Scale intensity to the action requested.
 ALWAYS return valid JSON. Be concise, sharp, and dramatic.
 ${langDirective()}`
+}
+
+function tokenModeDirective(config: AIConfig): string {
+  if (config.token_mode === 'events_only') {
+    return `TOKEN MODE: EVENTS ONLY.
+- Never return type "intervention".
+- Only return "event" or "answer".
+- Convert any direct-NPC-control request into an "answer" explaining this mode does not allow interventions.`
+  }
+  if (config.token_mode === 'events_plus_npc_control') {
+    return `TOKEN MODE: EVENTS + NPC CONTROL.
+- Returning "event", "intervention", or "answer" is allowed.
+- Keep responses concise to reduce token usage.`
+  }
+  return `TOKEN MODE: UNLIMITED.
+- Full capability enabled.`
 }
 
 // ── Setup Conversation ─────────────────────────────────────────────────────
@@ -164,8 +202,9 @@ export async function setupChat(
 ): Promise<{ text: string; constitution: Constitution | null }> {
   addHistory('user', userMessage)
 
+  const setupTurns = config.token_mode === 'unlimited' ? 10 : 6
   const context = history
-    .slice(-10)
+    .slice(-setupTurns)
     .map(m => `${m.role === 'user' ? 'Architect' : 'Agent'}: ${m.content}`)
     .join('\n')
 
@@ -193,7 +232,9 @@ export async function setupChat(
 
 // ── Preset constitutions ───────────────────────────────────────────────────
 
-export function applyPreset(preset: 'nordic' | 'capitalist' | 'socialist'): Constitution {
+export function applyPreset(
+  preset: 'nordic' | 'capitalist' | 'socialist' | 'feudal' | 'theocracy' | 'technocracy' | 'warlord' | 'commune' | 'marxist',
+): Constitution {
   const base: Constitution = {
     gini_start: 0,
     market_freedom: 0,
@@ -214,7 +255,7 @@ export function applyPreset(preset: 'nordic' | 'capitalist' | 'socialist'): Cons
     safety_net: 0.80, base_trust: 0.72, network_cohesion: 0.70,
     individual_rights_floor: 0.70,
     value_priority: ['security', 'equality', 'freedom', 'growth'],
-    description: 'preset.nordic_desc',   // resolved via t() at render time
+    description: 'preset.nordic_desc',
   }
 
   if (preset === 'capitalist') return {
@@ -226,13 +267,76 @@ export function applyPreset(preset: 'nordic' | 'capitalist' | 'socialist'): Cons
     description: 'preset.cap_desc',
   }
 
-  return {
+  if (preset === 'socialist') return {
     ...base,
     gini_start: 0.18, market_freedom: 0.15, state_power: 0.90,
     safety_net: 0.75, base_trust: 0.65, network_cohesion: 0.60,
     individual_rights_floor: 0.25,
     value_priority: ['equality', 'security', 'growth', 'freedom'],
     description: 'preset.soc_desc',
+  }
+
+  // ━━ New presets ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  if (preset === 'feudal') return {
+    ...base,
+    gini_start: 0.72, market_freedom: 0.20, state_power: 0.55,
+    safety_net: 0.05, base_trust: 0.40, network_cohesion: 0.50,
+    individual_rights_floor: 0.05, resource_scarcity: 0.60,
+    value_priority: ['security', 'equality', 'growth', 'freedom'],
+    role_ratios: { farmer: 0.55, craftsman: 0.15, merchant: 0.08, scholar: 0.05, guard: 0.12, leader: 0.05 },
+    description: 'preset.feudal_desc',
+  }
+
+  if (preset === 'theocracy') return {
+    ...base,
+    gini_start: 0.38, market_freedom: 0.30, state_power: 0.80,
+    safety_net: 0.45, base_trust: 0.75, network_cohesion: 0.80,
+    individual_rights_floor: 0.15, resource_scarcity: 0.45,
+    value_priority: ['security', 'equality', 'growth', 'freedom'],
+    role_ratios: { farmer: 0.40, craftsman: 0.18, merchant: 0.10, scholar: 0.18, guard: 0.08, leader: 0.06 },
+    description: 'preset.theocracy_desc',
+  }
+
+  if (preset === 'technocracy') return {
+    ...base,
+    gini_start: 0.35, market_freedom: 0.60, state_power: 0.50,
+    safety_net: 0.55, base_trust: 0.55, network_cohesion: 0.45,
+    individual_rights_floor: 0.60, resource_scarcity: 0.30,
+    value_priority: ['growth', 'security', 'freedom', 'equality'],
+    role_ratios: { farmer: 0.20, craftsman: 0.25, merchant: 0.15, scholar: 0.28, guard: 0.06, leader: 0.06 },
+    description: 'preset.technocracy_desc',
+  }
+
+  if (preset === 'warlord') return {
+    ...base,
+    gini_start: 0.65, market_freedom: 0.35, state_power: 0.85,
+    safety_net: 0.10, base_trust: 0.20, network_cohesion: 0.30,
+    individual_rights_floor: 0.05, resource_scarcity: 0.75,
+    value_priority: ['security', 'growth', 'freedom', 'equality'],
+    role_ratios: { farmer: 0.35, craftsman: 0.15, merchant: 0.10, scholar: 0.05, guard: 0.28, leader: 0.07 },
+    description: 'preset.warlord_desc',
+  }
+
+  if (preset === 'marxist') return {
+    ...base,
+    gini_start: 0.12, market_freedom: 0.05, state_power: 0.95,
+    safety_net: 0.85, base_trust: 0.60, network_cohesion: 0.65,
+    individual_rights_floor: 0.20, resource_scarcity: 0.50,
+    value_priority: ['equality', 'security', 'growth', 'freedom'],
+    role_ratios: { farmer: 0.40, craftsman: 0.25, merchant: 0.04, scholar: 0.12, guard: 0.10, leader: 0.09 },
+    description: 'preset.marxist_desc',
+  }
+
+  // commune (default fallback)
+  return {
+    ...base,
+    gini_start: 0.10, market_freedom: 0.10, state_power: 0.20,
+    safety_net: 0.90, base_trust: 0.80, network_cohesion: 0.95,
+    individual_rights_floor: 0.55, resource_scarcity: 0.40,
+    value_priority: ['equality', 'freedom', 'security', 'growth'],
+    role_ratios: { farmer: 0.40, craftsman: 0.22, merchant: 0.08, scholar: 0.12, guard: 0.06, leader: 0.12 },
+    description: 'preset.commune_desc',
   }
 }
 
@@ -243,22 +347,48 @@ export async function handlePlayerChat(
   state: WorldState,
   config: AIConfig,
 ): Promise<GodResponse> {
-  addHistory('user', userMessage)
+  const context = buildWorldContext(state, config)
 
-  const context = buildWorldContext(state)
-  const prompt = `WORLD STATE:\n${context}\n\nThe Architect: ${userMessage}`
+  // Include recent in-game conversation turns so the AI remembers context
+  const maxTurns = config.token_mode === 'events_only' ? 2 : 4
+  const recentTurns = inGameHistory
+    .slice(-maxTurns)
+    .map(t => `Architect: ${t.user}\nNarrator: ${t.answer}`)
+    .join('\n')
+
+  const prompt = [
+    tokenModeDirective(config),
+    '\nWORLD STATE:\n' + context,
+    recentTurns ? '\nRECENT COMMANDS:\n' + recentTurns : '',
+    '\nThe Architect: ' + userMessage,
+  ].join('\n')
 
   const raw = await callAI(config, buildGameSystem(), prompt)
-  addHistory('assistant', raw)
 
   try {
     const json = JSON.parse(extractJSON(raw)) as GodResponse
+    if (config.token_mode === 'events_only' && json.type === 'intervention') {
+      const blockedAnswer = getLang() === 'vi'
+        ? 'Chế độ token hiện tại chỉ cho phép tạo sự kiện và hậu quả. Hãy chuyển sang mức 2 hoặc 3 để điều khiển trực tiếp NPC.'
+        : 'Current token mode only allows world events and consequences. Switch to level 2 or 3 to directly control NPCs.'
+      inGameHistory.push({ user: userMessage, answer: blockedAnswer })
+      if (inGameHistory.length > 20) inGameHistory.splice(0, 1)
+      return { type: 'answer', event: null, answer: blockedAnswer, requires_confirm: false }
+    }
+    inGameHistory.push({ user: userMessage, answer: json.answer ?? raw.slice(0, 200) })
+    if (inGameHistory.length > 20) inGameHistory.splice(0, 1)
     return json
   } catch {
+    // Don't leak raw JSON into the feed — show a friendly retry message
+    const friendlyFallback = getLang() === 'vi'
+      ? 'Không thể diễn giải phản hồi của AI. Hãy thử lại.'
+      : 'Could not parse AI response. Please try again.'
+    inGameHistory.push({ user: userMessage, answer: friendlyFallback })
+    if (inGameHistory.length > 20) inGameHistory.splice(0, 1)
     return {
       type: 'answer',
       event: null,
-      answer: raw,
+      answer: friendlyFallback,
       requires_confirm: false,
     }
   }
@@ -267,6 +397,13 @@ export async function handlePlayerChat(
 // ── NPC daily thought (generated on spotlight open) ────────────────────────
 
 export async function generateNPCThought(npc: NPC, state: WorldState, config: AIConfig): Promise<string> {
+  if (config.token_mode !== 'unlimited') {
+    if (getLang() === 'vi') {
+      return `Hôm nay mình ${npc.action_state}, áp lực ${Math.round(npc.stress)}%, tâm trạng ${Math.round(npc.happiness)}%.`
+    }
+    return `Today I am ${npc.action_state}, with stress at ${Math.round(npc.stress)}% and mood at ${Math.round(npc.happiness)}%.`
+  }
+
   const recentMemory = npc.memory
     .slice(-3)
     .map(m => `${m.type}: ${m.emotional_weight > 0 ? 'positive' : 'negative'}`)
@@ -293,15 +430,18 @@ ${langDirective()}`
 
 // ── World context builder (compressed ~400 tokens) ─────────────────────────
 
-function buildWorldContext(state: WorldState): string {
+function buildWorldContext(state: WorldState, config: AIConfig): string {
+  const living = state.npcs.filter(n => n.lifecycle.is_alive)
+  const source = config.token_mode === 'unlimited' ? state.npcs : living
+
   const stressGroups = {
-    calm:     state.npcs.filter(n => n.stress < 35).length,
-    stressed: state.npcs.filter(n => n.stress >= 35 && n.stress < 65).length,
-    critical: state.npcs.filter(n => n.stress >= 65).length,
+    calm:     source.filter(n => n.stress < 35).length,
+    stressed: source.filter(n => n.stress >= 35 && n.stress < 65).length,
+    critical: source.filter(n => n.stress >= 65).length,
   }
 
   const topGrievance = Object.entries(
-    state.npcs.reduce((acc: Record<string, number>, n) => {
+    source.reduce((acc: Record<string, number>, n) => {
       acc[n.role] = (acc[n.role] || 0) + n.grievance
       return acc
     }, {}),
@@ -309,23 +449,44 @@ function buildWorldContext(state: WorldState): string {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3)
     .map(([role, g]) => {
-      const count = state.npcs.filter(n => n.role === role as never).length
+      const count = source.filter(n => n.role === role as never).length
       return `${role}(${Math.round(g / Math.max(count, 1))}%)`
     })
     .join(', ')
 
-  return JSON.stringify({
+  const compact = {
     time: { day: state.day, year: state.year },
     macro: state.macro,
     stress_distribution: stressGroups,
     top_grievance_groups: topGrievance,
     active_events: state.active_events.map(e => ({ type: e.type, intensity: e.intensity, zones: e.zones })),
+  }
+
+  if (config.token_mode === 'events_only') {
+    return JSON.stringify(compact)
+  }
+
+  const medium = {
+    ...compact,
+    key_roles_pressure: {
+      leader: Math.round(source.filter(n => n.role === 'leader').reduce((s, n) => s + n.grievance, 0) / Math.max(source.filter(n => n.role === 'leader').length, 1)),
+      guard: Math.round(source.filter(n => n.role === 'guard').reduce((s, n) => s + n.grievance, 0) / Math.max(source.filter(n => n.role === 'guard').length, 1)),
+      farmer: Math.round(source.filter(n => n.role === 'farmer').reduce((s, n) => s + n.grievance, 0) / Math.max(source.filter(n => n.role === 'farmer').length, 1)),
+    },
     institutions: state.institutions.map(i => ({
       id: i.id,
       legitimacy: Math.round(i.legitimacy * 100),
       resources: Math.round(i.resources),
       last_decision: i.decisions.at(-1)?.action ?? 'none',
     })),
+  }
+
+  if (config.token_mode === 'events_plus_npc_control') {
+    return JSON.stringify(medium)
+  }
+
+  return JSON.stringify({
+    ...medium,
     constitution_summary: {
       gini: state.constitution.gini_start,
       state_power: state.constitution.state_power,

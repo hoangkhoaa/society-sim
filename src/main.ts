@@ -1,8 +1,9 @@
 import './css/main.css'
-import type { AIConfig, Constitution, WorldState } from './types'
-import { setupGreeting, setupChat, applyPreset, handlePlayerChat } from './ai/god-agent'
+import type { AIConfig, AIProvider, Constitution, WorldState } from './types'
+import { setupGreeting, setupChat, applyPreset, handlePlayerChat, resetInGameHistory } from './ai/god-agent'
+import { listAvailableModels, PROVIDER_MODELS, getAIUsage } from './ai/provider'
 import { addFeedRaw, addFeedThinking } from './ui/feed'
-import { showConfirm } from './ui/modal'
+import { showConfirm, showInfo } from './ui/modal'
 import { initWorld, tick, spawnEvent, applyInterventions } from './sim/engine'
 import { setLang, t, tf } from './i18n'
 import { initMap } from './ui/map'
@@ -34,20 +35,131 @@ function showScreen(id: string) {
 // ── Onboarding ─────────────────────────────────────────────────────────────
 
 const btnStart       = document.getElementById('btn-start')!
+const btnListModels  = document.getElementById('btn-list-models') as HTMLButtonElement
 const apiKeyInput    = document.getElementById('api-key-input') as HTMLInputElement
+const apiKeyRow      = document.getElementById('api-key-row')!
+const baseUrlInput   = document.getElementById('base-url-input') as HTMLInputElement
+const baseUrlRow     = document.getElementById('base-url-row')!
 const providerSelect = document.getElementById('provider-select') as HTMLSelectElement
+const modelSelect    = document.getElementById('model-select') as HTMLSelectElement
+const tokenModeSelect = document.getElementById('token-mode-select') as HTMLSelectElement
 const onboardingErr  = document.getElementById('onboarding-error')!
 
-btnStart.addEventListener('click', async () => {
+let onboardingModelsReady = false
+
+function resetModelSelect() {
+  onboardingModelsReady = false
+  modelSelect.innerHTML = ''
+  const ph = document.createElement('option')
+  ph.value = ''
+  ph.textContent = t('onboarding.model_placeholder') as string
+  ph.disabled = true
+  ph.selected = true
+  modelSelect.appendChild(ph)
+  modelSelect.disabled = true
+}
+
+function applyFallbackModels(provider: AIProvider) {
+  modelSelect.innerHTML = ''
+  for (const id of PROVIDER_MODELS[provider]) {
+    const opt = document.createElement('option')
+    opt.value = id
+    opt.textContent = id
+    modelSelect.appendChild(opt)
+  }
+  modelSelect.disabled = false
+  modelSelect.value = PROVIDER_MODELS[provider][0] ?? ''
+  onboardingModelsReady = !!modelSelect.value
+}
+
+function syncProviderFields() {
+  const provider = providerSelect.value as AIProvider
+  const isLocal = provider === 'ollama'
+  const isCloud = provider === 'ollama_cloud'
+  apiKeyRow.style.display = isLocal ? 'none' : ''
+  baseUrlRow.style.display = isCloud ? '' : 'none'
+  resetModelSelect()
+}
+
+providerSelect.addEventListener('change', syncProviderFields)
+syncProviderFields()
+
+function fillModelSelect(ids: string[]) {
+  modelSelect.innerHTML = ''
+  for (const id of ids) {
+    const opt = document.createElement('option')
+    opt.value = id
+    opt.textContent = id
+    modelSelect.appendChild(opt)
+  }
+  modelSelect.disabled = false
+  modelSelect.value = ids[0] ?? ''
+  onboardingModelsReady = ids.length > 0
+}
+
+btnListModels.addEventListener('click', async () => {
+  const provider = providerSelect.value as AIProvider
+  const isLocal = provider === 'ollama'
+  const isCloud = provider === 'ollama_cloud'
   const key = apiKeyInput.value.trim()
-  if (!key) {
+  const baseUrl = baseUrlInput.value.trim()
+
+  if (!isLocal && !key) {
     showError(t('onboarding.err_no_key') as string)
+    return
+  }
+  if (isCloud && !baseUrl) {
+    showError(t('onboarding.err_base_url') as string)
+    return
+  }
+
+  clearOnboardingError()
+  const labelIdle = t('onboarding.btn_list_models') as string
+  const labelBusy = t('onboarding.btn_list_models_loading') as string
+  btnListModels.disabled = true
+  btnListModels.textContent = labelBusy
+
+  try {
+    const models = await listAvailableModels({
+      provider,
+      key,
+      base_url: baseUrl || undefined,
+    })
+    if (models.length === 0) throw new Error('empty')
+    fillModelSelect(models)
+  } catch {
+    showError(`${t('onboarding.err_list_models') as string} ${t('onboarding.fallback_models_hint') as string}`)
+    applyFallbackModels(provider)
+  } finally {
+    btnListModels.disabled = false
+    btnListModels.textContent = labelIdle
+  }
+})
+
+btnStart.addEventListener('click', async () => {
+  const isLocal = providerSelect.value === 'ollama'
+  const isCloud = providerSelect.value === 'ollama_cloud'
+  const key = apiKeyInput.value.trim()
+  const baseUrl = baseUrlInput.value.trim()
+  if (!isLocal && !key) {
+    showError(t('onboarding.err_no_key') as string)
+    return
+  }
+  if (isCloud && !baseUrl) {
+    showError(t('onboarding.err_base_url') as string)
+    return
+  }
+  if (!onboardingModelsReady || !modelSelect.value) {
+    showError(t('onboarding.err_models_first') as string)
     return
   }
 
   aiConfig = {
     provider: providerSelect.value as AIConfig['provider'],
+    model: modelSelect.value,
+    token_mode: tokenModeSelect.value as AIConfig['token_mode'],
     key,
+    base_url: baseUrl || undefined,
   }
 
   btnStart.textContent = t('onboarding.connecting') as string
@@ -63,6 +175,11 @@ btnStart.addEventListener('click', async () => {
     btnStart.removeAttribute('disabled')
   }
 })
+
+function clearOnboardingError() {
+  onboardingErr.textContent = ''
+  onboardingErr.classList.add('hidden')
+}
 
 function showError(msg: string) {
   onboardingErr.textContent = msg
@@ -108,7 +225,7 @@ setupInput.addEventListener('keydown', e => {
 // Preset buttons
 document.querySelectorAll('.btn-preset').forEach(btn => {
   btn.addEventListener('click', () => {
-    const preset = (btn as HTMLElement).dataset.preset as 'nordic' | 'capitalist' | 'socialist'
+    const preset = (btn as HTMLElement).dataset.preset as 'nordic' | 'capitalist' | 'socialist' | 'feudal' | 'theocracy' | 'technocracy' | 'warlord' | 'commune' | 'marxist'
     const constitution = applyPreset(preset)
     appendPlayerMsg(`${t('setup.preset_msg')} ${btn.textContent}`)
     appendAgentMsg(`${t('setup.preset_init')} ${btn.textContent}...`)
@@ -140,6 +257,7 @@ function replaceLastMsg(text: string) {
 // ── Game start ─────────────────────────────────────────────────────────────
 
 async function startGame(constitution: Constitution) {
+  resetInGameHistory()
   addFeedRaw(t('topbar.init') as string, 'info', 1, 1)
 
   // Defer initWorld so the feed message renders first
@@ -160,7 +278,7 @@ async function startGame(constitution: Constitution) {
     ? t(constitution.description) as string
     : constitution.description
 
-  addFeedRaw(`${t('topbar.initialized')} ${desc}`, 'player', 1, 1)
+  addFeedRaw(`${t('topbar.initialized')} ${desc}`, 'info', 1, 1)
   addFeedRaw(
     tf('topbar.constitution_set', {
       n: world.npcs.length,
@@ -187,6 +305,10 @@ function updateTopbar() {
   setStat('v-food',      macro.food,      'stat-food',      35, 20)
   setStat('v-trust',     macro.trust,     'stat-trust',     35, 20)
   document.getElementById('v-gini')!.textContent = macro.gini.toFixed(2)
+
+  const { requests, tokens } = getAIUsage()
+  const tokStr = tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : `${tokens}`
+  document.getElementById('ai-usage')!.textContent = `${requests} req · ${tokStr} tok`
 }
 
 function setStat(valueId: string, value: number, statId: string, warnAt: number, dangerAt: number) {
@@ -198,15 +320,68 @@ function setStat(valueId: string, value: number, statId: string, warnAt: number,
   else if (value <= warnAt) parent.classList.add('warn')
 }
 
+// ── Demographics panel ─────────────────────────────────────────────────────
+
+const AGE_GROUPS = [
+  { key: 'demo.age_0', min: 0,  max: 17 },
+  { key: 'demo.age_1', min: 18, max: 34 },
+  { key: 'demo.age_2', min: 35, max: 49 },
+  { key: 'demo.age_3', min: 50, max: 69 },
+  { key: 'demo.age_4', min: 70, max: 999 },
+]
+
+function updateDemographics() {
+  if (!world) return
+  const living = world.npcs.filter(n => n.lifecycle.is_alive)
+  const dead   = world.npcs.length - living.length
+  const males  = living.filter(n => n.gender === 'male').length
+
+  document.getElementById('d-pop')!.textContent    = `${living.length}`
+  document.getElementById('d-male')!.textContent   = `${males}`
+  document.getElementById('d-female')!.textContent = `${living.length - males}`
+  document.getElementById('d-deaths')!.textContent = `${dead}`
+
+  const container = document.getElementById('d-ages')!
+  if (container.children.length === 0) {
+    for (const g of AGE_GROUPS) {
+      const label = t(g.key) as string
+      const row = document.createElement('div')
+      row.className = 'age-bar-row'
+      row.innerHTML = `
+        <span class="age-label">${label}</span>
+        <div class="age-track"><div class="age-fill" data-age="${g.key}"></div></div>
+        <span class="age-pct" data-age-pct="${g.key}"></span>
+      `
+      container.appendChild(row)
+    }
+  }
+
+  const total = living.length || 1
+  for (const g of AGE_GROUPS) {
+    const count = living.filter(n => n.age >= g.min && n.age <= g.max).length
+    const pct = Math.round(count / total * 100)
+    const fill = container.querySelector<HTMLElement>(`.age-fill[data-age="${g.key}"]`)
+    const pctEl = container.querySelector<HTMLElement>(`.age-pct[data-age-pct="${g.key}"]`)
+    if (fill) fill.style.width = `${pct}%`
+    if (pctEl) pctEl.textContent = `${pct}%`
+  }
+}
+
 // ── Simulation loop ────────────────────────────────────────────────────────
 
 let paused = false
 let speed = 1
 let simInterval: ReturnType<typeof setInterval> | null = null
 let peakPopulation = 0
+const btnPause = document.getElementById('btn-pause')!
 
 // 1 tick = 1 sim-hour; 42ms interval ≈ 24 ticks/second at 1×
 const BASE_TICK_MS = 42
+
+function setPaused(value: boolean) {
+  paused = value
+  btnPause.textContent = paused ? '▶' : '⏸'
+}
 
 function startSimLoop() {
   if (simInterval) clearInterval(simInterval)
@@ -216,6 +391,7 @@ function startSimLoop() {
     const living = world.npcs.filter(n => n.lifecycle.is_alive).length
     if (living > peakPopulation) peakPopulation = living
     updateTopbar()
+    if (world.tick % 24 === 0) updateDemographics()
     if (living === 0) triggerGameOver()
   }, BASE_TICK_MS)
 }
@@ -265,8 +441,7 @@ document.getElementById('btn-restart')!.addEventListener('click', () => {
 // ── Time controls ──────────────────────────────────────────────────────────
 
 document.getElementById('btn-pause')!.addEventListener('click', function () {
-  paused = !paused
-  this.textContent = paused ? '▶' : '⏸'
+  setPaused(!paused)
 })
 
 document.getElementById('btn-speed')!.addEventListener('click', function () {
@@ -283,8 +458,14 @@ async function sendChatMessage() {
   const msg = chatInput.value.trim()
   if (!msg || !aiConfig || !world) return
   chatInput.value = ''
+  btnChatSend.setAttribute('disabled', 'true')
 
-  addFeedRaw(`🌐 "${msg}"`, 'player', world.year, world.day)
+  addFeedRaw(`"${msg}"`, 'player', world.year, world.day)
+
+  // Pause game while waiting for AI response
+  const wasPaused = paused
+  setPaused(true)
+  btnPause.textContent = t('topbar.ai_thinking') as string
 
   const removeThinking = addFeedThinking(t('err.thinking') as string)
 
@@ -329,6 +510,10 @@ async function sendChatMessage() {
       `${t('err.generic')} ${(e as Error).message}`,
       'critical', world?.year ?? 1, world?.day ?? 1,
     )
+  } finally {
+    // Restore previous pause state
+    setPaused(wasPaused)
+    btnChatSend.removeAttribute('disabled')
   }
 }
 
@@ -336,7 +521,7 @@ function injectEvent(response: Awaited<ReturnType<typeof handlePlayerChat>>) {
   if (!world || !response.event) return
   addFeedRaw(
     `${response.event.narrative_open ?? response.answer}`,
-    'player', world.year, world.day,
+    'warning', world.year, world.day,
   )
   spawnEvent(world, response.event)
 }
@@ -344,7 +529,7 @@ function injectEvent(response: Awaited<ReturnType<typeof handlePlayerChat>>) {
 function executeIntervention(response: Awaited<ReturnType<typeof handlePlayerChat>>) {
   if (!world) return
 
-  addFeedRaw(response.answer, 'player', world.year, world.day)
+  addFeedRaw(response.answer, 'warning', world.year, world.day)
 
   if (response.interventions?.length) {
     const affected = applyInterventions(world, response.interventions)
@@ -358,7 +543,7 @@ function executeIntervention(response: Awaited<ReturnType<typeof handlePlayerCha
   if (response.event) {
     addFeedRaw(
       `${response.event.narrative_open ?? ''}`,
-      'player', world.year, world.day,
+      'warning', world!.year, world!.day,
     )
     spawnEvent(world, response.event)
   }
@@ -366,6 +551,47 @@ function executeIntervention(response: Awaited<ReturnType<typeof handlePlayerCha
 
 btnChatSend.addEventListener('click', sendChatMessage)
 chatInput.addEventListener('keydown', e => {
-  if (e.key === 'Enter') sendChatMessage()
+  if (e.key === 'Enter' && !e.isComposing) sendChatMessage()
+})
+
+// ── Constitution viewer ────────────────────────────────────────────────────
+
+document.getElementById('btn-constitution')!.addEventListener('click', () => {
+  if (!world) return
+  const c = world.constitution
+  const desc = c.description.startsWith('preset.') ? t(c.description) as string : c.description
+  const pct = (v: number) => `${Math.round(v * 100)}%`
+  const priorities = c.value_priority.map((v, i) => `${i + 1}. ${v}`).join(' · ')
+
+  const row = (labelKey: string, value: string, hintKey: string) => `
+    <tr>
+      <td style="padding:6px 0 2px;color:#999;font-size:0.85em;white-space:nowrap">${t(labelKey)}</td>
+      <td style="padding:6px 0 2px;font-weight:600;text-align:right">${value}</td>
+    </tr>
+    <tr>
+      <td colspan="2" style="padding:0 0 8px;color:#444;font-size:0.78em;border-bottom:1px solid #1a1a1a">${t(hintKey)}</td>
+    </tr>`
+
+  const bodyHtml = `
+    <div style="color:#bbb;font-size:0.95em;margin-bottom:12px;line-height:1.5;border-left:2px solid #2a5caa;padding-left:10px">${desc}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:0.88em">
+      ${row('const.label_gini',     c.gini_start.toFixed(2),   'const.hint_gini')}
+      ${row('const.label_market',   pct(c.market_freedom),     'const.hint_market')}
+      ${row('const.label_state',    pct(c.state_power),        'const.hint_state')}
+      ${row('const.label_safety',   pct(c.safety_net),         'const.hint_safety')}
+      ${row('const.label_rights',   pct(c.individual_rights_floor), 'const.hint_rights')}
+      ${row('const.label_trust',    pct(c.base_trust),         'const.hint_trust')}
+      ${row('const.label_cohesion', pct(c.network_cohesion),   'const.hint_cohesion')}
+      ${row('const.label_scarcity', pct(c.resource_scarcity),  'const.hint_scarcity')}
+      <tr>
+        <td style="padding:6px 0 2px;color:#999;font-size:0.85em">${t('const.label_values')}</td>
+        <td style="padding:6px 0 2px;font-size:0.8em;text-align:right;color:#7aabff">${priorities}</td>
+      </tr>
+      <tr>
+        <td colspan="2" style="padding:0 0 4px;color:#444;font-size:0.78em">${t('const.hint_values')}</td>
+      </tr>
+    </table>`
+
+  showInfo(t('topbar.constitution') as string, bodyHtml)
 })
 

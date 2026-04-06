@@ -9,7 +9,9 @@
     "noFallthroughCasesInSwitch": true,
     "useDefineForClassFields": true,
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "noEmit": true,
+    "allowJs": false
   },
   "include": ["src"]
 }
