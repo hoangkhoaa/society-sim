@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Society Sim</title>
+  <link rel="stylesheet" href="/src/css/main.css">
+</head>
+<body>
+
+  <!-- ── ONBOARDING ─────────────────────────────── -->
+  <div id="screen-onboarding" class="screen active">
+    <div class="onboarding-box">
+      <div class="onboarding-title">Society Sim</div>
+      <div class="onboarding-sub" data-i18n="onboarding.sub">Một thế giới sống. Bạn nói chuyện với nó.</div>
+
+      <!-- Language selector -->
+      <div class="lang-row">
+        <button class="btn-lang active" data-lang="vi">Tiếng Việt</button>
+        <button class="btn-lang" data-lang="en">English</button>
+      </div>
+
+      <div class="onboarding-form">
+        <div class="form-row">
+          <label>Provider</label>
+          <select id="provider-select">
+            <option value="gemini">Gemini Flash 2.5 (free)</option>
+            <option value="anthropic">Claude Haiku</option>
+            <option value="openai">GPT-4o Mini</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label data-i18n="onboarding.api_key">API Key</label>
+          <input type="password" id="api-key-input"
+            data-i18n-ph="onboarding.api_key_ph"
+            placeholder="Nhập API key...">
+        </div>
+        <button id="btn-start" class="btn-primary" data-i18n="onboarding.btn_start">Bắt đầu →</button>
+        <div id="onboarding-error" class="error-msg hidden"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SETUP CONVERSATION ──────────────────────── -->
+  <div id="screen-setup" class="screen">
+    <div class="setup-container">
+      <div class="setup-header">
+        <span class="setup-title" data-i18n="setup.title">Thiết lập xã hội</span>
+        <span class="setup-hint" data-i18n="setup.hint">Mô tả xã hội bạn muốn, hoặc chọn điểm xuất phát</span>
+      </div>
+      <div class="preset-row">
+        <button class="btn-preset" data-preset="nordic" data-i18n="setup.preset_nordic">🏔 Bắc Âu</button>
+        <button class="btn-preset" data-preset="capitalist" data-i18n="setup.preset_cap">💹 Tư bản tự do</button>
+        <button class="btn-preset" data-preset="socialist" data-i18n="setup.preset_soc">⚙ XHCN tập trung</button>
+      </div>
+      <div id="setup-messages" class="message-list"></div>
+      <div class="setup-input-row">
+        <input type="text" id="setup-input"
+          data-i18n-ph="setup.input_ph"
+          placeholder='Ví dụ: "Kiểu Bắc Âu nhưng tài nguyên khan hiếm hơn"'>
+        <button id="btn-setup-send" class="btn-send">→</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MAIN GAME ───────────────────────────────── -->
+  <div id="screen-game" class="screen">
+
+    <!-- Topbar -->
+    <div id="topbar">
+      <span id="clock-label">–</span>
+      <div class="top-divider"></div>
+      <span class="macro-stat" id="stat-stability">Stability <b id="v-stability">–</b></span>
+      <span class="macro-stat" id="stat-food">Food <b id="v-food">–</b></span>
+      <span class="macro-stat" id="stat-trust">Trust <b id="v-trust">–</b></span>
+      <span class="macro-stat" id="stat-gini">Gini <b id="v-gini">–</b></span>
+      <div class="top-spacer"></div>
+      <button class="btn-top" id="btn-pause">⏸</button>
+      <button class="btn-top" id="btn-speed">1×</button>
+      <button class="btn-top" id="btn-constitution" data-i18n="topbar.constitution">📜 Hiến pháp</button>
+    </div>
+
+    <!-- Main area: map + feed -->
+    <div id="main-area">
+
+      <!-- Map placeholder (PixiJS canvas will go here in Phase 3) -->
+      <div id="map-container">
+        <canvas id="map-canvas"></canvas>
+
+        <!-- NPC Spotlight Panel — opened on NPC click -->
+        <div id="spotlight" class="panel hidden">
+          <div class="panel-header">
+            <span id="sp-name">–</span>
+            <button id="sp-close" class="btn-icon">×</button>
+          </div>
+          <div id="sp-body"></div>
+        </div>
+
+        <!-- Institution Panel — opened on institution click -->
+        <div id="inst-panel" class="panel hidden">
+          <div class="panel-header">
+            <span id="ip-name">–</span>
+            <button id="ip-close" class="btn-icon">×</button>
+          </div>
+          <div id="ip-body"></div>
+        </div>
+      </div>
+
+      <!-- Narrative Feed -->
+      <div id="feed-panel">
+        <div id="feed-header" data-i18n="feed.header">Nhật ký sự kiện</div>
+        <div id="feed-log"></div>
+      </div>
+
+    </div>
+
+    <!-- Chat bar -->
+    <div id="chatbar">
+      <div id="chatbar-inner">
+        <span class="chat-icon">🌐</span>
+        <input type="text" id="chat-input"
+          data-i18n-ph="chat.ph"
+          placeholder='Nói chuyện với thế giới...'>
+        <button id="btn-chat-send" class="btn-send">→</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── CONFIRM MODAL ──────────────────────────── -->
+  <div id="modal-overlay" class="hidden">
+    <div id="modal-box">
+      <div id="modal-title" data-i18n="modal.event_title">Xác nhận</div>
+      <div id="modal-body"></div>
+      <div id="modal-actions">
+        <button id="modal-confirm" class="btn-primary" data-i18n="modal.confirm_btn">Xác nhận</button>
+        <button id="modal-cancel" class="btn-ghost" data-i18n="modal.cancel_btn">Hủy</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

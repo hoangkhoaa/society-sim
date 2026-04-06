@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Đảo Hoang — Xã Hội Mô Phỏng</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,sans-serif}
+body{background:#1a1a1a;display:flex;justify-content:center;align-items:center;min-height:100vh}
+#wrap{display:grid;grid-template-rows:36px 1fr;grid-template-columns:1fr 240px;width:900px;height:640px;border:1px solid #333;border-radius:10px;overflow:hidden;background:#111}
+#topbar{grid-column:1/-1;display:flex;align-items:center;gap:16px;padding:0 14px;background:#1e1e1e;border-bottom:1px solid #333;font-size:11px;color:#888}
+.sv{font-weight:600;font-size:13px;color:#eee}
+.sdiv{width:1px;height:18px;background:#333}
+#canvasWrap{position:relative;overflow:hidden;background:#2a2a2a}
+canvas{display:block}
+#sidebar{border-left:1px solid #333;display:flex;flex-direction:column;background:#161616;overflow:hidden}
+.spanel{padding:10px 12px;border-bottom:1px solid #222}
+.stitle{font-size:9px;font-weight:600;letter-spacing:.08em;color:#555;text-transform:uppercase;margin-bottom:8px}
+.mrow{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}
+.mname{font-size:11px;color:#888}
+.mbar{height:3px;border-radius:2px;background:#2a2a2a;width:70px;overflow:hidden}
+.mfill{height:100%;border-radius:2px;transition:width .5s}
+.mnum{font-size:11px;font-weight:600;color:#ccc;min-width:24px;text-align:right}
+#npc-panel{flex:1;overflow-y:auto;padding:8px 10px}
+#npc-panel::-webkit-scrollbar{width:3px}
+#npc-panel::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
+.npc-card{padding:6px 8px;border-radius:5px;border:1px solid #2a2a2a;margin-bottom:5px;cursor:pointer;transition:background .15s}
+.npc-card:hover{background:#1e1e1e}
+.npc-card.sel{border-color:#378ADD;background:#0d1e2e}
+.npc-name{font-size:11px;font-weight:600;color:#ddd}
+.npc-status{font-size:10px;color:#555;margin-top:1px}
+.npc-dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:4px;vertical-align:middle}
+#legend{display:flex;flex-wrap:wrap;gap:8px;padding:8px 12px;border-top:1px solid #222;font-size:9px;color:#555}
+.leg{display:flex;align-items:center;gap:3px}
+.ldot{width:7px;height:7px;border-radius:50%}
+#time-ctrl{display:flex;align-items:center;gap:6px;padding:6px 10px;border-top:1px solid #222}
+#time-ctrl button{font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid #333;background:#1e1e1e;color:#888;cursor:pointer;transition:background .1s}
+#time-ctrl button:hover{background:#2a2a2a;color:#ccc}
+#clock-lbl{font-size:10px;color:#444;margin-left:auto}
+#info-box{position:absolute;bottom:8px;left:8px;background:rgba(0,0,0,.75);border:1px solid #333;border-radius:6px;padding:8px 10px;font-size:10px;color:#aaa;pointer-events:none;display:none;max-width:160px}
+#info-box .iname{font-size:12px;font-weight:600;color:#eee;margin-bottom:4px}
+#info-box .irow{display:flex;justify-content:space-between;gap:12px;margin-bottom:2px}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="topbar">
+    <span>Đảo Hoang</span>
+    <div class="sdiv"></div>
+    <span>Dân số: <span class="sv" id="t-pop">30</span></span>
+    <span>Thực phẩm: <span class="sv" id="t-food">78%</span></span>
+    <span>Hạnh phúc: <span class="sv" id="t-happy">65%</span></span>
+    <span>Gắn kết: <span class="sv" id="t-coh">58%</span></span>
+    <span style="margin-left:auto;font-weight:600;color:#aaa;font-size:12px" id="t-clock">06:00</span>
+  </div>
+  <div id="canvasWrap">
+    <canvas id="c"></canvas>
+    <div id="info-box">
+      <div class="iname" id="ib-name"></div>
+      <div class="irow"><span style="color:#555">nghề</span><span id="ib-role"></span></div>
+      <div class="irow"><span style="color:#555">trạng thái</span><span id="ib-state"></span></div>
+      <div class="irow"><span style="color:#555">hạnh phúc</span><span id="ib-happy"></span></div>
+      <div class="irow"><span style="color:#555">kỹ năng</span><span id="ib-skill"></span></div>
+    </div>
+  </div>
+  <div id="sidebar">
+    <div class="spanel">
+      <div class="stitle">Chỉ số xã hội</div>
+      <div class="mrow"><span class="mname">Thực phẩm</span><div class="mbar"><div class="mfill" id="m-food" style="background:#639922;width:78%"></div></div><span class="mnum" id="mn-food">78</span></div>
+      <div class="mrow"><span class="mname">Hạnh phúc</span><div class="mbar"><div class="mfill" id="m-happy" style="background:#378ADD;width:65%"></div></div><span class="mnum" id="mn-happy">65</span></div>
+      <div class="mrow"><span class="mname">Gắn kết</span><div class="mbar"><div class="mfill" id="m-coh" style="background:#7F77DD;width:58%"></div></div><span class="mnum" id="mn-coh">58</span></div>
+      <div class="mrow"><span class="mname">Tri thức</span><div class="mbar"><div class="mfill" id="m-know" style="background:#EF9F27;width:32%"></div></div><span class="mnum" id="mn-know">32</span></div>
+      <div class="mrow"><span class="mname">Bất bình đẳng</span><div class="mbar"><div class="mfill" id="m-gini" style="background:#E24B4A;width:38%"></div></div><span class="mnum" id="mn-gini">38</span></div>
+    </div>
+    <div class="spanel" style="max-height:200px">
+      <div class="stitle">Dân cư</div>
+      <div id="npc-panel"></div>
+    </div>
+    <div id="legend">
+      <div class="leg"><div class="ldot" style="background:#5DCAA5"></div>nông dân</div>
+      <div class="leg"><div class="ldot" style="background:#378ADD"></div>thợ</div>
+      <div class="leg"><div class="ldot" style="background:#7F77DD"></div>học giả</div>
+      <div class="leg"><div class="ldot" style="background:#EF9F27"></div>lãnh đạo</div>
+      <div class="leg"><div class="ldot" style="background:#E24B4A"></div>bất mãn</div>
+    </div>
+    <div id="time-ctrl">
+      <button id="btn-pause">⏸ dừng</button>
+      <button id="btn-speed">2x</button>
+      <span id="clock-lbl">năm 1, tháng 1</span>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const wrap = document.getElementById('canvasWrap');
+
+canvas.width = wrap.clientWidth || 660;
+canvas.height = wrap.clientHeight || 604;
+const W = canvas.width, H = canvas.height;
+const TILE = 22;
+const COLS = Math.floor(W / TILE);
+const ROWS = Math.floor(H / TILE);
+
+// ── MAP ──────────────────────────────────────────────────────────────
+const buildings = [
+  {name:'farm1',   x:1,  y:1,  w:7, h:5, roof:'#8a7a30', floor:'#b0a060', label:'Ruộng lúa'},
+  {name:'farm2',   x:1,  y:7,  w:6, h:4, roof:'#8a7a30', floor:'#b0a060', label:'Vườn rau'},
+  {name:'workshop',x:11, y:1,  w:6, h:5, roof:'#7a6050', floor:'#a08070', label:'Xưởng'},
+  {name:'school',  x:18, y:1,  w:5, h:5, roof:'#405878', floor:'#607898', label:'Trường học'},
+  {name:'hall',    x:10, y:10, w:6, h:5, roof:'#7a5030', floor:'#a07050', label:'Hội trường'},
+  {name:'market',  x:18, y:8,  w:5, h:5, roof:'#906820', floor:'#c09040', label:'Chợ'},
+  {name:'house1',  x:2,  y:15, w:3, h:3, roof:'#6a4030', floor:'#8a6050', label:'Nhà'},
+  {name:'house2',  x:6,  y:15, w:3, h:3, roof:'#6a4030', floor:'#8a6050', label:'Nhà'},
+  {name:'house3',  x:10, y:16, w:3, h:3, roof:'#6a4030', floor:'#8a6050', label:'Nhà'},
+  {name:'house4',  x:14, y:15, w:3, h:3, roof:'#6a4030', floor:'#8a6050', label:'Nhà'},
+  {name:'house5',  x:18, y:15, w:3, h:3, roof:'#6a4030', floor:'#8a6050', label:'Nhà'},
+  {name:'house6',  x:22, y:15, w:3, h:3, roof:'#6a4030', floor:'#8a6050', label:'Nhà'},
+  {name:'well',    x:8,  y:10, w:2, h:2, roof:'#507090', floor:'#709ab0', label:'Giếng'},
+];
+
+const homes = ['house1','house2','house3','house4','house5','house6'];
+const roleWorkplace = {
+  0:['farm1','farm2'],
+  1:['workshop'],
+  2:['school'],
+  3:['hall'],
+  4:['market','well']
+};
+const roleNames = ['nông dân','thợ','học giả','lãnh đạo','bất mãn'];
+const roleColors = ['#5DCAA5','#378ADD','#7F77DD','#EF9F27','#E24B4A'];
+const names = ['An','Bình','Châu','Dũng','Em','Phúc','Giang','Hùng','Lan','Mai','Nam','Oanh','Phong','Quân','Sơn','Tâm','Uyên','Việt','Xuân','Hoa','Minh','Long','Thảo','Khoa','Linh'];
+
+const stateLabel = {moving:'đang đi',working:'đang làm',resting:'nghỉ ngơi',socializing:'giao lưu',idle:'thư giãn'};
+
+function bc(name){
+  const b = buildings.find(b=>b.name===name);
+  return b ? {x:(b.x+b.w/2)*TILE, y:(b.y+b.h/2)*TILE} : {x:W/2,y:H/2};
+}
+function rndHome(){
+  const c = bc(homes[Math.floor(Math.random()*homes.length)]);
+  return {x:c.x+(Math.random()-.5)*TILE, y:c.y+(Math.random()-.5)*TILE};
+}
+function rndWork(ri){
+  const opts = roleWorkplace[ri];
+  const c = bc(opts[Math.floor(Math.random()*opts.length)]);
+  return {x:c.x+(Math.random()-.5)*TILE*1.5, y:c.y+(Math.random()-.5)*TILE*1.5};
+}
+
+// ── PEOPLE ───────────────────────────────────────────────────────────
+const people = [];
+for(let i=0;i<30;i++){
+  const ri = i<12?0:i<18?1:i<22?2:i<26?3:4;
+  const home = rndHome();
+  people.push({
+    id:i, name:names[i%names.length], role:ri,
+    x:home.x, y:home.y,
+    tx:home.x, ty:home.y,
+    home, work:rndWork(ri),
+    state:'resting',
+    happy: 50+Math.floor(Math.random()*40),
+    skill: 20+Math.floor(Math.random()*70),
+    idleT: Math.floor(Math.random()*180),
+    trail: [],
+  });
+}
+
+// ── SIM STATE ─────────────────────────────────────────────────────────
+let gameTime = 6*60;
+let paused = false;
+let speed = 1;
+let tick = 0;
+let selectedId = null;
+
+function timeStr(m){
+  return String(Math.floor(m/60)%24).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
+}
+
+function getTarget(p){
+  const h = Math.floor(gameTime/60)%24;
+  if(h>=7&&h<17) return p.work;
+  if(h>=17&&h<19) return {...bc('market'),x:bc('market').x+(Math.random()-.5)*20,y:bc('market').y+(Math.random()-.5)*20};
+  return p.home;
+}
+
+function getState(p){
+  const h = Math.floor(gameTime/60)%24;
+  if(h>=7&&h<17) return 'working';
+  if(h>=17&&h<19) return 'socializing';
+  return 'resting';
+}
+
+function updatePeople(){
+  people.forEach(p=>{
+    const target = getTarget(p);
+    const dx = target.x - p.x, dy = target.y - p.y;
+    const dist = Math.sqrt(dx*dx+dy*dy);
+
+    if(dist > 3){
+      const spd = 0.7 + Math.random()*.3;
+      p.x += dx/dist*spd;
+      p.y += dy/dist*spd;
+      p.state = 'moving';
+      p.trail.push({x:p.x,y:p.y,a:0.4});
+      if(p.trail.length>12) p.trail.shift();
+    } else {
+      p.state = getState(p);
+      p.trail = [];
+      p.idleT--;
+      if(p.idleT<=0){
+        const jitter = p.state==='socializing'?18:8;
+        p.x = target.x + (Math.random()-.5)*jitter;
+        p.y = target.y + (Math.random()-.5)*jitter;
+        p.idleT = 60+Math.floor(Math.random()*150);
+      }
+    }
+    p.x = Math.max(4,Math.min(W-4,p.x));
+    p.y = Math.max(4,Math.min(H-4,p.y));
+  });
+}
+
+// ── DRAW ──────────────────────────────────────────────────────────────
+const trees = [[0,12],[0,17],[0,20],[25,3],[25,9],[25,15],[25,19]];
+
+function drawMap(){
+  ctx.fillStyle='#2a3020'; ctx.fillRect(0,0,W,H);
+  for(let r=0;r<ROWS;r++)
+    for(let c=0;c<COLS;c++){
+      const v = ((r*3+c*7)%13)/13;
+      ctx.fillStyle=`rgb(${38+v*8|0},${48+v*10|0},${28+v*6|0})`;
+      ctx.fillRect(c*TILE,r*TILE,TILE,TILE);
+    }
+
+  ctx.fillStyle='#3a3020';
+  ctx.fillRect(0,13*TILE,W,TILE);
+  ctx.fillRect(9*TILE,0,TILE,H);
+  ctx.fillRect(17*TILE,0,TILE,H);
+
+  ctx.fillStyle='#253060';
+  ctx.fillRect(22*TILE,17*TILE,4*TILE,4*TILE);
+  ctx.strokeStyle='#3040a0';ctx.lineWidth=1;
+  ctx.strokeRect(22*TILE,17*TILE,4*TILE,4*TILE);
+
+  buildings.forEach(b=>{
+    ctx.fillStyle=b.floor;
+    ctx.fillRect(b.x*TILE,b.y*TILE,b.w*TILE,b.h*TILE);
+    ctx.fillStyle=b.roof;
+    ctx.fillRect(b.x*TILE,b.y*TILE,b.w*TILE,TILE*.4);
+    ctx.strokeStyle='rgba(0,0,0,.4)';ctx.lineWidth=1;
+    ctx.strokeRect(b.x*TILE,b.y*TILE,b.w*TILE,b.h*TILE);
+    ctx.fillStyle='rgba(255,255,255,.35)';
+    ctx.font='8px system-ui';ctx.textAlign='center';
+    ctx.fillText(b.label,(b.x+b.w/2)*TILE,(b.y+b.h/2)*TILE+3);
+  });
+
+  trees.forEach(([c,r])=>{
+    ctx.fillStyle='#1a4010';
+    ctx.beginPath();ctx.arc(c*TILE+TILE/2,r*TILE+TILE/2,TILE*.6,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#2a5820';
+    ctx.beginPath();ctx.arc(c*TILE+TILE/2,r*TILE+TILE/2-3,TILE*.38,0,Math.PI*2);ctx.fill();
+  });
+  ctx.textAlign='left';
+}
+
+function drawPeople(){
+  people.forEach(p=>{
+    const col = roleColors[p.role];
+    const sel = p.id===selectedId;
+
+    if(p.trail.length>1&&p.state==='moving'){
+      ctx.beginPath();
+      ctx.moveTo(p.trail[0].x,p.trail[0].y);
+      p.trail.forEach(t=>ctx.lineTo(t.x,t.y));
+      ctx.strokeStyle=col;ctx.globalAlpha=0.2;ctx.lineWidth=1.5;ctx.stroke();
+      ctx.globalAlpha=1;
+    }
+
+    if(p.state==='working'){
+      ctx.beginPath();ctx.arc(p.x,p.y,7,0,Math.PI*2);
+      ctx.strokeStyle=col;ctx.globalAlpha=0.25+.15*Math.sin(tick*.08);
+      ctx.lineWidth=2;ctx.stroke();ctx.globalAlpha=1;
+    }
+    if(p.state==='socializing'){
+      ctx.beginPath();ctx.arc(p.x,p.y,9,0,Math.PI*2);
+      ctx.strokeStyle='#EF9F27';ctx.globalAlpha=0.2;
+      ctx.lineWidth=1.5;ctx.stroke();ctx.globalAlpha=1;
+    }
+
+    if(sel){
+      ctx.beginPath();ctx.arc(p.x,p.y,10,0,Math.PI*2);
+      ctx.fillStyle='rgba(55,138,221,.2)';ctx.fill();
+    }
+
+    ctx.beginPath();
+    ctx.arc(p.x,p.y,sel?5.5:3.5,0,Math.PI*2);
+    ctx.fillStyle=col;ctx.fill();
+
+    if(sel){
+      ctx.fillStyle='rgba(0,0,0,.8)';
+      ctx.fillRect(p.x-20,p.y-20,40,12);
+      ctx.fillStyle='#fff';
+      ctx.font='bold 9px system-ui';ctx.textAlign='center';
+      ctx.fillText(p.name,p.x,p.y-11);
+      ctx.textAlign='left';
+    }
+  });
+}
+
+// ── UI ────────────────────────────────────────────────────────────────
+function updateUI(){
+  document.getElementById('t-clock').textContent = timeStr(gameTime);
+  const avgHappy = Math.round(people.reduce((a,p)=>a+p.happy,0)/people.length);
+  document.getElementById('t-happy').textContent = avgHappy+'%';
+  document.getElementById('m-happy').style.width = avgHappy+'%';
+  document.getElementById('mn-happy').textContent = avgHappy;
+
+  const panel = document.getElementById('npc-panel');
+  panel.innerHTML='';
+  people.forEach(p=>{
+    const d = document.createElement('div');
+    d.className='npc-card'+(p.id===selectedId?' sel':'');
+    d.innerHTML=`<div class="npc-name"><span class="npc-dot" style="background:${roleColors[p.role]}"></span>${p.name}</div><div class="npc-status">${roleNames[p.role]} · ${stateLabel[p.state]||p.state}</div>`;
+    d.onclick=()=>{selectedId=selectedId===p.id?null:p.id;updateUI();updateInfoBox();};
+    panel.appendChild(d);
+  });
+
+  const yr = Math.floor(gameTime/(24*60*30))+1;
+  const mo = Math.floor(gameTime/(24*60)%30)+1;
+  document.getElementById('clock-lbl').textContent=`năm ${yr}, tháng ${mo}`;
+}
+
+function updateInfoBox(){
+  const box = document.getElementById('info-box');
+  if(selectedId===null){box.style.display='none';return;}
+  const p = people.find(x=>x.id===selectedId);
+  if(!p){box.style.display='none';return;}
+  box.style.display='block';
+  document.getElementById('ib-name').textContent=p.name;
+  document.getElementById('ib-role').textContent=roleNames[p.role];
+  document.getElementById('ib-state').textContent=stateLabel[p.state]||p.state;
+  document.getElementById('ib-happy').textContent=p.happy+'%';
+  document.getElementById('ib-skill').textContent=p.skill+'%';
+}
+
+canvas.addEventListener('click',e=>{
+  const r=canvas.getBoundingClientRect();
+  const mx=e.clientX-r.left,my=e.clientY-r.top;
+  let best=null,bestD=14;
+  people.forEach(p=>{
+    const d=Math.sqrt((p.x-mx)**2+(p.y-my)**2);
+    if(d<bestD){bestD=d;best=p.id;}
+  });
+  selectedId=best;
+  updateUI();updateInfoBox();
+});
+
+document.getElementById('btn-pause').onclick=function(){
+  paused=!paused;this.textContent=paused?'▶ chạy':'⏸ dừng';
+};
+document.getElementById('btn-speed').onclick=function(){
+  speed=speed===1?3:speed===3?6:1;this.textContent=speed+'x';
+};
+
+// ── LOOP ──────────────────────────────────────────────────────────────
+let last=0;
+function loop(ts){
+  if(!last)last=ts;
+  last=ts;
+  if(!paused){
+    tick++;
+    if(tick%Math.max(1,Math.round(3/speed))===0){
+      gameTime++;
+      if(gameTime>=24*60*365)gameTime=0;
+    }
+    updatePeople();
+    if(tick%30===0){updateUI();updateInfoBox();}
+  }
+  ctx.clearRect(0,0,W,H);
+  drawMap();
+  drawPeople();
+  requestAnimationFrame(loop);
+}
+updateUI();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

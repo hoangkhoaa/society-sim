@@ -1,0 +1,103 @@
+import type { AIConfig, AIProvider } from '../types'
+
+interface ProviderDef {
+  defaultModel: string
+  url: (model: string, key: string) => string
+  headers: (key: string) => Record<string, string>
+  buildBody: (system: string, user: string, model: string) => unknown
+  parseResponse: (json: unknown) => string
+}
+
+const PROVIDERS: Record<AIProvider, ProviderDef> = {
+  gemini: {
+    defaultModel: 'gemini-2.5-flash',
+    // Gemini puts key in URL query param
+    url: (model, key) =>
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+    headers: () => ({ 'content-type': 'application/json' }),
+    buildBody: (system, user) => ({
+      system_instruction: { parts: [{ text: system }] },
+      contents: [{ role: 'user', parts: [{ text: user }] }],
+      generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
+    }),
+    parseResponse: (json: unknown) => {
+      const j = json as { candidates: { content: { parts: { text: string }[] } }[] }
+      return j.candidates[0].content.parts[0].text
+    },
+  },
+
+  anthropic: {
+    defaultModel: 'claude-haiku-4-5-20251001',
+    url: () => 'https://api.anthropic.com/v1/messages',
+    headers: (key) => ({
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    }),
+    buildBody: (system, user, model) => ({
+      model,
+      max_tokens: 1024,
+      system,
+      messages: [{ role: 'user', content: user }],
+    }),
+    parseResponse: (json: unknown) => {
+      const j = json as { content: { text: string }[] }
+      return j.content[0].text
+    },
+  },
+
+  openai: {
+    defaultModel: 'gpt-4o-mini',
+    url: () => 'https://api.openai.com/v1/chat/completions',
+    headers: (key) => ({
+      Authorization: `Bearer ${key}`,
+      'content-type': 'application/json',
+    }),
+    buildBody: (system, user, model) => ({
+      model,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+    }),
+    parseResponse: (json: unknown) => {
+      const j = json as { choices: { message: { content: string } }[] }
+      return j.choices[0].message.content
+    },
+  },
+}
+
+export async function callAI(
+  config: AIConfig,
+  systemPrompt: string,
+  userMessage: string,
+): Promise<string> {
+  const p = PROVIDERS[config.provider]
+  const model = config.model ?? p.defaultModel
+  const url = p.url(model, config.key)
+  const headers = p.headers(config.key)
+  const body = p.buildBody(systemPrompt, userMessage, model)
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  })
+
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`AI error ${res.status}: ${err.slice(0, 200)}`)
+  }
+
+  const json = await res.json()
+  return p.parseResponse(json)
+}
+
+// Extract JSON object from LLM response (handles markdown fences)
+export function extractJSON(text: string): string {
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (fence) return fence[1].trim()
+  const curly = text.match(/\{[\s\S]*\}/)
+  if (curly) return curly[0]
+  return text.trim()
+}
