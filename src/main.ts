@@ -13,6 +13,7 @@ import type { Lang } from './i18n'
 
 let aiConfig: AIConfig | null = null
 let world: WorldState | null = null
+let noApiKeyMode = false
 
 // ── Language selector ──────────────────────────────────────────────────────
 
@@ -186,13 +187,31 @@ function showError(msg: string) {
   onboardingErr.classList.remove('hidden')
 }
 
+document.getElementById('btn-start-no-api')!.addEventListener('click', () => {
+  noApiKeyMode = true
+  aiConfig = null
+  clearOnboardingError()
+  setupMessages.innerHTML = ''
+  // Hide text input row — only presets available without AI
+  setupInputRow.style.display = 'none'
+  const hintEl = document.querySelector<HTMLElement>('.setup-hint')
+  if (hintEl) hintEl.textContent = t('setup.hint_no_api') as string
+  showScreen('screen-setup')
+})
+
 // ── Setup conversation ─────────────────────────────────────────────────────
 
 const setupMessages = document.getElementById('setup-messages')!
 const setupInput    = document.getElementById('setup-input') as HTMLInputElement
 const btnSetupSend  = document.getElementById('btn-setup-send')!
+const setupInputRow = document.querySelector<HTMLElement>('.setup-input-row')!
 
 async function startSetupConversation() {
+  // Restore setup input row in case we were previously in no-API mode
+  setupInputRow.style.display = ''
+  const hintEl = document.querySelector<HTMLElement>('.setup-hint')
+  if (hintEl) hintEl.textContent = t('setup.hint') as string
+
   appendAgentMsg('...')
   const greeting = await setupGreeting(aiConfig!)
   replaceLastMsg(greeting)
@@ -289,6 +308,13 @@ async function startGame(constitution: Constitution) {
   )
 
   startSimLoop()
+
+  // Disable chatbar when running without an API key
+  if (noApiKeyMode) {
+    chatInput.disabled = true
+    chatInput.placeholder = t('chat.disabled') as string
+    btnChatSend.setAttribute('disabled', 'true')
+  }
 }
 
 // ── Topbar ─────────────────────────────────────────────────────────────────
@@ -462,8 +488,15 @@ function triggerGameOver() {
 }
 
 document.getElementById('btn-restart')!.addEventListener('click', () => {
+  noApiKeyMode = false
   peakPopulation = 0
   world = null
+  // Restore chatbar in case it was disabled in no-API mode
+  const chatInputEl = document.getElementById('chat-input') as HTMLInputElement
+  const btnChatSendEl = document.getElementById('btn-chat-send')!
+  chatInputEl.disabled = false
+  chatInputEl.placeholder = t('chat.ph') as string
+  btnChatSendEl.removeAttribute('disabled')
   showScreen('screen-onboarding')
   // Reset the start button in case it was disabled
   const btnStart = document.getElementById('btn-start')!
