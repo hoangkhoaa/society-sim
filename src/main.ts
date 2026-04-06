@@ -146,6 +146,7 @@ async function startGame(constitution: Constitution) {
   await new Promise<void>(resolve => setTimeout(resolve, 50))
 
   world = initWorld(constitution)
+  peakPopulation = world.npcs.filter(n => n.lifecycle.is_alive).length
 
   showScreen('screen-game')
   updateTopbar()
@@ -202,6 +203,7 @@ function setStat(valueId: string, value: number, statId: string, warnAt: number,
 let paused = false
 let speed = 1
 let simInterval: ReturnType<typeof setInterval> | null = null
+let peakPopulation = 0
 
 // 1 tick = 1 sim-hour; 42ms interval ≈ 24 ticks/second at 1×
 const BASE_TICK_MS = 42
@@ -211,9 +213,54 @@ function startSimLoop() {
   simInterval = setInterval(() => {
     if (paused || !world) return
     for (let i = 0; i < speed; i++) tick(world)
+    const living = world.npcs.filter(n => n.lifecycle.is_alive).length
+    if (living > peakPopulation) peakPopulation = living
     updateTopbar()
+    if (living === 0) triggerGameOver()
   }, BASE_TICK_MS)
 }
+
+// ── Game over ──────────────────────────────────────────────────────────────
+
+function triggerGameOver() {
+  if (!world) return
+  if (simInterval) { clearInterval(simInterval); simInterval = null }
+
+  addFeedRaw(t('engine.extinction') as string, 'critical', world.year, world.day)
+
+  const summary = document.getElementById('gameover-summary')!
+  const stats   = document.getElementById('gameover-stats')!
+
+  const totalDays  = (world.year - 1) * 360 + world.day
+  summary.textContent = tf('gameover.summary', {
+    d:  totalDays,
+    y:  world.year,
+    ys: world.year !== 1 ? 's' : '',
+  })
+  stats.innerHTML = [
+    tf('gameover.stats_pop', { n: peakPopulation }),
+    tf('gameover.stats_day', { d: totalDays, ds: totalDays !== 1 ? 's' : '', y: world.year }),
+  ].join('<br>')
+
+  // Apply i18n to the static elements in the game-over screen
+  document.getElementById('gameover-title-el')?.replaceChildren()
+  document.querySelectorAll('#screen-gameover [data-i18n]').forEach(el => {
+    const key = (el as HTMLElement).dataset.i18n!
+    el.textContent = t(key) as string
+  })
+
+  showScreen('screen-gameover')
+}
+
+document.getElementById('btn-restart')!.addEventListener('click', () => {
+  peakPopulation = 0
+  world = null
+  showScreen('screen-onboarding')
+  // Reset the start button in case it was disabled
+  const btnStart = document.getElementById('btn-start')!
+  btnStart.textContent = t('onboarding.btn_start') as string
+  btnStart.removeAttribute('disabled')
+})
 
 // ── Time controls ──────────────────────────────────────────────────────────
 

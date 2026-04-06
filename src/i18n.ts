@@ -127,6 +127,14 @@ const translations = {
     'engine.married':  '{a} and {b} have gotten married.',
     'engine.birth':    '{parent} has had a child.',
     'engine.intervention': '⚡ Intervention affected {n} NPC{s}.',
+    'engine.extinction': '💀 The last NPC has died. The society is extinct.',
+
+    // Game over screen
+    'gameover.title':       'Extinction',
+    'gameover.summary':     'Every soul in this world is gone. The society you built has perished after {d} days and {y} year{ys}.',
+    'gameover.stats_pop':   'Peak population: {n}',
+    'gameover.stats_day':   'Survived: {d} day{ds}, Year {y}',
+    'gameover.btn_restart': 'Start New Society',
 
     // Zone labels
     'zone.north_farm':        'North Farmlands',
@@ -281,6 +289,14 @@ const translations = {
     'engine.married':  '{a} và {b} đã kết hôn.',
     'engine.birth':    '{parent} vừa có thêm một đứa con.',
     'engine.intervention': '⚡ Can thiệp ảnh hưởng đến {n} NPC.',
+    'engine.extinction': '💀 NPC cuối cùng đã chết. Xã hội đã diệt vong.',
+
+    // Game over screen
+    'gameover.title':       'Diệt vong',
+    'gameover.summary':     'Mọi linh hồn trong thế giới này đã ra đi. Xã hội bạn xây dựng đã sụp đổ sau {d} ngày và {y} năm.',
+    'gameover.stats_pop':   'Dân số đỉnh cao: {n}',
+    'gameover.stats_day':   'Tồn tại: {d} ngày, Năm {y}',
+    'gameover.btn_restart': 'Bắt đầu xã hội mới',
 
     // Zone labels
     'zone.north_farm':        'Cánh đồng bắc',
