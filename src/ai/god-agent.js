@@ -111,7 +111,13 @@ export async function setupChat(userMessage, config) {
     try {
         const json = JSON.parse(extractJSON(response));
         if (json.confirmed && json.constitution) {
-            return { text: response, constitution: json.constitution };
+            // Return a friendly confirmation message instead of raw JSON
+            const confirmMsg = json.message
+                ?? json.summary
+                ?? (getLang() === 'vi'
+                    ? 'Hiến pháp đã được xác nhận. Đang khởi tạo xã hội...'
+                    : 'Constitution confirmed. Initializing your society...');
+            return { text: confirmMsg, constitution: json.constitution };
         }
     }
     catch {
