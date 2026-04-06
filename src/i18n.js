@@ -105,6 +105,7 @@ const translations = {
         'engine.crisis': 'A constitutional crisis is approaching — society has drifted too far from its founding compact.',
         'engine.married': '{a} and {b} have gotten married.',
         'engine.birth': '{parent} has had a child.',
+        'engine.intervention': '⚡ Intervention affected {n} NPC{s}.',
         // Zone labels
         'zone.north_farm': 'North Farmlands',
         'zone.south_farm': 'South Farmlands',
@@ -236,6 +237,7 @@ const translations = {
         'engine.crisis': 'Cuộc khủng hoảng hiến pháp đang đến gần — xã hội đã lệch quá xa khỏi khế ước ban đầu.',
         'engine.married': '{a} và {b} đã kết hôn.',
         'engine.birth': '{parent} vừa có thêm một đứa con.',
+        'engine.intervention': '⚡ Can thiệp ảnh hưởng đến {n} NPC.',
         // Zone labels
         'zone.north_farm': 'Cánh đồng bắc',
         'zone.south_farm': 'Cánh đồng nam',

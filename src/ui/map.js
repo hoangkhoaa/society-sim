@@ -1,25 +1,24 @@
 import { ZONE_LABELS } from '../types';
 import { openSpotlight } from './spotlight';
-// ── Zone layout (normalized 0–1 grid, 3×3) ─────────────────────────────────
 const ZONE_LAYOUT = {
-    north_farm:        { x: 0.00, y: 0.00, w: 0.33, h: 0.35, color: '#1a3010', label: ZONE_LABELS['north_farm'] },
-    south_farm:        { x: 0.00, y: 0.35, w: 0.33, h: 0.30, color: '#1a3010', label: ZONE_LABELS['south_farm'] },
-    residential_west:  { x: 0.00, y: 0.65, w: 0.33, h: 0.35, color: '#1a1a20', label: ZONE_LABELS['residential_west'] },
+    north_farm: { x: 0.00, y: 0.00, w: 0.33, h: 0.35, color: '#1a3010', label: ZONE_LABELS['north_farm'] },
+    south_farm: { x: 0.00, y: 0.35, w: 0.33, h: 0.30, color: '#1a3010', label: ZONE_LABELS['south_farm'] },
+    residential_west: { x: 0.00, y: 0.65, w: 0.33, h: 0.35, color: '#1a1a20', label: ZONE_LABELS['residential_west'] },
     workshop_district: { x: 0.33, y: 0.00, w: 0.34, h: 0.40, color: '#201a10', label: ZONE_LABELS['workshop_district'] },
-    plaza:             { x: 0.33, y: 0.40, w: 0.34, h: 0.25, color: '#20201a', label: ZONE_LABELS['plaza'] },
-    residential_east:  { x: 0.33, y: 0.65, w: 0.34, h: 0.35, color: '#1a1a20', label: ZONE_LABELS['residential_east'] },
-    scholar_quarter:   { x: 0.67, y: 0.00, w: 0.33, h: 0.33, color: '#10182a', label: ZONE_LABELS['scholar_quarter'] },
-    market_square:     { x: 0.67, y: 0.33, w: 0.33, h: 0.34, color: '#201810', label: ZONE_LABELS['market_square'] },
-    guard_post:        { x: 0.67, y: 0.67, w: 0.33, h: 0.33, color: '#1a1010', label: ZONE_LABELS['guard_post'] },
+    plaza: { x: 0.33, y: 0.40, w: 0.34, h: 0.25, color: '#20201a', label: ZONE_LABELS['plaza'] },
+    residential_east: { x: 0.33, y: 0.65, w: 0.34, h: 0.35, color: '#1a1a20', label: ZONE_LABELS['residential_east'] },
+    scholar_quarter: { x: 0.67, y: 0.00, w: 0.33, h: 0.33, color: '#10182a', label: ZONE_LABELS['scholar_quarter'] },
+    market_square: { x: 0.67, y: 0.33, w: 0.33, h: 0.34, color: '#201810', label: ZONE_LABELS['market_square'] },
+    guard_post: { x: 0.67, y: 0.67, w: 0.33, h: 0.33, color: '#1a1010', label: ZONE_LABELS['guard_post'] },
 };
 // ── Role colors ────────────────────────────────────────────────────────────
 const ROLE_COLORS = {
-    farmer:    '#5dcaa5',
+    farmer: '#5dcaa5',
     craftsman: '#378add',
-    merchant:  '#ef9f27',
-    scholar:   '#7f77dd',
-    guard:     '#e24b4b',
-    leader:    '#ffffff',
+    merchant: '#ef9f27',
+    scholar: '#7f77dd',
+    guard: '#e24b4b',
+    leader: '#ffffff',
 };
 // ── Map state ──────────────────────────────────────────────────────────────
 let canvas = null;
@@ -30,14 +29,14 @@ let animFrame = null;
 let hoveredNPCId = null;
 // ── Init ───────────────────────────────────────────────────────────────────
 export function initMap(canvasEl, worldGetter, configGetter) {
-    canvas  = canvasEl;
-    ctx     = canvasEl.getContext('2d');
-    getWorld  = worldGetter;
+    canvas = canvasEl;
+    ctx = canvasEl.getContext('2d');
+    getWorld = worldGetter;
     getConfig = configGetter;
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
     canvas.addEventListener('mousemove', onMouseMove);
-    canvas.addEventListener('click',     onClick);
+    canvas.addEventListener('click', onClick);
     canvas.addEventListener('mouseleave', () => { hoveredNPCId = null; });
     if (animFrame !== null)
         cancelAnimationFrame(animFrame);
@@ -49,7 +48,7 @@ function resizeCanvas() {
     const container = canvas.parentElement;
     if (!container)
         return;
-    canvas.width  = container.clientWidth;
+    canvas.width = container.clientWidth;
     canvas.height = container.clientHeight;
 }
 // ── Draw loop ──────────────────────────────────────────────────────────────
@@ -201,7 +200,7 @@ function onMouseMove(e) {
 function onClick(e) {
     if (!canvas)
         return;
-    const world  = getWorld?.();
+    const world = getWorld?.();
     const config = getConfig?.();
     if (!world || !config)
         return;

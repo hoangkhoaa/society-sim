@@ -311,13 +311,51 @@ export interface AIConfig {
   model?: string
 }
 
+// ── NPC Intervention ───────────────────────────────────────────────────────
+
+export interface NPCIntervention {
+  /** Which NPCs to target */
+  target: 'all' | 'zone' | 'role' | 'id_list'
+  zones?: string[]      // when target === 'zone'
+  roles?: Role[]        // when target === 'role'
+  npc_ids?: number[]    // when target === 'id_list'
+  count?: number        // max NPCs to affect (random selection if population > count)
+
+  // Direct effects
+  kill?: boolean
+  kill_cause?: DeathCause
+  action_state?: ActionState
+
+  // Additive stat deltas (clamped to valid ranges after application)
+  stress_delta?: number
+  fear_delta?: number
+  hunger_delta?: number
+  grievance_delta?: number
+  happiness_delta?: number
+
+  // Worldview shifts (additive, clamped 0-1)
+  worldview_delta?: {
+    collectivism?: number
+    authority_trust?: number
+    risk_tolerance?: number
+    time_preference?: number
+  }
+
+  // Inject a memory entry
+  memory?: {
+    type: MemoryType
+    emotional_weight: number
+  }
+}
+
 export interface GodResponse {
-  type: 'event' | 'answer' | 'warning' | 'setup'
+  type: 'event' | 'answer' | 'warning' | 'setup' | 'intervention'
   event: Partial<SimEvent> | null
+  interventions?: NPCIntervention[]   // direct NPC/world manipulations
   answer: string
   requires_confirm: boolean
   warning?: string
-  constitution?: Partial<Constitution>  // khi type === 'setup'
+  constitution?: Partial<Constitution>  // when type === 'setup'
 }
 
 export interface ConversationMessage {

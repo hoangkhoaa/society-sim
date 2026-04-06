@@ -5,6 +5,7 @@ import { addFeedRaw } from '../ui/feed';
 import { t, tf } from '../i18n';
 // ── World Initialization ────────────────────────────────────────────────────
 const POPULATION = 500; // Phase 2 starting size; bump to 10k after testing
+const MAX_NPC_MEMORIES = 10; // Circular memory buffer size per NPC
 export function initWorld(constitution) {
     const npcs = [];
     for (let i = 0; i < POPULATION; i++) {
@@ -131,7 +132,80 @@ function defaultEffects(type, intensity) {
     };
     return map[type] ?? { food_stock_delta: 0, stress_delta: 0, trust_delta: 0, displacement_chance: 0 };
 }
-// ── Macro Stats ─────────────────────────────────────────────────────────────
+// ── Direct NPC Interventions ─────────────────────────────────────────────────
+export function applyInterventions(state, interventions) {
+    let totalAffected = 0;
+    for (const iv of interventions) {
+        // Select candidate NPCs
+        let candidates = state.npcs.filter(n => n.lifecycle.is_alive);
+        if (iv.target === 'zone' && iv.zones?.length) {
+            candidates = candidates.filter(n => iv.zones.includes(n.zone));
+        }
+        else if (iv.target === 'role' && iv.roles?.length) {
+            candidates = candidates.filter(n => iv.roles.includes(n.role));
+        }
+        else if (iv.target === 'id_list' && iv.npc_ids?.length) {
+            const idSet = new Set(iv.npc_ids);
+            candidates = candidates.filter(n => idSet.has(n.id));
+        }
+        // Optionally cap by count (random sample)
+        if (iv.count !== undefined && iv.count < candidates.length) {
+            candidates = candidates
+                .map(n => ({ n, r: Math.random() }))
+                .sort((a, b) => a.r - b.r)
+                .slice(0, iv.count)
+                .map(x => x.n);
+        }
+        for (const npc of candidates) {
+            applyInterventionToNPC(npc, iv, state);
+        }
+        totalAffected += candidates.length;
+    }
+    return totalAffected;
+}
+function applyInterventionToNPC(npc, iv, state) {
+    // Kill
+    if (iv.kill) {
+        npc.lifecycle.is_alive = false;
+        npc.lifecycle.death_cause = iv.kill_cause ?? 'violence';
+        npc.lifecycle.death_tick = state.tick;
+        return; // dead NPCs skip further changes
+    }
+    // Action state override
+    if (iv.action_state !== undefined) {
+        npc.action_state = iv.action_state;
+    }
+    // Additive stat deltas
+    if (iv.stress_delta !== undefined)
+        npc.stress = clamp(npc.stress + iv.stress_delta, 0, 100);
+    if (iv.fear_delta !== undefined)
+        npc.fear = clamp(npc.fear + iv.fear_delta, 0, 100);
+    if (iv.hunger_delta !== undefined)
+        npc.hunger = clamp(npc.hunger + iv.hunger_delta, 0, 100);
+    if (iv.grievance_delta !== undefined)
+        npc.grievance = clamp(npc.grievance + iv.grievance_delta, 0, 100);
+    if (iv.happiness_delta !== undefined)
+        npc.happiness = clamp(npc.happiness + iv.happiness_delta, 0, 100);
+    // Worldview deltas
+    if (iv.worldview_delta) {
+        const wd = iv.worldview_delta;
+        const wv = npc.worldview;
+        if (wd.collectivism !== undefined)
+            wv.collectivism = clamp(wv.collectivism + wd.collectivism, 0, 1);
+        if (wd.authority_trust !== undefined)
+            wv.authority_trust = clamp(wv.authority_trust + wd.authority_trust, 0, 1);
+        if (wd.risk_tolerance !== undefined)
+            wv.risk_tolerance = clamp(wv.risk_tolerance + wd.risk_tolerance, 0, 1);
+        if (wd.time_preference !== undefined)
+            wv.time_preference = clamp(wv.time_preference + wd.time_preference, 0, 1);
+    }
+    // Memory injection
+    if (iv.memory) {
+        npc.memory.push({ event_id: 'intervention', type: iv.memory.type, emotional_weight: iv.memory.emotional_weight, tick: state.tick });
+        if (npc.memory.length > MAX_NPC_MEMORIES)
+            npc.memory.shift();
+    }
+}
 export function computeMacroStats(state) {
     const npcs = state.npcs.filter(n => n.lifecycle.is_alive);
     if (npcs.length === 0)

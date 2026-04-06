@@ -3,7 +3,7 @@ import type { AIConfig, Constitution, WorldState } from './types'
 import { setupGreeting, setupChat, applyPreset, handlePlayerChat } from './ai/god-agent'
 import { addFeedRaw, addFeedThinking } from './ui/feed'
 import { showConfirm } from './ui/modal'
-import { initWorld, tick, spawnEvent } from './sim/engine'
+import { initWorld, tick, spawnEvent, applyInterventions } from './sim/engine'
 import { setLang, t, tf } from './i18n'
 import { initMap } from './ui/map'
 import type { Lang } from './i18n'
@@ -259,6 +259,20 @@ async function sendChatMessage() {
       } else {
         injectEvent(response)
       }
+    } else if (response.type === 'intervention') {
+      if (response.requires_confirm) {
+        showConfirm({
+          title: t('modal.event_title') as string,
+          body: `<b>${response.answer}</b>${response.warning ? `<br><br>⚠ ${response.warning}` : ''}`,
+          onConfirm: () => executeIntervention(response),
+          onCancel:  () => addFeedRaw(
+            t('modal.event_cancelled') as string,
+            'info', world!.year, world!.day,
+          ),
+        })
+      } else {
+        executeIntervention(response)
+      }
     } else {
       addFeedRaw(response.answer, 'info', world.year, world.day)
     }
@@ -280,7 +294,31 @@ function injectEvent(response: Awaited<ReturnType<typeof handlePlayerChat>>) {
   spawnEvent(world, response.event)
 }
 
+function executeIntervention(response: Awaited<ReturnType<typeof handlePlayerChat>>) {
+  if (!world) return
+
+  addFeedRaw(response.answer, 'player', world.year, world.day)
+
+  if (response.interventions?.length) {
+    const affected = applyInterventions(world, response.interventions)
+    addFeedRaw(
+      tf('engine.intervention', { n: affected, s: '' }) as string,
+      'critical', world.year, world.day,
+    )
+  }
+
+  // Companion event (e.g., radiation epidemic after nuclear bomb)
+  if (response.event) {
+    addFeedRaw(
+      `${response.event.narrative_open ?? ''}`,
+      'player', world.year, world.day,
+    )
+    spawnEvent(world, response.event)
+  }
+}
+
 btnChatSend.addEventListener('click', sendChatMessage)
 chatInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') sendChatMessage()
 })
+
