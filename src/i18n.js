@@ -266,7 +266,7 @@ const translations = {
     },
 };
 // ── State ──────────────────────────────────────────────────────────────────
-let currentLang = 'vi';
+let currentLang = 'en';
 export function setLang(lang) {
     currentLang = lang;
     document.documentElement.lang = lang;

@@ -57,7 +57,7 @@ export function initWorld(constitution: Constitution): WorldState {
 export function tick(state: WorldState): void {
   state.tick++
 
-  // Advance time (1 tick = 1 giờ sim, 24 ticks = 1 ngày)
+  // Advance time (1 tick = 1 sim-hour, 24 ticks = 1 day)
   if (state.tick % 24 === 0) {
     state.day++
     if (state.day > 360) {
