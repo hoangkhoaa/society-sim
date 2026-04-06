@@ -9,7 +9,7 @@ export function addFeedEntry(entry: NarrativeEntry) {
   el.dataset.id = entry.id
 
   el.innerHTML = `
-    <div class="feed-time">${FEED_ICONS[entry.severity] ?? '·'} Năm ${entry.year} · T${Math.ceil(entry.day / 30)} · N${entry.day % 30 || 30}</div>
+    <div class="feed-time">${FEED_ICONS[entry.severity] ?? '·'} Year ${entry.year} · M${Math.ceil(entry.day / 30)} · D${entry.day % 30 || 30}</div>
     <div class="feed-text">${entry.text}</div>
   `
 
@@ -45,7 +45,7 @@ export function addFeedRaw(
   })
 }
 
-export function addFeedThinking(text = 'Đang xử lý...') {
+export function addFeedThinking(text = 'Processing...') {
   const el = document.createElement('div')
   el.className = 'feed-entry info'
   el.id = 'feed-thinking'

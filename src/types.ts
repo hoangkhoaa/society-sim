@@ -32,7 +32,7 @@ export interface NPCLifecycle {
   death_tick: number | null
   spouse_id: number | null
   children_ids: number[]
-  fertility: number             // 0–1, giảm theo tuổi
+  fertility: number             // 0–1, decreases with age
 }
 
 // ── Trust ──────────────────────────────────────────────────────────────────
@@ -71,9 +71,9 @@ export interface NPC {
   gender: Gender
   appearance: NPCAppearance
   lifecycle: NPCLifecycle
-  occupation: string            // 'Thợ rèn', 'Nông dân trồng lúa', v.v.
-  description: string           // static, template-based khi init
-  daily_thought: string         // dynamic, LLM generate khi click / event
+  occupation: string            // 'Blacksmith', 'Rice Farmer', etc.
+  description: string           // static, template-based on init
+  daily_thought: string         // dynamic, LLM-generated on click / event
   last_thought_tick: number
 
   zone: string
@@ -95,7 +95,7 @@ export interface NPC {
   happiness: number
   action_state: ActionState
 
-  // Thresholds (cố định từ init)
+  // Thresholds (fixed at init)
   stress_threshold: number
   collective_action_threshold: number
   adaptability: number
@@ -109,7 +109,7 @@ export interface NPC {
   weak_ties: number[]           // 50–150 NPC ids
   influence_score: number       // network centrality
 
-  // Trust per institution (2 chiều)
+  // Trust per institution (two-way)
   trust_in: TrustMap
 
   // Resources
@@ -135,27 +135,27 @@ export interface RoleRatios {
 }
 
 export interface Constitution {
-  // Kinh tế
+  // Economy
   gini_start: number            // 0–1
   market_freedom: number        // 0–1
   resource_scarcity: number     // 0–1
 
-  // Chính trị
+  // Politics
   state_power: number           // 0–1
   safety_net: number            // 0–1
   individual_rights_floor: number // 0–1
 
-  // Xã hội
+  // Society
   base_trust: number            // 0–1
   network_cohesion: number      // 0–1
 
-  // Giá trị (rank 0 = quan trọng nhất)
+  // Value priorities (rank 0 = most important)
   value_priority: [ValuePriority, ValuePriority, ValuePriority, ValuePriority]
 
-  // Tỉ lệ roles (tổng = 1.0)
+  // Role ratios across the population (sum = 1.0)
   role_ratios: RoleRatios
 
-  // Mô tả ngắn (từ God Agent setup conversation)
+  // Short description (from God Agent setup conversation)
   description: string
 }
 
@@ -337,20 +337,20 @@ export interface ConfirmOptions {
 // ── Constants ──────────────────────────────────────────────────────────────
 
 export const INSTITUTION_NAMES: Record<InstitutionId, string> = {
-  government: 'Hội đồng lãnh đạo',
-  market: 'Hội Thương Nhân',
-  opposition: 'Phe đối lập',
-  community: 'Cộng đồng',
-  guard: 'Lực lượng bảo vệ',
+  government: 'Governing Council',
+  market: 'Merchants Guild',
+  opposition: 'Opposition',
+  community: 'Community Assembly',
+  guard: 'Guard Corps',
 }
 
 export const ROLE_OCCUPATIONS: Record<Role, string[]> = {
-  farmer:    ['Nông dân trồng lúa', 'Người trồng rau', 'Người nuôi gia súc', 'Người làm vườn'],
-  craftsman: ['Thợ rèn', 'Thợ mộc', 'Thợ dệt', 'Thợ gốm', 'Thợ xây'],
-  merchant:  ['Thương nhân', 'Chủ quán trọ', 'Người đổi tiền', 'Lái buôn'],
-  scholar:   ['Giáo viên', 'Thầy thuốc', 'Học giả', 'Triết gia', 'Thư ký'],
-  guard:     ['Lính canh', 'Dân quân', 'Tuần tra', 'Chỉ huy đội'],
-  leader:    ['Thành viên hội đồng', 'Trưởng khu', 'Trưởng lão', 'Quan chức'],
+  farmer:    ['Rice Farmer', 'Vegetable Grower', 'Livestock Keeper', 'Gardener'],
+  craftsman: ['Blacksmith', 'Carpenter', 'Weaver', 'Potter', 'Mason'],
+  merchant:  ['Trader', 'Innkeeper', 'Money Changer', 'Peddler'],
+  scholar:   ['Teacher', 'Physician', 'Scholar', 'Philosopher', 'Scribe'],
+  guard:     ['Sentry', 'Militia', 'Patrol Officer', 'Squad Leader'],
+  leader:    ['Council Member', 'District Chief', 'Elder', 'Official'],
 }
 
 export const ZONES = [
@@ -366,15 +366,15 @@ export const ZONES = [
 export type Zone = typeof ZONES[number]
 
 export const ZONE_LABELS: Record<string, string> = {
-  north_farm: 'Cánh đồng bắc',
-  south_farm: 'Cánh đồng nam',
-  workshop_district: 'Khu xưởng',
-  market_square: 'Chợ trung tâm',
-  scholar_quarter: 'Khu học giả',
-  residential_east: 'Khu dân cư đông',
-  residential_west: 'Khu dân cư tây',
-  guard_post: 'Đồn canh',
-  plaza: 'Quảng trường',
+  north_farm: 'North Farmlands',
+  south_farm: 'South Farmlands',
+  workshop_district: 'Workshop District',
+  market_square: 'Market Square',
+  scholar_quarter: 'Scholar Quarter',
+  residential_east: 'East Residential',
+  residential_west: 'West Residential',
+  guard_post: 'Guard Post',
+  plaza: 'Plaza',
 }
 
 export const FEED_ICONS: Record<string, string> = {

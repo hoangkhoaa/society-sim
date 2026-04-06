@@ -1,19 +1,19 @@
 // ── Enums & Literals ───────────────────────────────────────────────────────
 // ── Constants ──────────────────────────────────────────────────────────────
 export const INSTITUTION_NAMES = {
-    government: 'Hội đồng lãnh đạo',
-    market: 'Hội Thương Nhân',
-    opposition: 'Phe đối lập',
-    community: 'Cộng đồng',
-    guard: 'Lực lượng bảo vệ',
+    government: 'Governing Council',
+    market: 'Merchants Guild',
+    opposition: 'Opposition',
+    community: 'Community Assembly',
+    guard: 'Guard Corps',
 };
 export const ROLE_OCCUPATIONS = {
-    farmer: ['Nông dân trồng lúa', 'Người trồng rau', 'Người nuôi gia súc', 'Người làm vườn'],
-    craftsman: ['Thợ rèn', 'Thợ mộc', 'Thợ dệt', 'Thợ gốm', 'Thợ xây'],
-    merchant: ['Thương nhân', 'Chủ quán trọ', 'Người đổi tiền', 'Lái buôn'],
-    scholar: ['Giáo viên', 'Thầy thuốc', 'Học giả', 'Triết gia', 'Thư ký'],
-    guard: ['Lính canh', 'Dân quân', 'Tuần tra', 'Chỉ huy đội'],
-    leader: ['Thành viên hội đồng', 'Trưởng khu', 'Trưởng lão', 'Quan chức'],
+    farmer: ['Rice Farmer', 'Vegetable Grower', 'Livestock Keeper', 'Gardener'],
+    craftsman: ['Blacksmith', 'Carpenter', 'Weaver', 'Potter', 'Mason'],
+    merchant: ['Trader', 'Innkeeper', 'Money Changer', 'Peddler'],
+    scholar: ['Teacher', 'Physician', 'Scholar', 'Philosopher', 'Scribe'],
+    guard: ['Sentry', 'Militia', 'Patrol Officer', 'Squad Leader'],
+    leader: ['Council Member', 'District Chief', 'Elder', 'Official'],
 };
 export const ZONES = [
     'north_farm', 'south_farm',
@@ -25,15 +25,15 @@ export const ZONES = [
     'plaza',
 ];
 export const ZONE_LABELS = {
-    north_farm: 'Cánh đồng bắc',
-    south_farm: 'Cánh đồng nam',
-    workshop_district: 'Khu xưởng',
-    market_square: 'Chợ trung tâm',
-    scholar_quarter: 'Khu học giả',
-    residential_east: 'Khu dân cư đông',
-    residential_west: 'Khu dân cư tây',
-    guard_post: 'Đồn canh',
-    plaza: 'Quảng trường',
+    north_farm: 'North Farmlands',
+    south_farm: 'South Farmlands',
+    workshop_district: 'Workshop District',
+    market_square: 'Market Square',
+    scholar_quarter: 'Scholar Quarter',
+    residential_east: 'East Residential',
+    residential_west: 'West Residential',
+    guard_post: 'Guard Post',
+    plaza: 'Plaza',
 };
 export const FEED_ICONS = {
     nature: '🌿',

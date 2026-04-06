@@ -1,27 +1,27 @@
 # Technical Plan — Society Sim
 
-**Player role**: The Architect — thiết lập hệ thống qua chat, inject event, quan sát hậu quả.  
-**Core principle**: 10,000 NPC chạy rule-based. LLM chỉ ở nơi cần judgment.
+**Player role**: The Architect — establishes the system via chat, injects events, observes consequences.  
+**Core principle**: 10,000 NPCs run rule-based. LLM is used only where judgment is needed.
 
 ---
 
 ## Stack
 
-| Layer | Tech | Lý do |
-|-------|------|-------|
-| Language | **TypeScript** | Type safety cho ~15 data models phức tạp |
-| Build | **Vite** | `npx vite` là chạy, enable SharedArrayBuffer (COOP/COEP headers) |
+| Layer | Tech | Reason |
+|-------|------|--------|
+| Language | **TypeScript** | Type safety for ~15 complex data models |
+| Build | **Vite** | `npx vite` to run, enables SharedArrayBuffer (COOP/COEP headers) |
 | Render | PixiJS v8 (WebGL) | 10k sprites, heatmap, 60fps |
-| UI | Vanilla HTML/CSS overlay | Không cần framework |
-| Simulation | TS + Web Worker | Tách thread, SharedArrayBuffer zero-copy |
-| AI default | Gemini Flash 2.5 | Free tier, đủ dùng |
-| Entry | `index.html` | `npm run dev` để chạy, `npm run build` ra static files |
+| UI | Vanilla HTML/CSS overlay | No framework needed |
+| Simulation | TS + Web Worker | Separate thread, SharedArrayBuffer zero-copy |
+| AI default | Gemini Flash 2.5 | Free tier, sufficient |
+| Entry | `index.html` | `npm run dev` to run, `npm run build` for static files |
 
-**Tại sao TypeScript + Vite thay vì vanilla JS:**
-- 15+ data models với cross-references → TS bắt lỗi trước runtime
-- SharedArrayBuffer cần COOP/COEP headers → Vite tự config
-- Vite overhead: chỉ `package.json` + `vite.config.ts`, không webpack hell
-- Output vẫn là static files, deploy được trên GitHub Pages
+**Why TypeScript + Vite instead of vanilla JS:**
+- 15+ data models with cross-references → TS catches errors before runtime
+- SharedArrayBuffer requires COOP/COEP headers → Vite auto-configures
+- Vite overhead: only `package.json` + `vite.config.ts`, no webpack hell
+- Output is still static files, deployable on GitHub Pages
 
 ---
 
@@ -61,24 +61,24 @@ js/
 ### Constitution
 ```javascript
 {
-  // Kinh tế
+  // Economy
   gini_start: 0.31,            // 0=perfectly equal, 1=max inequality
   market_freedom: 0.6,         // 0=command economy, 1=laissez-faire
   resource_scarcity: 0.7,      // 0=abundant, 1=scarce
 
-  // Chính trị
+  // Politics
   state_power: 0.4,            // 0=minimal state, 1=totalitarian
   safety_net: 0.5,             // 0=none, 1=comprehensive
-  individual_rights_floor: 0.4,// mức tối thiểu NPC không thể bị vi phạm
+  individual_rights_floor: 0.4,// minimum floor NPC cannot be treated below
 
-  // Xã hội
-  base_trust: 0.58,            // trust ban đầu vào institutions
+  // Society
+  base_trust: 0.58,            // initial trust in institutions
   network_cohesion: 0.5,       // 0=fragmented, 1=tight-knit
 
-  // Giá trị ưu tiên (xếp hạng 1–4, ảnh hưởng worldview seed)
+  // Value priorities (rank 1–4, influences worldview seed)
   value_priority: ['security', 'equality', 'freedom', 'growth'],
 
-  // Tỉ lệ role trong dân số (tổng = 1.0)
+  // Role ratios in the population (sum = 1.0)
   role_ratios: {
     farmer:    0.35,
     craftsman: 0.20,
@@ -91,8 +91,8 @@ js/
 ```
 
 **Presets:**
-| | Bắc Âu | Tư bản | XHCN |
-|--|--------|--------|------|
+| | Nordic | Free Market | Planned Economy |
+|--|--------|-------------|-----------------|
 | gini_start | 0.28 | 0.48 | 0.18 |
 | state_power | 0.65 | 0.25 | 0.90 |
 | safety_net | 0.80 | 0.20 | 0.75 |
@@ -118,10 +118,10 @@ const VALUE_WORLDVIEW_BIAS = {
 {
   id: number,
   name: string,
-  age: number,                  // tăng mỗi năm sim
+  age: number,                  // increases each sim-year
   gender: 'male'|'female',
 
-  // Ngoại hình (cơ bản, generate 1 lần lúc init)
+  // Appearance (basic, generated once at init)
   appearance: {
     height:    'short'|'average'|'tall',
     build:     'slim'|'average'|'sturdy',
@@ -129,22 +129,22 @@ const VALUE_WORLDVIEW_BIAS = {
     skin:      'light'|'medium'|'dark',
   },
 
-  // Vòng đời
+  // Lifecycle
   lifecycle: {
     is_alive:       boolean,
     death_cause:    'natural'|'accident'|'disease'|'violence'|null,
     death_tick:     number|null,
     spouse_id:      number|null,
     children_ids:   number[],
-    fertility:      number,     // 0–1, giảm theo tuổi
+    fertility:      number,     // 0–1, decreases with age
   },
 
-  // Nghề nghiệp (cụ thể hơn role)
-  occupation: string,           // 'Thợ rèn', 'Nông dân trồng lúa', ...
+  // Occupation (more specific than role)
+  occupation: string,           // 'Blacksmith', 'Rice Farmer', ...
 
   // Narrative
-  description: string,          // static, template-based lúc init
-  daily_thought: string,        // dynamic, LLM generate khi click hoặc significant event
+  description: string,          // static, template-based at init
+  daily_thought: string,        // dynamic, LLM-generated on click or significant event
   last_thought_tick: number,
 
   zone: string,
@@ -153,13 +153,13 @@ const VALUE_WORLDVIEW_BIAS = {
   // Role
   role: 'farmer'|'craftsman'|'scholar'|'merchant'|'guard'|'leader',
 
-  // Needs (0–100, cao = áp lực cao)
+  // Needs (0–100, high = high pressure)
   hunger: number,
   exhaustion: number,
   isolation: number,
   fear: number,
 
-  // Worldview (0–1, fixed tại init, drift chậm theo thời gian)
+  // Worldview (0–1, fixed at init, drifts slowly over time)
   worldview: {
     collectivism: number,    // 0=individualist, 1=collectivist
     authority_trust: number, // 0=anti-authority, 1=obedient
@@ -167,30 +167,30 @@ const VALUE_WORLDVIEW_BIAS = {
     time_preference: number  // 0=short-term, 1=long-term
   },
 
-  // Computed state (cập nhật mỗi tick)
+  // Computed state (updated each tick)
   stress: number,            // f(needs) — nonlinear
   happiness: number,         // f(stress, relative status, memory, trust)
   action_state: 'working'|'resting'|'socializing'|'organizing'|'fleeing'|'complying',
 
-  // Thresholds — cố định từ init
-  stress_threshold: number,  // stress > này → rời routine, chọn coping action
-  collective_action_threshold: number, // % hàng xóm cần hành động trước
-  adaptability: number,      // tốc độ thay đổi worldview (0–1)
+  // Thresholds — fixed at init
+  stress_threshold: number,  // stress > this → leaves routine, chooses coping action
+  collective_action_threshold: number, // % of neighbors needed to act first
+  adaptability: number,      // rate of worldview change (0–1)
 
-  // Memory — 10 events gần nhất
+  // Memory — 10 most recent events
   memory: [{
     event_id: string,
     type: 'trust_broken'|'helped'|'harmed'|'crisis'|'windfall',
-    emotional_weight: number,  // -100 đến +100
+    emotional_weight: number,  // -100 to +100
     tick: number
   }],
 
   // Social network
-  strong_ties: number[],     // 5–15 NPC ids (gia đình, bạn thân)
-  weak_ties: number[],       // 50–150 NPC ids (hàng xóm, đồng nghiệp)
-  influence_score: number,   // network centrality — computed sau khi build graph
+  strong_ties: number[],     // 5–15 NPC ids (family, close friends)
+  weak_ties: number[],       // 50–150 NPC ids (neighbors, coworkers)
+  influence_score: number,   // network centrality — computed after building graph
 
-  // Trust per institution — HAI CHIỀU
+  // Trust per institution — TWO-DIMENSIONAL
   trust_in: {
     government: { competence: number, intention: number },
     market:     { competence: number, intention: number },
@@ -200,10 +200,10 @@ const VALUE_WORLDVIEW_BIAS = {
   },
 
   // Cascade mechanics
-  wealth: number,            // tài nguyên cá nhân
+  wealth: number,            // personal resources
   grievance: number,         // 0–100
   dissonance_acc: number,    // worldview pressure accumulator
-  susceptible: boolean       // đang dễ bị thay đổi worldview
+  susceptible: boolean       // currently open to worldview change
 }
 ```
 
@@ -216,7 +216,7 @@ const VALUE_WORLDVIEW_BIAS = {
   name: string,
 
   resources: number,
-  legitimacy: number,        // 0–1, ảnh hưởng trust của dân
+  legitimacy: number,        // 0–1, influences public trust
   power: number,             // 0–1, effective power (legitimacy × resources)
 
   worldview: { collectivism, authority_trust, risk_tolerance, time_preference },
@@ -235,8 +235,8 @@ const VALUE_WORLDVIEW_BIAS = {
 
   // LLM throttle
   last_decided_tick: number,
-  decide_interval: number,   // ticks. Mặc định = 720 (30 ngày sim)
-  force_decide: boolean      // true khi major event → override interval
+  decide_interval: number,   // ticks. Default = 720 (30 sim-days)
+  force_decide: boolean      // true on major event → overrides interval
 }
 ```
 
@@ -255,18 +255,18 @@ const VALUE_WORLDVIEW_BIAS = {
   duration_ticks: number,
   elapsed_ticks: number,
 
-  // Effects mỗi tick (normalized per NPC trong zone)
+  // Effects per tick (normalized per NPC in zone)
   effects_per_tick: {
     food_stock_delta: number,    // units of food
     stress_delta: number,        // 0–100 scale
     trust_delta: number,         // applied to trust_in.government
-    displacement_chance: number  // % NPC rời zone mỗi tick
+    displacement_chance: number  // % NPCs leaving zone per tick
   },
 
   source: 'player'|'institution'|'natural'|'cascade',
   narrative_open: string,
 
-  // Cascade triggers — check mỗi tick
+  // Cascade triggers — checked each tick
   triggers: [{
     condition: (worldState) => boolean,
     spawn: Partial<Event>
@@ -281,12 +281,12 @@ const VALUE_WORLDVIEW_BIAS = {
 {
   id: string,
   from: string,
-  to: string,               // institution id hoặc 'all'
+  to: string,               // institution id or 'all'
   channel: 'public'|'private'|'signal'|'rumor',
   type: 'proposal'|'warning'|'commitment'|'info'|'appeal'|'ultimatum',
   content: string,
-  public_cover: string,     // điều họ nói với dân (có thể khác content)
-  credibility: number,      // track record của sender
+  public_cover: string,     // what they say to citizens (may differ from content)
+  credibility: number,      // sender's track record
   can_leak: boolean,
   tick: number
 }
@@ -297,7 +297,7 @@ const VALUE_WORLDVIEW_BIAS = {
 ### WorldState
 ```javascript
 {
-  tick: number,             // 1 tick = 1 giờ sim
+  tick: number,             // 1 tick = 1 sim-hour
   day: number,
   year: number,
 
@@ -311,14 +311,14 @@ const VALUE_WORLDVIEW_BIAS = {
     food: number,           // 0–100 (% of 30-day supply met)
     stability: number,      // 0–100 (weighted composite)
     trust: number,          // avg trust_in.government.intention across population
-    gini: number,           // live gini của wealth distribution
+    gini: number,           // live gini of wealth distribution
     political_pressure: number // 0–100
   },
 
   narrative_log: NarrativeEntry[],
 
   // Constitutional drift tracking
-  drift_score: number,      // so sánh với initial params
+  drift_score: number,      // compared against initial params
   crisis_pending: boolean
 }
 ```
@@ -327,7 +327,7 @@ const VALUE_WORLDVIEW_BIAS = {
 
 ## Human Simulation Formulas
 
-### 1. NPC Init từ Constitution
+### 1. NPC Init from Constitution
 
 ```javascript
 function createNPC(id, constitution) {
@@ -341,7 +341,7 @@ function createNPC(id, constitution) {
     return acc
   }, {})
 
-  const role_bonus = ROLE_WORLDVIEW_BONUS[role]  // xem bảng bên dưới
+  const role_bonus = ROLE_WORLDVIEW_BONUS[role]  // see table below
 
   const worldview = {
     collectivism:    clamp(0.5 + (value_bias.collectivism||0) + (role_bonus.collectivism||0) + gaussian(0, 0.15), 0, 1),
@@ -350,7 +350,7 @@ function createNPC(id, constitution) {
     time_preference: clamp(constitution.safety_net * 0.5 + (value_bias.time_preference||0) + (role_bonus.time_preference||0) + gaussian(0, 0.15), 0, 1),
   }
 
-  // Trust ban đầu từ constitution
+  // Initial trust from constitution
   const base_trust = constitution.base_trust
   const trust_in = Object.fromEntries(
     ['government','market','opposition','community','guard'].map(inst => [
@@ -408,7 +408,7 @@ const ROLE_WORLDVIEW_BONUS = {
 
 ---
 
-### 2. Needs Decay (mỗi tick = 1 giờ sim)
+### 2. Needs Decay (each tick = 1 sim-hour)
 
 ```javascript
 function decayNeeds(npc, state) {
@@ -420,12 +420,12 @@ function decayNeeds(npc, state) {
   npc.isolation  += 0.2
   npc.fear       += violence_active ? 2.0 : -0.3
 
-  // Giảm theo activity
+  // Reduce by activity
   if (npc.action_state === 'working' && food_available) npc.hunger -= 2.0
   if (npc.action_state === 'resting')                   npc.exhaustion -= 3.0
   if (npc.action_state === 'socializing') {
     npc.isolation -= 2.5
-    if (npc.strong_ties.length < 3) npc.isolation += 1.0  // cô đơn dù đông người
+    if (npc.strong_ties.length < 3) npc.isolation += 1.0  // lonely even in a crowd
   }
 
   npc.hunger     = clamp(npc.hunger,     0, 100)
@@ -441,20 +441,20 @@ function decayNeeds(npc, state) {
 
 ```javascript
 function computeStress(npc) {
-  // Power function: nhỏ thì OK, lớn thì panic
+  // Power function: small is OK, large causes panic
   const h = Math.pow(npc.hunger     / 100, 1.6) * 0.35
   const e = Math.pow(npc.exhaustion / 100, 1.3) * 0.20
   const i = Math.pow(npc.isolation  / 100, 1.4) * 0.20
-  const f = Math.pow(npc.fear       / 100, 1.8) * 0.25  // fear khuếch đại nhất
+  const f = Math.pow(npc.fear       / 100, 1.8) * 0.25  // fear amplifies most
 
-  // Identity stress: bị đối xử không xứng status
+  // Identity stress: treated below status expectations
   const identity = computeIdentityStress(npc) * 0.10
 
   return clamp((h + e + i + f + identity) * 100, 0, 100)
 }
 
 function computeIdentityStress(npc) {
-  // Cao khi: wealth thấp hơn expected cho role, hoặc bị disrespected
+  // High when: wealth below role expectation, or disrespected
   const role_expected_wealth = ROLE_WEALTH_EXPECTATION[npc.role]
   return Math.max(0, (role_expected_wealth - npc.wealth) / role_expected_wealth)
 }
@@ -462,25 +462,25 @@ function computeIdentityStress(npc) {
 
 ---
 
-### 4. Happiness (tương đối, không tuyệt đối)
+### 4. Happiness (relative, not absolute)
 
 ```javascript
 function computeHappiness(npc, state) {
-  // Base từ inverse stress
+  // Base from inverse stress
   const stress_penalty = npc.stress * 0.55
 
-  // So sánh với hàng xóm — relative deprivation
+  // Compare with neighbors — relative deprivation
   const neighbor_avg = avgWealth(npc.weak_ties, state.npcs)
   const relative_status = clamp((npc.wealth - neighbor_avg) / 100, -1, 1) * 12
 
-  // Bất bình đẳng — nhạy cảm theo worldview
+  // Inequality — sensitive based on worldview
   const inequality_pain = state.macro.gini * (npc.worldview.collectivism * 0.5 + 0.2) * 18
 
-  // Memory effect (events gần đây)
+  // Memory effect (recent events)
   const memory_sum = npc.memory.reduce((s, m) => s + m.emotional_weight, 0)
   const memory_effect = clamp(memory_sum / 10, -15, 15)
 
-  // Trust bonus — sống trong xã hội mình tin tưởng
+  // Trust bonus — living in a society you trust
   const avg_trust = Object.values(npc.trust_in)
     .reduce((s, t) => s + (t.competence + t.intention) / 2, 0) / 5
   const trust_bonus = avg_trust * 8
@@ -495,9 +495,9 @@ function computeHappiness(npc, state) {
 
 ```javascript
 function selectAction(npc, state) {
-  // Dưới threshold: routine bình thường
+  // Below threshold: normal routine
   if (npc.stress < npc.stress_threshold) {
-    return normalRoutine(npc, state)  // working/resting/socializing theo giờ
+    return normalRoutine(npc, state)  // working/resting/socializing by time of day
   }
 
   const w = npc.worldview
@@ -525,25 +525,25 @@ function selectAction(npc, state) {
 function updateGrievance(npc, state) {
   let delta = 0
 
-  // Đói gây bất mãn
+  // Hunger causes discontent
   if (npc.hunger > 60) delta += (npc.hunger - 60) * 0.08
 
-  // Relative deprivation — thấy người khác có nhiều hơn
+  // Relative deprivation — seeing others have more
   const neighbor_avg = avgWealth(npc.weak_ties, state.npcs)
   if (npc.wealth < neighbor_avg) delta += (neighbor_avg - npc.wealth) / 200
 
-  // Trust broken — spike lớn
+  // Trust broken — large spike
   const recent_betrayal = npc.memory.find(m => m.type === 'trust_broken' && state.tick - m.tick < 720)
   if (recent_betrayal) delta += Math.abs(recent_betrayal.emotional_weight) * 0.05
 
-  // Giảm khi được giúp
+  // Reduced when helped
   const recent_help = npc.memory.find(m => m.type === 'helped' && state.tick - m.tick < 240)
   if (recent_help) delta -= 4
 
-  // Social support giảm grievance
+  // Social support reduces grievance
   delta -= (npc.strong_ties.length / 15) * 1.5
 
-  // Decay chậm khi điều kiện cải thiện
+  // Slow decay when conditions improve
   if (npc.happiness > 65) delta -= 0.8
 
   npc.grievance = clamp(npc.grievance + delta, 0, 100)
@@ -582,22 +582,22 @@ function checkCollectiveAction(npc, state) {
 
 ---
 
-### 8. Perception (cùng event, nghe khác nhau)
+### 8. Perception (same event, heard differently)
 
 ```javascript
 function perceiveEvent(npc, event, sender_institution_id) {
   const trust = npc.trust_in[sender_institution_id]
   const sender_trust = (trust.competence + trust.intention) / 2
 
-  // Stress khuếch đại tiêu cực
+  // Stress amplifies negatives
   const stress_amp = 1 + (npc.stress / 100) * 0.55
 
-  // Trust factor: không tin → khuếch đại; tin → giảm nhẹ
+  // Trust factor: distrust → amplifies; trust → softens
   const trust_factor = sender_trust < 0.35 ? 1.45
                      : sender_trust > 0.70 ? 0.80
                      : 1.0
 
-  // Worldview alignment: tin những gì khớp beliefs
+  // Worldview alignment: believe what matches your beliefs
   const alignment = eventAlignsWorldview(npc, event)
   const alignment_factor = alignment ? 1.25 : 0.65
 
@@ -607,22 +607,22 @@ function perceiveEvent(npc, event, sender_institution_id) {
 
 ---
 
-### 9. Info Distortion qua Network
+### 9. Info Distortion through Network
 
 ```javascript
 function distortMessage(message, sender_npc) {
-  const emotional_lean = (sender_npc.grievance - 50) / 100  // -0.5 đến +0.5
+  const emotional_lean = (sender_npc.grievance - 50) / 100  // -0.5 to +0.5
   const noise = (Math.random() - 0.5) * 0.15
 
   return {
     severity: clamp(message.severity * 0.85 + emotional_lean * 0.3 + noise, 0, 1),
-    // content decay: giữ lại ~85% nội dung, cảm xúc sender thêm vào
+    // content decay: ~85% of content retained, sender's emotion added
     hops:     message.hops + 1
-    // Sau 4+ hops: content gốc ~45%, emotion ~55%
+    // After 4+ hops: original content ~45%, emotion ~55%
   }
 }
 
-// Tốc độ lan: tin tiêu cực × 2 so với tin tích cực
+// Spread speed: negative news × 2 compared to positive news
 function spreadSpeed(message) {
   return message.severity > 0.5 ? 2.0 : 1.0
 }
@@ -640,7 +640,7 @@ function updateTrust(npc, institution_id, event_type, magnitude = 1.0) {
     promise_kept:    { competence: +0.03, intention: +0.02 },
     crisis_handled:  { competence: +0.05, intention: +0.03 },
     promise_broken:  { competence: -0.06, intention: -0.08 },  // asymmetric
-    corruption:      { competence: -0.05, intention: -0.20 },  // intention gần như permanent
+    corruption:      { competence: -0.05, intention: -0.20 },  // intention nearly permanent
     helped_me:       { competence: +0.02, intention: +0.04 },
     harmed_me:       { competence: -0.08, intention: -0.12 },
     silent_in_crisis:{ competence: -0.04, intention: -0.06 }
@@ -650,8 +650,8 @@ function updateTrust(npc, institution_id, event_type, magnitude = 1.0) {
   t.competence = clamp(t.competence + d.competence * magnitude, 0, 1)
   t.intention  = clamp(t.intention  + d.intention  * magnitude, 0, 1)
 
-  // Nếu intention đã bị phá xuống 0: recovery cap tại 0.35
-  // "Một lần mất niềm tin vào lương tâm, không bao giờ hoàn toàn lấy lại"
+  // Once intention is broken to near 0: recovery capped at 0.35
+  // "Once integrity is lost, it is never fully restored"
   if (t.intention < 0.1 && d.intention > 0) {
     t.intention = Math.min(t.intention + d.intention * magnitude, 0.35)
   }
@@ -664,7 +664,7 @@ function updateTrust(npc, institution_id, event_type, magnitude = 1.0) {
 
 ```javascript
 function updateWorldview(npc, state) {
-  // Tích lũy dissonance
+  // Accumulate dissonance
   let d_delta = 0
   if (npc.stress > npc.stress_threshold)
     d_delta += (npc.stress - npc.stress_threshold) * 0.08
@@ -672,14 +672,14 @@ function updateWorldview(npc, state) {
     d_delta += 10
   if (npc.memory.some(m => m.type === 'windfall' && state.tick - m.tick < 72))
     d_delta -= 4
-  d_delta -= (npc.strong_ties.length / 15) * 2  // social support là anchor
+  d_delta -= (npc.strong_ties.length / 15) * 2  // social support is an anchor
 
   npc.dissonance_acc = clamp(npc.dissonance_acc + d_delta, 0, 100)
   npc.susceptible    = npc.dissonance_acc > 60
 
   if (!npc.susceptible) return
 
-  // Khi susceptible: drift về worldview của strong ties có influence cao nhất
+  // When susceptible: drift toward worldview of most influential strong ties
   const influencers = npc.strong_ties
     .map(id => state.npcs[id])
     .sort((a, b) => b.influence_score - a.influence_score)
@@ -691,11 +691,11 @@ function updateWorldview(npc, state) {
     npc.worldview[dim] = clamp(npc.worldview[dim] + pull, 0, 1)
   }
 
-  // Không có ai tiếp cận → drift về extreme của cluster (mặc định)
+  // No one reaches them → drift toward cluster extreme (default)
   if (influencers.every(n => n.dissonance_acc < 30)) {
-    // cluster ổn định → pull về center
+    // stable cluster → pull toward center
   } else {
-    // cluster cũng bất ổn → mutual radicalization
+    // cluster also unstable → mutual radicalization
     for (const dim of ['collectivism', 'authority_trust']) {
       npc.worldview[dim] = npc.worldview[dim] > 0.5
         ? clamp(npc.worldview[dim] + 0.002, 0, 1)
@@ -713,7 +713,7 @@ function updateWorldview(npc, state) {
 function computeProductivity(npc, state) {
   const motivation = 0.5 + (npc.happiness / 100) * 0.5
 
-  // Perceived fairness: được nhận theo đóng góp không?
+  // Perceived fairness: compensated proportional to contribution?
   const expected = ROLE_WEALTH_EXPECTATION[npc.role]
   const fairness = clamp(npc.wealth / expected, 0, 1.5)
   const fairness_bonus = (fairness - 1.0) * 0.2  // ±20%
@@ -726,13 +726,13 @@ function computeProductivity(npc, state) {
 
 ---
 
-### 13. Macro Stats (emerge từ individuals)
+### 13. Macro Stats (emerging from individuals)
 
 ```javascript
 function computeMacroStats(state) {
   const npcs = state.npcs
 
-  // Food: % nhu cầu được đáp ứng
+  // Food: % of needs met
   const daily_production = npcs
     .filter(n => n.role === 'farmer')
     .reduce((s, n) => s + computeProductivity(n, state), 0) / 1000
@@ -749,7 +749,7 @@ function computeMacroStats(state) {
     / npcs.length * 200, 0, 100
   )
 
-  // Trust (avg government intention — phản ánh legitimacy)
+  // Trust (avg government intention — reflects legitimacy)
   const trust = npcs.reduce((s, n) => s + n.trust_in.government.intention, 0) / npcs.length * 100
 
   // Stability (weighted composite)
@@ -785,7 +785,7 @@ function computeDriftScore(state) {
     (m.political_pressure > 70 ? 0.20 : 0) +
     (m.stability < 30 ? 0.15 : 0)
   )
-  // Crisis khi drift > 0.35 trong 30+ ngày liên tiếp
+  // Crisis when drift > 0.35 for 30+ consecutive days
 }
 ```
 
@@ -802,12 +802,12 @@ function buildNetwork(npcs, constitution) {
   }
 
   for (const npc of npcs) {
-    // STRONG TIES: cùng zone + cùng/gần role → gia đình, đồng nghiệp thân
+    // STRONG TIES: same zone + same/similar role → family, close colleagues
     const same_zone = npcs.filter(n => n.id !== npc.id && n.zone === npc.zone)
     const same_role = same_zone.filter(n => n.role === npc.role)
     const diff_role = same_zone.filter(n => n.role !== npc.role)
 
-    // Ưu tiên cùng role, lấp đầy bằng khác role
+    // Prioritize same role, fill with different role
     const strong_pool = [...same_role, ...diff_role]
     const strong_count = Math.floor(rand(5, 15) * constitution.network_cohesion + 3)
     const strong = pickRandom(strong_pool, Math.min(strong_count, strong_pool.length))
@@ -824,7 +824,7 @@ function buildNetwork(npcs, constitution) {
     pickRandom(weak_pool, Math.min(weak_count, weak_pool.length))
       .forEach(n => {
         graph.get(npc.id).weak.add(n.id)
-        // weak ties không nhất thiết bidirectional
+        // weak ties not necessarily bidirectional
       })
   }
 
@@ -856,7 +856,7 @@ const PROVIDERS = {
       contents: [{ role: 'user', parts: [{ text: user }] }]
     }),
     parseResponse: (json) => json.candidates[0].content.parts[0].text,
-    authInUrl: true  // key trong URL, không phải header
+    authInUrl: true  // key in URL, not header
   },
   anthropic: {
     defaultModel: 'claude-haiku-4-5-20251001',
@@ -891,17 +891,17 @@ async function callAI(config, systemPrompt, userMessage, opts = {}) {
 ```javascript
 // ai/god-agent.js
 
-// State của God Agent (persist trong session)
+// God Agent state (persists for session)
 const godState = {
-  conversation_history: [],   // full history để agent nhớ context
-  constitution: null,         // sau khi setup xong
+  conversation_history: [],   // full history for agent memory
+  constitution: null,         // set after setup is complete
   world_setup_done: false
 }
 
 async function setupWorld(aiConfig, onMessage) {
-  // Cuộc trò chuyện đầu tiên → extract constitution
-  // onMessage(text) stream từng phần ra UI
-  // Trả về Constitution object khi user confirm
+  // First conversation → extract constitution
+  // onMessage(text) streams each part to the UI
+  // Returns Constitution object when user confirms
 }
 
 async function handlePlayerChat(message, worldState, aiConfig) {
@@ -917,13 +917,13 @@ async function handlePlayerChat(message, worldState, aiConfig) {
 
   godState.conversation_history.push({ role: 'assistant', content: response })
 
-  // Parse JSON từ response
+  // Parse JSON from response
   const parsed = JSON.parse(extractJSON(response))
   return parsed  // GodResponse object
 }
 
 function buildWorldContext(state) {
-  // Compress: chỉ gửi những gì agent cần
+  // Compress: only send what the agent needs
   return JSON.stringify({
     day: state.day, year: state.year,
     macro: state.macro,
@@ -933,7 +933,7 @@ function buildWorldContext(state) {
       last_decision: i.decisions.at(-1)?.action
     })),
     stress_distribution: computeStressDistribution(state.npcs),  // histogram
-    top_grievances: getTopGrievanceGroups(state.npcs)             // top 3 nhóm bất mãn
+    top_grievances: getTopGrievanceGroups(state.npcs)             // top 3 most discontented groups
   })
 }
 ```
@@ -941,10 +941,10 @@ function buildWorldContext(state) {
 ### Rate Limiting
 ```javascript
 const AI_SCHEDULE = {
-  god_agent:           'on_demand',          // mỗi player message
-  institution_decide:  'every_720_ticks',    // 30 ngày sim, hoặc khi force_decide=true
+  god_agent:           'on_demand',          // every player message
+  institution_decide:  'every_720_ticks',    // 30 sim-days, or when force_decide=true
   narrative:           'on_significant',     // stress spike >15, cascade, player event
-  npc_monologue:       'on_click'            // khi player click NPC
+  npc_monologue:       'on_click'            // when player clicks an NPC
 }
 
 // Significant event threshold:
@@ -957,11 +957,11 @@ function isSignificant(event, state) {
   )
 }
 
-// Token estimate per sim-hour (real):
+// Token estimate per sim-hour (real time):
 // God agent:        ~1500 tokens × ~3 calls = 4,500
 // Institutions:     ~1200 tokens × ~2 calls = 2,400
 // Narrative:        ~400 tokens  × ~5 calls = 2,000
-// Total: ~9k tokens/hour → Gemini free: 1M tokens/day → OK
+// Total: ~9k tokens/hour → Gemini free: 1M tokens/day → sufficient
 ```
 
 ---
@@ -974,27 +974,27 @@ worker.postMessage({ type: 'INIT',             constitution })
 worker.postMessage({ type: 'INJECT_EVENT',     event })
 worker.postMessage({ type: 'SET_SPEED',        speed })  // 1|3|10|max
 worker.postMessage({ type: 'INST_DECISION',    decision, institution_id })
-// ↑ main thread gọi LLM xong, gửi kết quả về worker
+// ↑ main thread calls LLM, sends result back to worker
 
 // ── Worker → Main ─────────────────────────────────────
-// Mỗi tick: chỉ gửi diff
+// Each tick: send diffs only
 self.postMessage({
   type: 'TICK',
   day, year,
   macro,
-  npc_diffs: [{ id, stress, action_state, x, y, grievance }],  // chỉ NPC thay đổi
+  npc_diffs: [{ id, stress, action_state, x, y, grievance }],  // only changed NPCs
   new_cascade_events: []
 })
 
-// Khi significant event:
+// On significant event:
 self.postMessage({
   type: 'SIGNIFICANT_EVENT',
   event,
-  institutions_to_decide: ['government', 'market']  // ai cần react
+  institutions_to_decide: ['government', 'market']  // who needs to react
 })
-// → Main thread nhận → gọi LLM cho từng institution → gửi INST_DECISION về worker
+// → Main thread receives → calls LLM for each institution → sends INST_DECISION back to worker
 
-// Khi constitutional crisis:
+// On constitutional crisis:
 self.postMessage({ type: 'CONSTITUTIONAL_CRISIS', drift_score, institution_demands })
 ```
 
@@ -1004,42 +1004,42 @@ self.postMessage({ type: 'CONSTITUTIONAL_CRISIS', drift_score, institution_deman
 
 ```javascript
 // 3 zoom levels
-// zoom < 0.4:  heatmap only — RenderTexture, update mỗi 10 ticks
+// zoom < 0.4:  heatmap only — RenderTexture, updates every 10 ticks
 // zoom 0.4-0.7: cluster mode — 1 sprite per zone-group
-// zoom > 0.7:  individual NPCs trong viewport only
+// zoom > 0.7:  individual NPCs in viewport only
 
 // Heatmap color mapping (avg stress per zone):
-// stress 0–25:  #2a5820 (xanh — calm)
-// stress 25–45: #8a7a30 (vàng — stress)
-// stress 45–65: #8a3020 (đỏ — unrest)
-// stress 65–85: #502080 (tím — radicalize)
-// stress 85+:   #101010 (hitam — collapse)
+// stress 0–25:  #2a5820 (green — calm)
+// stress 25–45: #8a7a30 (yellow — stress)
+// stress 45–65: #8a3020 (red — unrest)
+// stress 65–85: #502080 (purple — radicalize)
+// stress 85+:   #101010 (black — collapse)
 
-// Event epicenter: ripple animation khi inject
-// Flow arrows: hướng di chuyển của NPC trong zone
+// Event epicenter: ripple animation on inject
+// Flow arrows: direction of NPC movement in zone
 ```
 
 ---
 
 ## Build Order
 
-### Phase 1 — Nói chuyện được với thế giới
+### Phase 1 — Can Talk to the World
 - [x] `index.html` layout (topbar + map placeholder + feed + chat)
 - [x] `css/main.css` dark theme
-- [x] `ai/provider.js` — callAI cho 3 providers
+- [x] `ai/provider.js` — callAI for 3 providers
 - [x] `ai/god-agent.js` — setupWorld + handlePlayerChat
 - [x] `sim/constitution.js` — schema + presets + validation
-- [x] Chat UI: nhập key, onboarding conversation, world init
-- [x] **Milestone**: nhập key Gemini, chat để tạo constitution, sim khởi tạo
+- [x] Chat UI: enter key, onboarding conversation, world init
+- [x] **Milestone**: enter Gemini key, chat to create constitution, sim initializes
 
-### Phase 2 — Simulation sống
+### Phase 2 — Living Simulation
 - [x] `sim/npc.js` — createNPC, full formulas (1–13)
 - [x] `sim/network.js` — buildNetwork
 - [x] `sim/events.js` — event queue + effects
 - [x] `sim/engine.js` — tick, initWorld, injectEvent, computeMacroStats
 - [x] `workers/sim-worker.js` — tick loop + messaging
-- [x] `render/map.js` — PixiJS heatmap cơ bản
-- [x] **Milestone**: sim chạy 1k NPC, heatmap hiện stress, inject event từ chat
+- [x] `render/map.js` — basic PixiJS heatmap
+- [x] **Milestone**: sim runs 1k NPCs, heatmap shows stress, inject event from chat
 
 ### Phase 3 — Institutions + Narrative
 - [ ] `sim/institutions.js` — rule-based behavior
@@ -1047,11 +1047,11 @@ self.postMessage({ type: 'CONSTITUTIONAL_CRISIS', drift_score, institution_deman
 - [ ] `ai/narrative-agent.js` — event log writing
 - [ ] `render/feed.js` — narrative feed UI
 - [ ] Inter-institution communication
-- [ ] **Milestone**: institution phản ứng với event, narrative feed sống
+- [ ] **Milestone**: institutions react to events, narrative feed live
 
 ### Phase 4 — Scale + Polish
-- [ ] Scale lên 10k NPC (Worker optimization)
+- [ ] Scale to 10k NPCs (Worker optimization)
 - [ ] PixiJS zoom levels (heatmap → clusters → individuals)
 - [ ] NPC spotlight + LLM monologue
 - [ ] Constitutional crisis screen
-- [ ] **Milestone**: 10k NPC smooth, constitutional crisis trigger
+- [ ] **Milestone**: 10k NPCs smooth, constitutional crisis triggers

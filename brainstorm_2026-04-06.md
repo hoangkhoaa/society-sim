@@ -1,18 +1,18 @@
 # Brainstorm Session — 2026-04-06
 
-## Mục tiêu
+## Objective
 
-Society simulation mà **con người là nền tảng**, không phải map hay UI.  
-Dùng để hoạch định chính sách — thấy được hậu quả khi chọn policy X.  
-Scale đến 10,000 người. Event-driven. Không heavy UI.
+A society simulation where **people are the foundation**, not the map or the UI.  
+Built for policy analysis — seeing consequences when choosing policy X.  
+Scale to 10,000 people. Event-driven. No heavy UI.
 
 ---
 
 ## Core Philosophy
 
-> Người ta không phản ứng với sự thật — họ phản ứng với *phiên bản sự thật* được lọc qua worldview và mạng xã hội của họ.
+> People don't react to the truth — they react to *their version of the truth*, filtered through their worldview and social network.
 
-Simulation không dùng if-then cứng. Mọi hành động là kết quả của:
+The simulation doesn't use rigid if-then logic. Every action is the result of:
 
 ```
 action = f(stress, worldview, social_pressure, perceived_reality)
@@ -20,141 +20,141 @@ action = f(stress, worldview, social_pressure, perceived_reality)
 
 ---
 
-## 1. Con người được định nghĩa bởi gì?
+## 1. What Defines a Person?
 
-### Needs (áp lực tức thời)
+### Needs (immediate pressure)
 ```
 needs_stress    = hunger + exhaustion + isolation
 threat_stress   = unsafe + economic_fear
-identity_stress = bị đối xử không xứng với status
+identity_stress = being treated below one's status
 ```
 
-Stress tích lũy dần. Khi vượt threshold cá nhân → trigger action.  
-Không phải ngay lập tức — đây là lý do xã hội ổn định lâu rồi sụp nhanh.
+Stress accumulates gradually. When it crosses an individual threshold → triggers action.  
+Not immediately — this is why societies are stable for a long time, then collapse quickly.
 
-### Worldview (bộ lọc hành động)
-Quyết định NPC chọn *loại* phản ứng nào khi stress vượt ngưỡng:
+### Worldview (action filter)
+Determines what *type* of response an NPC chooses when stress exceeds the threshold:
 
-| Trục | Thấp | Cao |
-|------|------|-----|
-| Collectivist vs Individualist | Tự lo, tích trữ | Chờ cộng đồng giải quyết |
-| Authority orientation | Tổ chức phản đối | Tuân theo dù bất mãn |
-| Risk tolerance | Thụ động | Hành động sớm |
-| Time preference | Tiêu ngay | Dành dụm, tính xa |
+| Axis | Low | High |
+|------|-----|------|
+| Collectivist vs Individualist | Self-reliant, stockpile | Wait for the community to solve it |
+| Authority orientation | Organize resistance | Comply despite discontent |
+| Risk tolerance | Passive | Act early |
+| Time preference | Spend now | Save, plan ahead |
 
-### Memory (lịch sử cá nhân)
-- 5–10 event gần nhất, weighted by emotional intensity
-- Bị phản bội → threshold trust giảm vĩnh viễn một chút
-- Được giúp khi khó → loyalty tăng với người đó
+### Memory (personal history)
+- 5–10 most recent events, weighted by emotional intensity
+- Betrayed → trust threshold drops permanently a little
+- Helped in need → loyalty increases toward that person
 
-### Traits (cố định từ khi sinh)
-- adaptability — thay đổi worldview nhanh hay chậm
-- social_reach — network rộng hay hẹp
-- threshold — cần bao nhiêu stress mới hành động
+### Traits (fixed from birth)
+- adaptability — how quickly worldview changes
+- social_reach — narrow or wide network
+- threshold — how much stress before action
 
 ---
 
-## 2. Cơ chế thích nghi
+## 2. Adaptation Mechanism
 
-Người ta **không thay đổi identity trước** — họ thay đổi hành động trước, identity sau (chậm hơn nhiều):
+People **don't change their identity first** — they change their behavior first, identity later (much slower):
 
 ```
-Stress tăng
-  → đổi hành động nhỏ (làm thêm giờ, tiết kiệm)
-  → nếu không đủ → đổi hành động lớn (đình công, di cư)
-  → nếu vẫn không đủ → đổi worldview (radicalize hoặc surrender)
+Stress rises
+  → small behavior change (work more, save more)
+  → if insufficient → large behavior change (strike, migrate)
+  → if still insufficient → worldview change (radicalize or surrender)
 ```
 
-**Tipping point cá nhân:**
+**Individual tipping point:**
 ```
-NPC A nổi loạn khi > 20% hàng xóm nổi loạn
-NPC B nổi loạn khi > 35%
-NPC C nổi loạn khi > 10%
+NPC A revolts when > 20% of neighbors revolt
+NPC B revolts when > 35%
+NPC C revolts when > 10%
 ```
-→ C đủ stress → C hành động → A vượt threshold → cascade.
+→ C reaches enough stress → C acts → A crosses threshold → cascade.
 
 ---
 
-## 3. Network — Thông tin lan thế nào
+## 3. Network — How Information Spreads
 
-Mỗi NPC không kết nối với 10,000 người:
+Each NPC is not connected to all 10,000 people:
 ```
-strong ties:  5–15 người  — gia đình, bạn thân (ảnh hưởng sâu, chậm)
-weak ties:   50–150 người — hàng xóm, đồng nghiệp (lan nhanh, ảnh hưởng nông)
+strong ties:  5–15 people  — family, close friends (deep influence, slow)
+weak ties:   50–150 people — neighbors, coworkers (spreads fast, shallow influence)
 ```
 
-Thông tin đi theo edge của network, bị méo mỗi bước:
-- Người trust thấp → khuếch đại tiêu cực khi truyền
-- Người trust cao → giảm nhẹ khi truyền
-- **Tin xấu lan nhanh hơn tin tốt** — người bất mãn share nhiều hơn
-- **Echo chamber tự hình thành** — cluster worldview giống nhau → narrative ngày càng extreme
+Information travels along network edges, distorted at each step:
+- Low-trust people → amplify negatives when forwarding
+- High-trust people → soften when forwarding
+- **Bad news spreads faster than good news** — discontented people share more
+- **Echo chambers form naturally** — clusters of similar worldviews → narrative becomes increasingly extreme
 
-Hệ quả: cùng một event, hai nhóm nghe hai phiên bản khác nhau — cả hai đều "đúng" theo góc nhìn của mình.
+Result: the same event, two groups hear two different versions — both "true" from their perspective.
 
 ---
 
-## 4. Trust — Hai chiều, Asymmetric
+## 4. Trust — Two-Dimensional, Asymmetric
 
 ```
-trust_competence  — tôi có tin họ đủ năng lực không?
-trust_intention   — tôi có tin họ vì dân không?
+trust_competence  — do I believe they are capable?
+trust_intention   — do I believe they act for the people?
 ```
 
-Mất theo cách khác nhau:
-- Crisis không xử lý kịp → mất `competence` (có thể lấy lại)
-- Phát hiện tham nhũng → mất `intention` → **gần như không lấy lại được**
+Lost in different ways:
+- Crisis not handled timely → loses `competence` (recoverable)
+- Corruption discovered → loses `intention` → **nearly unrecoverable**
 
-Trust quyết định NPC *diễn giải* event thế nào:
+Trust determines how NPCs *interpret* events:
 
-| Trust | Mất mùa | Tăng thuế |
-|-------|---------|-----------|
-| Cao | "Chính phủ sẽ lo" → chờ | "Cần thiết" → chấp nhận |
-| Thấp | "Chính phủ bất tài" → tích trữ | "Bóc lột" → phản đối |
-| = 0 | "Tự lo" → rời nhóm | "Tôi không thuộc về đây nữa" → radicalize |
+| Trust | Crop failure | Tax increase |
+|-------|-------------|--------------|
+| High | "Government will handle it" → wait | "It's necessary" → accept |
+| Low | "Government is incompetent" → stockpile | "Exploitation" → resist |
+| = 0 | "Self-reliant" → leave group | "I don't belong here anymore" → radicalize |
 
 ---
 
 ## 5. Policy System
 
-Policy không tác động trực tiếp lên NPC.  
-Nó thay đổi **điều kiện môi trường** → NPC phản ứng theo model của họ.
+Policy doesn't act directly on NPCs.  
+It changes **environmental conditions** → NPCs react according to their model.
 
-### 4 loại tác động của mỗi policy:
+### 4 types of impact per policy:
 ```
-1. Resource effect    — thay đổi food/wealth/safety thực sự
-2. Signal effect      — "policy này nói ai được coi trọng"
-3. Trust effect       — giữ lời hay không → cộng/trừ trust
-4. Distribution effect — ai được lợi, ai mất
-```
-
-### Output người dùng thấy:
-Không phải số liệu khô (`happiness = 67%`).  
-Mà là **narrative emerge từ NPC**:
-
-```
-[Ngày 12] Nhóm thợ khu đông bắt đầu họp kín
-[Ngày 18] 3 học giả rời trường, chuyển sang buôn bán chợ đen
-[Ngày 24] Lãnh đạo phe thợ yêu cầu gặp mặt hội đồng
-[Ngày 31] Tin đồn lan: chính phủ sắp thu hồi chính sách
+1. Resource effect    — change actual food/wealth/safety
+2. Signal effect      — "this policy says who is valued"
+3. Trust effect       — keeps or breaks promises → adds/removes trust
+4. Distribution effect — who benefits, who loses
 ```
 
----
-
-## 6. Vòng lặp hoàn chỉnh
+### What users see:
+Not dry statistics (`happiness = 67%`).  
+Instead: **narrative emerging from NPCs**:
 
 ```
-Policy thay đổi điều kiện
-  → Resource/signal effect tác động lên từng NPC
-  → NPC filter qua worldview + trust → cập nhật stress, belief
-  → Hành động thay đổi (work more/less, organize, flee, radicalize)
-  → Hành động lan qua network → người khác observe → cập nhật perceived_reality
-  → Aggregate thành macro stats + emergent events
-  → Emergent events trigger vòng mới
+[Day 12] A group of workers in the east begin meeting in secret
+[Day 18] 3 scholars leave school, move to the black market
+[Day 24] The workers' leader demands to meet the council
+[Day 31] Rumor spreads: the government is about to reverse the policy
 ```
 
 ---
 
-## Output macro (emerge từ cá nhân, không tính top-down)
+## 6. The Full Loop
+
+```
+Policy changes conditions
+  → Resource/signal effect impacts each NPC
+  → NPC filters through worldview + trust → updates stress, belief
+  → Behavior changes (work more/less, organize, flee, radicalize)
+  → Behavior spreads through network → others observe → update perceived_reality
+  → Aggregates into macro stats + emergent events
+  → Emergent events trigger the next cycle
+```
+
+---
+
+## Macro Output (emerging from individuals, not top-down)
 
 ```
 food_total       = Σ(farmer.base_skill × motivation × weather)
@@ -163,79 +163,79 @@ political_pressure = Σ(npc.grievance × npc.likelihood_to_act_collectively)
 inequality       = gini(resource_distribution)
 ```
 
-`likelihood_to_act_collectively` tăng khi:
-- Nhiều người xung quanh cũng bất mãn (social pressure)
-- Có organizer xuất hiện
-- Rủi ro hành động thấp
+`likelihood_to_act_collectively` increases when:
+- Many surrounding people are also discontented (social pressure)
+- An organizer appears
+- Risk of action is low
 
 ---
 
-## 7. Worldview thay đổi theo thời gian
+## 7. Worldview Changes Over Time
 
-### Cơ chế: Pressure vs Anchor
+### Mechanism: Pressure vs Anchor
 ```
-pressure = dissonance tích lũy (thực tế mâu thuẫn với worldview)
-anchor   = identity investment + social reinforcement từ cluster
+pressure = accumulated dissonance (reality contradicts worldview)
+anchor   = identity investment + social reinforcement from cluster
 ```
-Khi `pressure > anchor threshold` → worldview bắt đầu dịch chuyển.  
-Hướng dịch chuyển phụ thuộc vào **ai tiếp cận được họ lúc đó**.
+When `pressure > anchor threshold` → worldview begins to shift.  
+The direction of shift depends on **who reaches them at that moment**.
 
-### 3 pattern thay đổi
-- **Drift chậm** — nhiều trải nghiệm nhỏ cùng chiều tích lũy
-- **Conversion** — một trauma lớn mở cửa sổ susceptible, ai fill narrative trước thắng
-- **Social contagion** — cluster kéo worldview dần theo mà không nhận ra
+### 3 Change Patterns
+- **Slow drift** — many small same-direction experiences accumulate
+- **Conversion** — a major trauma opens a susceptibility window; whoever fills the narrative first wins
+- **Social contagion** — cluster gradually pulls worldview along without the person realizing it
 
-### Stress làm worldview extreme hơn, không open hơn
+### Stress Makes Worldview More Extreme, Not More Open
 ```
-stress thấp   → open to new info
-stress trung  → cần certainty
-stress cao    → double down vào worldview hiện tại
-stress cực cao → radicalize về cực đoan nhất trong cluster
+low stress    → open to new information
+medium stress → need certainty
+high stress   → double down on current worldview
+very high stress → radicalize to the most extreme in the cluster
 ```
-Hệ quả: policy gây khổ mà không giải thích rõ → dân không mở lòng, họ tìm scapegoat.
+Result: policies that cause suffering without clear explanation → people don't open up, they seek a scapegoat.
 
-### Radicalization funnel
+### Radicalization Funnel
 ```
 Normal → Disgruntled → Seeking → Converted → Activist → Extremist
 ```
-Mỗi bước cần: dissonance đủ lớn + narrative giải thích nỗi đau + community mới + kẻ thù rõ ràng.  
-De-radicalization khó hơn nhiều — cần tháo gỡ tất cả đồng thời.
+Each step requires: enough dissonance + a narrative explaining the pain + a new community + a clear enemy.  
+De-radicalization is much harder — requires dismantling everything simultaneously.
 
-### Model trong simulation
+### In-Simulation Model
 ```
-mỗi NPC có:
-  dissonance_acc  — tích lũy khi thực tế mâu thuẫn worldview
-  susceptible     — bool, bật khi acc vượt threshold
-  influence_score — ai trong network có ảnh hưởng nhất
+each NPC has:
+  dissonance_acc  — accumulates when reality contradicts worldview
+  susceptible     — bool, triggered when acc exceeds threshold
+  influence_score — who in the network has the most influence
 
-khi susceptible = true:
+when susceptible = true:
   worldview += weighted_average(neighbors.worldview) × influence_score
-  nếu không ai tiếp cận → drift về extreme của cluster (mặc định)
+  if no one reaches them → drift toward cluster extreme (default)
 ```
 
 ---
 
 ## 8. Institution Agents
 
-### 5 Institutions — đều là LLM agent độc lập
-| Institution | Lợi ích cốt lõi | Công cụ quyền lực |
-|-------------|----------------|-------------------|
-| Hội đồng lãnh đạo | Duy trì quyền lực, stability | Luật, ngân sách, lực lượng |
-| Hội Thương Nhân | Profit, property rights | Giá cả, phân phối hàng hóa |
-| Phe đối lập | Lên nắm quyền, xây support base | Narrative, tổ chức quần chúng |
-| Cộng đồng/Tôn giáo | Cohesion, trust của dân | Soft power, legitimacy |
-| Lực lượng bảo vệ | Sống sót tổ chức, morale đội | Bạo lực hợp pháp (có giới hạn) |
+### 5 Institutions — all independent LLM agents
+| Institution | Core Interest | Power Tools |
+|-------------|---------------|-------------|
+| Governing Council | Maintain power, stability | Laws, budget, force |
+| Merchants Guild | Profit, property rights | Prices, goods distribution |
+| Opposition | Gain power, build support base | Narrative, mass organization |
+| Community/Religion | Cohesion, people's trust | Soft power, legitimacy |
+| Guard Corps | Organizational survival, team morale | Legitimate force (with limits) |
 
-### Prompt Architecture — 3 tầng
+### Prompt Architecture — 3 Layers
 ```
-Tầng 1: System prompt (cố định) — identity, interests, worldview, constraints
-Tầng 2: Context prompt (dynamic) — state xã hội + inbox + resources + lịch sử quyết định
-Tầng 3: Output format (structured JSON):
+Layer 1: System prompt (fixed) — identity, interests, worldview, constraints
+Layer 2: Context prompt (dynamic) — society state + inbox + resources + decision history
+Layer 3: Output format (structured JSON):
   {
     decision: { action, target, resources_spent, timeline },
-    public_statement,   ← cái họ nói với dân
-    private_intent,     ← cái họ thực sự muốn
-    signal_to,          ← nhắm vào institution nào
+    public_statement,   ← what they say to the people
+    private_intent,     ← what they actually want
+    signal_to,          ← which institution they're targeting
     risk_assessment,
     reasoning
   }
@@ -245,152 +245,152 @@ Tầng 3: Output format (structured JSON):
 
 ## 9. Inter-Institution Communication
 
-### 4 kênh giao tiếp
+### 4 Communication Channels
 ```
-PUBLIC   — tất cả nghe, kể cả dân
-PRIVATE  — chỉ người nhận biết
-SIGNAL   — hành động thay lời nói
-RUMOR    — thông tin rò rỉ, bị méo khi lan
+PUBLIC   — everyone hears, including citizens
+PRIVATE  — only the recipient knows
+SIGNAL   — action instead of words
+RUMOR    — information leaked, distorted as it spreads
 ```
-Cùng một ý, qua kênh khác nhau → nghĩa khác nhau.  
-**Silence cũng là signal** — mỗi bên diễn giải theo trust của họ.
+Same intent, different channels → different meaning.  
+**Silence is also a signal** — each party interprets it according to their trust level.
 
-### Các loại giao dịch
+### Transaction Types
 ```
 NON-AGGRESSION | RESOURCE DEAL | INFO EXCHANGE
 COALITION      | ENDORSEMENT   | ULTIMATUM
 ```
 
-### Betrayal & Leak — con dao hai lưỡi
-- Deal bị phá → trust penalty lớn + có thể leo thang công khai
-- Private message bị leak → sender mất trust với tất cả, nhưng receiver cũng mất trust vì "không giữ bí mật"
+### Betrayal & Leak — Double-Edged Sword
+- Deal broken → large trust penalty + possible public escalation
+- Private message leaked → sender loses trust with everyone, but receiver also loses trust for "not keeping secrets"
 
 ---
 
-## 10. Dân quan sát và phản ứng với Institution
+## 10. Citizens Observe and React to Institutions
 
-### Core insight
-> Dân không nghe sự thật — họ nghe mảnh vỡ của sự thật, lọc qua network, rồi giải thích qua worldview.
+### Core Insight
+> Citizens don't hear the truth — they hear fragments of truth, filtered through their network, then interpreted through their worldview.
 
 ### Perception Filter
 ```
 perceived_message = actual_message
   × trust_in_sender
-  × emotional_state_amplifier    ← stress cao → diễn giải cực đoan hơn
-  × worldview_alignment          ← phù hợp worldview → tin hơn
-  × network_echo                 ← hàng xóm đang nói gì
+  × emotional_state_amplifier    ← high stress → more extreme interpretation
+  × worldview_alignment          ← matches worldview → more credible
+  × network_echo                 ← what neighbors are saying
 ```
 
-### Thông tin bị méo khi lan
+### Information Distorts as It Spreads
 ```
-Lần 1: "Chính phủ sẽ phân phối 200 tấn lương thực"
-Lần 2: "Chính phủ sắp phát lương thực cho dân"
-Lần 3: "Nghe nói chỉ phát cho người thân quen thôi"
-Lần 4: "Lương thực bị chia chác hết rồi, dân không được gì"
+Pass 1: "The government will distribute 200 tons of food"
+Pass 2: "The government is about to give out food to the people"
+Pass 3: "Heard it's only for people with connections"
+Pass 4: "The food was all divided up, citizens got nothing"
 ```
-Rule: nội dung thực tế giảm dần, nội dung cảm xúc tăng dần.  
-Tin tiêu cực lan nhanh gấp đôi tin tích cực.
+Rule: factual content decreases, emotional content increases.  
+Negative news spreads twice as fast as positive news.
 
 ### Narrative Competition
-Ai đặt tên cho event trước sẽ thắng.  
-Cùng một sự kiện, 3 institution phát 3 narrative → mỗi cluster dân adopt narrative khác nhau → "sự thật" phân mảnh.
+Whoever names the event first wins.  
+The same event, 3 institutions release 3 narratives → each citizen cluster adopts a different narrative → "truth" becomes fragmented.
 
-### 4 tầng phản ứng của dân
+### 4 Tiers of Citizen Response
 ```
-Tầng 1 — Cảm xúc tức thì (vài giờ): anger | relief | fear | hope | cynicism
-Tầng 2 — Hành vi cá nhân (1-3 ngày): tích trữ, làm ít hơn, tìm thông tin
-Tầng 3 — Hành vi xã hội (3-10 ngày): nhóm bàn tán, organizer xuất hiện, tẩy chay
-Tầng 4 — Hành động tập thể (10+ ngày): biểu tình, đình công, bạo loạn, di cư
-```
-
-### 5 điều kiện để Collective Action xảy ra
-```
-1. SHARED GRIEVANCE    — đủ người cảm thấy bị thiệt hại giống nhau
-2. SHARED NARRATIVE    — cùng giải thích "tại sao" và "ai gây ra"
-3. SOCIAL PROOF        — thấy người khác đã hành động trước
-4. LOW PERCEIVED RISK  — chính phủ không đủ mạnh để đàn áp
-5. COORDINATION POINT  — có ai/nơi để tập hợp
+Tier 1 — Immediate emotion (hours): anger | relief | fear | hope | cynicism
+Tier 2 — Individual behavior (1-3 days): stockpile, work less, seek information
+Tier 3 — Social behavior (3-10 days): groups discuss, organizers emerge, boycotts
+Tier 4 — Collective action (10+ days): protests, strikes, riots, migration
 ```
 
-Institution tác động vào từng điều kiện theo chiều ngược nhau:
-| Điều kiện | Phe đối lập | Chính phủ |
-|-----------|------------|-----------|
-| Shared grievance | Khuếch đại | Phủ nhận, phân tán |
-| Shared narrative | Cung cấp narrative mới | Cạnh tranh narrative |
-| Social proof | "Hàng trăm người đã xuống đường" | "Chỉ vài kẻ kích động" |
-| Perceived risk | "Chính phủ không dám làm gì" | Phô diễn sức mạnh |
-| Coordination | Đặt điểm hẹn | Bắt organizer, chặn thông tin |
-
-### Điều institution sợ nhất
+### 5 Conditions for Collective Action
 ```
-1000 người bất mãn với 1000 lý do khác nhau = dễ kiểm soát
-1000 người bất mãn với CÙNG một narrative = cách mạng
+1. SHARED GRIEVANCE    — enough people feel harmed in the same way
+2. SHARED NARRATIVE    — same explanation for "why" and "who caused it"
+3. SOCIAL PROOF        — see others who have already acted
+4. LOW PERCEIVED RISK  — government not strong enough to repress
+5. COORDINATION POINT  — someone/somewhere to gather
+```
+
+Institutions influence each condition in opposing directions:
+| Condition | Opposition | Government |
+|-----------|------------|------------|
+| Shared grievance | Amplify | Deny, disperse |
+| Shared narrative | Provide new narrative | Compete with narrative |
+| Social proof | "Hundreds already marched" | "Just a few agitators" |
+| Perceived risk | "Government won't dare do anything" | Demonstrate strength |
+| Coordination | Establish meeting points | Arrest organizers, block information |
+
+### What Institutions Fear Most
+```
+1000 discontented people with 1000 different reasons = easy to control
+1000 discontented people with THE SAME narrative = revolution
 ```
 
 ---
 
 ## 11. Tech Stack
 
-- **10,000 NPC**: Rule-based (nhanh, free)
-- **Institution agents**: LLM — Gemini Flash 2.5 (free tier), gọi khi có event lớn hoặc mỗi N ngày sim
-- **Narrative generator**: LLM — dịch số liệu thành event log có nghĩa
-- **Behavior policy updater**: LLM — cập nhật params cho rule-based layer theo tình trạng xã hội
-- **Provider system**: open setting để switch giữa Gemini / Anthropic / OpenAI
+- **10,000 NPCs**: Rule-based (fast, free)
+- **Institution agents**: LLM — Gemini Flash 2.5 (free tier), called on major events or every N sim-days
+- **Narrative generator**: LLM — translates statistics into meaningful event logs
+- **Behavior policy updater**: LLM — updates params for rule-based layer based on social state
+- **Provider system**: open settings to switch between Gemini / Anthropic / OpenAI
 
 ```
-LLM định nghĩa BEHAVIOR của nhóm người
-Rule-based execute hành vi đó cho từng cá nhân
+LLM defines BEHAVIOR for groups of people
+Rule-based executes that behavior for each individual
 ```
 
 ---
 
-## 12. Người chơi — Founding Father
+## 12. The Player — Founding Father
 
-Người chơi không phải vua, không phải observer.  
-Họ **thiết lập hệ thống ban đầu** rồi để nó chạy — giống viết hiến pháp thật.
+The player is not a king, not an observer.  
+They **establish the initial system** then let it run — like writing a real constitution.
 
-### Role duy nhất: The Architect
+### Single Role: The Architect
 
-Không phải Founding Father (setup rồi thôi). Không phải Observer.  
-**The Architect** — thiết kế hệ thống từ đầu, rồi tiếp tục can thiệp qua ngôn ngữ tự nhiên xuyên suốt game.
+Not a Founding Father (setup then done). Not an Observer.  
+**The Architect** — designs the system from the start, then continues to intervene through natural language throughout the game.
 
-### Lớp 1: Constitutional Setup — cuộc trò chuyện đầu tiên
+### Layer 1: Constitutional Setup — the first conversation
 
-Không có màn hình slider/form. Thiết lập hiến pháp **là cuộc trò chuyện đầu tiên với God Agent**.
-
-```
-God Agent hỏi: "Bạn muốn xây dựng xã hội nào?"
-Player mô tả: "Kiểu Bắc Âu nhưng nhà nước yếu hơn, tài nguyên khan hiếm"
-God Agent đề xuất params → player confirm hoặc điều chỉnh → sim bắt đầu
-```
-
-God Agent giữ context *tại sao* player chọn thiết lập đó — dùng khi giải thích hậu quả về sau.
-
-DNA của xã hội. Muốn sửa giữa chừng cần đủ đồng thuận — constitutional crisis.
+No slider/form screen. Establishing the constitution **is the first conversation with the God Agent**.
 
 ```
-wealth_distribution_start     — gini ban đầu
-power_structure               — institution nào có quyền gì
-individual_rights_floor       — NPC không thể bị đối xử tệ hơn mức này
-value_priority                — [freedom, equality, security, growth] xếp hạng
+God Agent asks: "What society do you want to build?"
+Player describes: "Nordic-style but with a weaker state and scarcer resources"
+God Agent proposes params → player confirms or adjusts → sim begins
+```
+
+God Agent retains context for *why* the player chose that setup — used later when explaining consequences.
+
+The DNA of society. To change it midway requires enough consensus — constitutional crisis.
+
+```
+wealth_distribution_start     — initial gini
+power_structure               — which institution has what power
+individual_rights_floor       — NPCs cannot be treated worse than this
+value_priority                — [freedom, equality, security, growth] ranked
 safety_net_strength
 market_freedom_level
 ```
 
-Seed toàn bộ sim: worldview NPC ban đầu, trust, gini, resource allocation.
+Seeds the entire sim: initial NPC worldview, trust, gini, resource allocation.
 
-**3 preset ví dụ:**
-| | Bắc Âu | Tư bản tự do | XHCN tập trung |
-|--|--------|-------------|----------------|
+**3 example presets:**
+| | Nordic | Free Market | Planned Economy |
+|--|--------|-------------|-----------------|
 | gini_start | 0.28 | 0.48 | 0.18 |
 | state_power | high | low | very high |
-| base_trust | 0.72 | 0.45 | 0.65 (decay nhanh) |
-| safety_net | strong | weak | strong nhưng fragile |
+| base_trust | 0.72 | 0.45 | 0.65 (decays fast) |
+| safety_net | strong | weak | strong but fragile |
 | npc_bias | collectivist | individualist | collectivist + obedient |
 
-### Lớp 2: Event Injection (trong khi chạy)
+### Layer 2: Event Injection (while running)
 
-Người chơi không ra lệnh — họ **thả event vào** và quan sát phản ứng.
+The player doesn't give orders — they **drop events in** and observe reactions.
 
 **Nature Events:**
 ```
@@ -407,81 +407,81 @@ trade_offer | refugee_wave | ideology_import | external_threat | blockade
 scandal_leak | charismatic_npc | martyr_event | technology_shift
 ```
 
-Cùng event, cùng hiến pháp — **timing thay đổi tất cả.**
+Same event, same constitution — **timing changes everything.**
 
 ### Constitutional Crisis
 
-Khi xã hội drift đủ xa so với hiến pháp ban đầu:
-- Institution đòi sửa đổi
-- Người chơi quyết định: giữ nguyên hay cải cách?
-- Cải cách cần đủ đồng thuận — nếu không đủ → fracture
+When society has drifted far enough from the initial constitution:
+- Institutions demand amendments
+- Player decides: hold the line or reform?
+- Reform requires enough consensus — if insufficient → fracture
 
-### Gameplay Loop thật sự
+### The Real Gameplay Loop
 
 ```
-Viết hiến pháp
-  → Sim chạy, institutions hành động trong giới hạn hiến pháp
-  → Spawn events để test hệ thống
-  → Quan sát narrative emerge
-  → Xã hội drift → constitutional crisis xuất hiện
-  → Quyết định: cải cách hay giữ nguyên
-  → Vòng mới với DNA đã thay đổi
+Write constitution
+  → Sim runs, institutions act within constitutional limits
+  → Spawn events to test the system
+  → Observe emerging narratives
+  → Society drifts → constitutional crisis appears
+  → Decide: reform or hold the line
+  → New cycle with altered DNA
 ```
 
-Không có win/lose — chỉ có **thích nghi hay sụp đổ**.
+No win/lose — only **adapt or collapse**.
 
 ---
 
-## 13. God Agent — Người chơi nói chuyện với thế giới
+## 13. God Agent — Player Talks to the World
 
-Người chơi không dùng menu. Họ **chat bằng ngôn ngữ tự nhiên** — God Agent dịch sang event có cấu trúc rồi inject vào simulation.
+The player doesn't use menus. They **chat in natural language** — the God Agent translates to structured events then injects them into the simulation.
 
 ### Pipeline
 
 ```
-Player chat ("tạo cơn bão to")
-  → God Agent (LLM) — diễn giải intent → event object
-  → Simulation Engine — inject, chạy cascade rule-based
-  → Institution Agents (LLM) — phản ứng
-  → Narrative Agent (LLM) — viết thành câu chuyện
-  → Map + Feed cập nhật
+Player chat ("create a major storm")
+  → God Agent (LLM) — interprets intent → event object
+  → Simulation Engine — inject, run rule-based cascade
+  → Institution Agents (LLM) — react
+  → Narrative Agent (LLM) — write the story
+  → Map + Feed updates
 ```
 
-### God Agent làm 3 việc khi nhận input
+### God Agent Does 3 Things When Receiving Input
 
 ```
-1. Diễn giải intent → event object có cấu trúc
-2. Kiểm tra tính hợp lý với world state → cảnh báo nếu catastrophic
-3. Generate narrative_open — câu mở đầu của câu chuyện
+1. Interpret intent → structured event object
+2. Check plausibility with world state → warn if catastrophic
+3. Generate narrative_open — opening sentence of the story
 ```
 
-### Player có thể nói
+### Player Can Say
 
 ```
-Tạo event:    "tạo cơn bão to", "rò rỉ tham nhũng hội đồng"
-Hỏi thế giới: "tại sao dân bất ổn?", "nếu gây bão lúc này thì sao?"
-Tác động tinh tế: "làm một nông dân trở nên nổi tiếng"
-               "lan một tư tưởng mới về quyền tư hữu"
+Create event:    "create a major storm", "leak council corruption"
+Ask the world:   "why is the population destabilizing?", "what if I cause a storm now?"
+Subtle influence: "make a farmer become famous"
+                 "spread a new idea about property rights"
 ```
 
-### Confirm trước khi inject
+### Confirm Before Injecting
 
-Agent cảnh báo hậu quả nghiêm trọng, cho player xác nhận / điều chỉnh / hủy.  
-Không chặn — nhưng không inject ngầm.
+Agent warns of serious consequences, lets player confirm / adjust / cancel.  
+Not blocking — but no silent injection.
 
-### God Agent System Prompt core
+### God Agent System Prompt Core
 
 ```
-Bạn là The Narrator — kiểm soát lực lượng tự nhiên và xã hội.
-Không phải nhân vật trong sim. Là người kể chuyện.
-Output: JSON event object + một câu narrative ngắn gọn có chiều sâu.
+You are The Narrator — controlling natural and social forces.
+Not a character in the sim. You are the storyteller.
+Output: JSON event object + one concise, resonant narrative sentence.
 ```
 
 ---
 
-## Câu hỏi còn mở
+## Open Questions
 
-- [ ] Granularity: full simulate 10k hay cluster + representative agent?
-- [ ] Worldview của institution có drift theo thời gian không?
-- [ ] Constitutional crisis trigger ở threshold nào?
-- [ ] God Agent có nhớ lịch sử các event đã inject không (memory)?
+- [ ] Granularity: full simulate 10k or cluster + representative agent?
+- [ ] Does institution worldview drift over time?
+- [ ] What threshold triggers constitutional crisis?
+- [ ] Does God Agent remember history of injected events (memory)?

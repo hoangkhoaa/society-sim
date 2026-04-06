@@ -315,7 +315,7 @@ const translations = {
 
 // ── State ──────────────────────────────────────────────────────────────────
 
-let currentLang: Lang = 'vi'
+let currentLang: Lang = 'en'
 
 export function setLang(lang: Lang): void {
   currentLang = lang
