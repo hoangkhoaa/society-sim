@@ -4,6 +4,7 @@ import { addFeedRaw, addFeedThinking } from './ui/feed';
 import { showConfirm } from './ui/modal';
 import { initWorld, tick, spawnEvent } from './sim/engine';
 import { setLang, t, tf } from './i18n';
+import { initMap } from './ui/map';
 // ── App state ──────────────────────────────────────────────────────────────
 let aiConfig = null;
 let world = null;
@@ -122,6 +123,9 @@ async function startGame(constitution) {
     world = initWorld(constitution);
     showScreen('screen-game');
     updateTopbar();
+    // Initialize the canvas map
+    const mapCanvas = document.getElementById('map-canvas');
+    initMap(mapCanvas, () => world, () => aiConfig);
     // Resolve preset description keys through i18n
     const desc = constitution.description.startsWith('preset.')
         ? t(constitution.description)

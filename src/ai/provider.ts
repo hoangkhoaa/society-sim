@@ -93,11 +93,24 @@ export async function callAI(
   return p.parseResponse(json)
 }
 
-// Extract JSON object from LLM response (handles markdown fences)
+// Extract JSON object from LLM response (handles markdown fences and extra text)
 export function extractJSON(text: string): string {
+  // First check for markdown code fences
   const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/)
   if (fence) return fence[1].trim()
-  const curly = text.match(/\{[\s\S]*\}/)
-  if (curly) return curly[0]
+
+  // Find the last complete JSON object using brace matching
+  const lastBrace = text.lastIndexOf('}')
+  if (lastBrace !== -1) {
+    let depth = 0
+    for (let i = lastBrace; i >= 0; i--) {
+      if (text[i] === '}') depth++
+      else if (text[i] === '{') {
+        depth--
+        if (depth === 0) return text.slice(i, lastBrace + 1)
+      }
+    }
+  }
+
   return text.trim()
 }
