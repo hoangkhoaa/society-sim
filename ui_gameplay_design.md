@@ -248,7 +248,7 @@ After entering key → chat opens, God Agent speaks first:
 
 - Player learns how the world works from the very first sentence
 - God Agent has context for *why* the player chose that setup — useful later when explaining consequences
-- Player can ask "how would Socialist differ from Nordic?" before deciding
+- Player can ask "how would a socialist system differ from Nordic?" before deciding
 - Single role throughout — no separate screens, no context switching
 
 ---

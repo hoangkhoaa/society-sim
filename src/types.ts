@@ -109,7 +109,7 @@ export interface NPC {
   weak_ties: number[]           // 50–150 NPC ids
   influence_score: number       // network centrality
 
-  // Trust per institution (two-way)
+  // Trust per institution (two-dimensional: competence and intention)
   trust_in: TrustMap
 
   // Resources

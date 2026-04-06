@@ -1,5 +1,6 @@
 import type { NarrativeEntry, FeedSeverity } from '../types'
 import { FEED_ICONS } from '../types'
+import { tf } from '../i18n'
 
 const log = document.getElementById('feed-log')!
 
@@ -8,8 +9,12 @@ export function addFeedEntry(entry: NarrativeEntry) {
   el.className = `feed-entry ${entry.severity}`
   el.dataset.id = entry.id
 
+  const month = Math.ceil(entry.day / 30)
+  const dayOfMonth = entry.day % 30 || 30
+  const timeLabel = tf('topbar.clock', { y: entry.year, m: month, d: dayOfMonth })
+
   el.innerHTML = `
-    <div class="feed-time">${FEED_ICONS[entry.severity] ?? '·'} Year ${entry.year} · M${Math.ceil(entry.day / 30)} · D${entry.day % 30 || 30}</div>
+    <div class="feed-time">${FEED_ICONS[entry.severity] ?? '·'} ${timeLabel}</div>
     <div class="feed-text">${entry.text}</div>
   `
 
