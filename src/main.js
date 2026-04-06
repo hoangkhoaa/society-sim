@@ -2,7 +2,7 @@ import './css/main.css';
 import { setupGreeting, setupChat, applyPreset, handlePlayerChat } from './ai/god-agent';
 import { addFeedRaw, addFeedThinking } from './ui/feed';
 import { showConfirm } from './ui/modal';
-import { initWorld, tick, spawnEvent } from './sim/engine';
+import { initWorld, tick, spawnEvent, applyInterventions } from './sim/engine';
 import { setLang, t, tf } from './i18n';
 import { initMap } from './ui/map';
 // ── App state ──────────────────────────────────────────────────────────────
@@ -121,6 +121,7 @@ async function startGame(constitution) {
     // Defer initWorld so the feed message renders first
     await new Promise(resolve => setTimeout(resolve, 50));
     world = initWorld(constitution);
+    peakPopulation = world.npcs.filter(n => n.lifecycle.is_alive).length;
     showScreen('screen-game');
     updateTopbar();
     // Initialize the canvas map
@@ -165,6 +166,7 @@ function setStat(valueId, value, statId, warnAt, dangerAt) {
 let paused = false;
 let speed = 1;
 let simInterval = null;
+let peakPopulation = 0;
 // 1 tick = 1 sim-hour; 42ms interval ≈ 24 ticks/second at 1×
 const BASE_TICK_MS = 42;
 function startSimLoop() {
@@ -175,9 +177,49 @@ function startSimLoop() {
             return;
         for (let i = 0; i < speed; i++)
             tick(world);
+        const living = world.npcs.filter(n => n.lifecycle.is_alive).length;
+        if (living > peakPopulation)
+            peakPopulation = living;
         updateTopbar();
+        if (living === 0)
+            triggerGameOver();
     }, BASE_TICK_MS);
 }
+// ── Game over ──────────────────────────────────────────────────────────────
+function triggerGameOver() {
+    if (!world)
+        return;
+    if (simInterval) {
+        clearInterval(simInterval);
+        simInterval = null;
+    }
+    addFeedRaw(t('engine.extinction'), 'critical', world.year, world.day);
+    const summary = document.getElementById('gameover-summary');
+    const stats = document.getElementById('gameover-stats');
+    const totalDays = (world.year - 1) * 360 + world.day;
+    summary.textContent = tf('gameover.summary', {
+        d: totalDays,
+        y: world.year,
+        ys: world.year !== 1 ? 's' : '',
+    });
+    stats.innerHTML = [
+        tf('gameover.stats_pop', { n: peakPopulation }),
+        tf('gameover.stats_day', { d: totalDays, ds: totalDays !== 1 ? 's' : '', y: world.year }),
+    ].join('<br>');
+    document.querySelectorAll('#screen-gameover [data-i18n]').forEach(el => {
+        const key = el.dataset.i18n;
+        el.textContent = t(key);
+    });
+    showScreen('screen-gameover');
+}
+document.getElementById('btn-restart').addEventListener('click', () => {
+    peakPopulation = 0;
+    world = null;
+    showScreen('screen-onboarding');
+    const btnStart = document.getElementById('btn-start');
+    btnStart.textContent = t('onboarding.btn_start');
+    btnStart.removeAttribute('disabled');
+});
 // ── Time controls ──────────────────────────────────────────────────────────
 document.getElementById('btn-pause').addEventListener('click', function () {
     paused = !paused;
@@ -213,6 +255,19 @@ async function sendChatMessage() {
                 injectEvent(response);
             }
         }
+        else if (response.type === 'intervention') {
+            if (response.requires_confirm) {
+                showConfirm({
+                    title: t('modal.event_title'),
+                    body: `<b>${response.answer}</b>${response.warning ? `<br><br>⚠ ${response.warning}` : ''}`,
+                    onConfirm: () => executeIntervention(response),
+                    onCancel: () => addFeedRaw(t('modal.event_cancelled'), 'info', world.year, world.day),
+                });
+            }
+            else {
+                executeIntervention(response);
+            }
+        }
         else {
             addFeedRaw(response.answer, 'info', world.year, world.day);
         }
@@ -227,6 +282,20 @@ function injectEvent(response) {
         return;
     addFeedRaw(`${response.event.narrative_open ?? response.answer}`, 'player', world.year, world.day);
     spawnEvent(world, response.event);
+}
+function executeIntervention(response) {
+    if (!world)
+        return;
+    addFeedRaw(response.answer, 'player', world.year, world.day);
+    if (response.interventions?.length) {
+        const affected = applyInterventions(world, response.interventions);
+        addFeedRaw(tf('engine.intervention', { n: affected, s: '' }), 'critical', world.year, world.day);
+    }
+    // Companion event (e.g., radiation epidemic after nuclear bomb)
+    if (response.event) {
+        addFeedRaw(`${response.event.narrative_open ?? ''}`, 'player', world.year, world.day);
+        spawnEvent(world, response.event);
+    }
 }
 btnChatSend.addEventListener('click', sendChatMessage);
 chatInput.addEventListener('keydown', e => {

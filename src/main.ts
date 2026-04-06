@@ -3,7 +3,7 @@ import type { AIConfig, Constitution, WorldState } from './types'
 import { setupGreeting, setupChat, applyPreset, handlePlayerChat } from './ai/god-agent'
 import { addFeedRaw, addFeedThinking } from './ui/feed'
 import { showConfirm } from './ui/modal'
-import { initWorld, tick, spawnEvent } from './sim/engine'
+import { initWorld, tick, spawnEvent, applyInterventions } from './sim/engine'
 import { setLang, t, tf } from './i18n'
 import { initMap } from './ui/map'
 import type { Lang } from './i18n'
@@ -146,6 +146,7 @@ async function startGame(constitution: Constitution) {
   await new Promise<void>(resolve => setTimeout(resolve, 50))
 
   world = initWorld(constitution)
+  peakPopulation = world.npcs.filter(n => n.lifecycle.is_alive).length
 
   showScreen('screen-game')
   updateTopbar()
@@ -202,6 +203,7 @@ function setStat(valueId: string, value: number, statId: string, warnAt: number,
 let paused = false
 let speed = 1
 let simInterval: ReturnType<typeof setInterval> | null = null
+let peakPopulation = 0
 
 // 1 tick = 1 sim-hour; 42ms interval ≈ 24 ticks/second at 1×
 const BASE_TICK_MS = 42
@@ -211,9 +213,54 @@ function startSimLoop() {
   simInterval = setInterval(() => {
     if (paused || !world) return
     for (let i = 0; i < speed; i++) tick(world)
+    const living = world.npcs.filter(n => n.lifecycle.is_alive).length
+    if (living > peakPopulation) peakPopulation = living
     updateTopbar()
+    if (living === 0) triggerGameOver()
   }, BASE_TICK_MS)
 }
+
+// ── Game over ──────────────────────────────────────────────────────────────
+
+function triggerGameOver() {
+  if (!world) return
+  if (simInterval) { clearInterval(simInterval); simInterval = null }
+
+  addFeedRaw(t('engine.extinction') as string, 'critical', world.year, world.day)
+
+  const summary = document.getElementById('gameover-summary')!
+  const stats   = document.getElementById('gameover-stats')!
+
+  const totalDays  = (world.year - 1) * 360 + world.day
+  summary.textContent = tf('gameover.summary', {
+    d:  totalDays,
+    y:  world.year,
+    ys: world.year !== 1 ? 's' : '',
+  })
+  stats.innerHTML = [
+    tf('gameover.stats_pop', { n: peakPopulation }),
+    tf('gameover.stats_day', { d: totalDays, ds: totalDays !== 1 ? 's' : '', y: world.year }),
+  ].join('<br>')
+
+  // Apply i18n to the static elements in the game-over screen
+  document.getElementById('gameover-title-el')?.replaceChildren()
+  document.querySelectorAll('#screen-gameover [data-i18n]').forEach(el => {
+    const key = (el as HTMLElement).dataset.i18n!
+    el.textContent = t(key) as string
+  })
+
+  showScreen('screen-gameover')
+}
+
+document.getElementById('btn-restart')!.addEventListener('click', () => {
+  peakPopulation = 0
+  world = null
+  showScreen('screen-onboarding')
+  // Reset the start button in case it was disabled
+  const btnStart = document.getElementById('btn-start')!
+  btnStart.textContent = t('onboarding.btn_start') as string
+  btnStart.removeAttribute('disabled')
+})
 
 // ── Time controls ──────────────────────────────────────────────────────────
 
@@ -259,6 +306,20 @@ async function sendChatMessage() {
       } else {
         injectEvent(response)
       }
+    } else if (response.type === 'intervention') {
+      if (response.requires_confirm) {
+        showConfirm({
+          title: t('modal.event_title') as string,
+          body: `<b>${response.answer}</b>${response.warning ? `<br><br>⚠ ${response.warning}` : ''}`,
+          onConfirm: () => executeIntervention(response),
+          onCancel:  () => addFeedRaw(
+            t('modal.event_cancelled') as string,
+            'info', world!.year, world!.day,
+          ),
+        })
+      } else {
+        executeIntervention(response)
+      }
     } else {
       addFeedRaw(response.answer, 'info', world.year, world.day)
     }
@@ -280,7 +341,31 @@ function injectEvent(response: Awaited<ReturnType<typeof handlePlayerChat>>) {
   spawnEvent(world, response.event)
 }
 
+function executeIntervention(response: Awaited<ReturnType<typeof handlePlayerChat>>) {
+  if (!world) return
+
+  addFeedRaw(response.answer, 'player', world.year, world.day)
+
+  if (response.interventions?.length) {
+    const affected = applyInterventions(world, response.interventions)
+    addFeedRaw(
+      tf('engine.intervention', { n: affected, s: '' }) as string,
+      'critical', world.year, world.day,
+    )
+  }
+
+  // Companion event (e.g., radiation epidemic after nuclear bomb)
+  if (response.event) {
+    addFeedRaw(
+      `${response.event.narrative_open ?? ''}`,
+      'player', world.year, world.day,
+    )
+    spawnEvent(world, response.event)
+  }
+}
+
 btnChatSend.addEventListener('click', sendChatMessage)
 chatInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') sendChatMessage()
 })
+
