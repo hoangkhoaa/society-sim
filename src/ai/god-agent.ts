@@ -494,3 +494,90 @@ function buildWorldContext(state: WorldState, config: AIConfig): string {
     },
   })
 }
+
+// ── AI Consequence Prediction ──────────────────────────────────────────────
+//
+// After a world event fires, ask the AI: "what happens next?"
+// Returns a structured list of consequences that can be mapped to engine actions.
+
+export interface ConsequenceAction {
+  label: string               // Short human-readable description
+  delay_days: number          // How many sim-days until this triggers
+  intervention: {             // Maps directly to NPCIntervention fields
+    target: 'all' | 'zone' | 'role'
+    zones?: string[]
+    roles?: string[]
+    count?: number
+    action_state?: string
+    stress_delta?: number
+    fear_delta?: number
+    hunger_delta?: number
+    grievance_delta?: number
+    happiness_delta?: number
+  }
+}
+
+export interface ConsequencePrediction {
+  summary: string               // Narrative paragraph about what is unfolding
+  consequences: ConsequenceAction[]
+}
+
+const CONSEQUENCE_SYSTEM = `You are a social dynamics engine for a society simulation.
+Given a world event that just occurred and current world conditions, predict 2–4 concrete social consequences that will unfold over the next weeks.
+
+Return JSON in EXACTLY this format:
+{
+  "summary": "1-2 sentences describing the unfolding situation",
+  "consequences": [
+    {
+      "label": "Short label (e.g. 'Looting in the market', 'Farmers panic-hoard food')",
+      "delay_days": <1-30>,
+      "intervention": {
+        "target": "all"|"zone"|"role",
+        "zones": ["zone_name"],
+        "roles": ["farmer"|"craftsman"|"scholar"|"merchant"|"guard"|"leader"],
+        "count": <number or omit for all matching>,
+        "action_state": "working"|"resting"|"socializing"|"organizing"|"fleeing"|"complying"|"confront",
+        "stress_delta": <-50 to 50>,
+        "fear_delta": <-50 to 50>,
+        "hunger_delta": <-50 to 50>,
+        "grievance_delta": <-50 to 50>,
+        "happiness_delta": <-50 to 50>
+      }
+    }
+  ]
+}
+
+Keep labels short and vivid. Consequences should be REALISTIC reactions to the event — panic, hoarding, protests, crime waves, fleeing, solidarity, etc.
+Only return JSON. No explanation.`
+
+export async function predictConsequences(
+  eventType: string,
+  eventNarrative: string,
+  state: WorldState,
+  config: AIConfig,
+): Promise<ConsequencePrediction | null> {
+  // Only run when token mode allows it
+  if (config.token_mode === 'events_only') return null
+
+  const context = buildWorldContext(state, config)
+  const prompt = `EVENT THAT JUST OCCURRED:
+Type: ${eventType}
+Narrative: ${eventNarrative}
+
+WORLD STATE:
+${context}
+
+${langDirective()}
+Predict the social consequences.`
+
+  try {
+    const raw = await callAI(config, CONSEQUENCE_SYSTEM, prompt)
+    const parsed = JSON.parse(extractJSON(raw)) as ConsequencePrediction
+    // Validate shape
+    if (!Array.isArray(parsed.consequences) || !parsed.summary) return null
+    return parsed
+  } catch {
+    return null
+  }
+}

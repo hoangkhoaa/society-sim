@@ -39,6 +39,9 @@ let getConfig: (() => AIConfig | null) | null = null
 let animFrame: number | null = null
 let hoveredNPCId: number | null = null
 let frameCount = 0
+let _mapPaused = false
+
+export function setMapPaused(value: boolean) { _mapPaused = value }
 
 // ── NPC visual state (separate from sim data) ──────────────────────────────
 
@@ -84,6 +87,7 @@ const ACTION_SPEED: Record<string, number> = {
 }
 
 function stepVisual(v: NPCVisual, action: string, zone: string) {
+  if (_mapPaused) return   // freeze animation while game is paused
   v.moveIn--
   if (v.moveIn <= 0) {
     const t = randomPosInZone(zone)
@@ -157,7 +161,7 @@ function draw() {
 
   drawZones(W, H)
   drawNPCs(world, W, H)
-  drawLegend(H)
+  drawLegend(W, H)
 }
 
 function drawPlaceholder(W: number, H: number) {
@@ -312,15 +316,23 @@ function drawNPCs(world: WorldState, W: number, H: number) {
   _posMapCache = posMap
 }
 
-function drawLegend(H: number) {
+function drawLegend(W: number, H: number) {
   if (!ctx) return
   const roles: Role[] = ['farmer', 'craftsman', 'merchant', 'scholar', 'guard', 'leader']
-  const startX = 8
-  let x = startX
-  const y = H - 8
 
   ctx.font = '9px system-ui'
   ctx.textAlign = 'left'
+
+  // Draw legend at bottom-right to avoid overlapping the demographics panel (bottom-left)
+  // First measure total width
+  let totalW = 0
+  for (const role of roles) {
+    const label = role.charAt(0).toUpperCase() + role.slice(1)
+    totalW += ctx.measureText(label).width + 22
+  }
+  const startX = W - totalW - 8
+  let x = startX
+  const y = H - 8
 
   for (const role of roles) {
     ctx.beginPath()

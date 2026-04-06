@@ -152,12 +152,26 @@
       <div id="right-sidebar">
 
         <div id="feed-panel">
-          <div id="feed-header" data-i18n="feed.header">Event Log</div>
+          <div id="feed-header">
+            <span data-i18n="feed.header">Event Log</span>
+            <div class="log-filters" id="feed-filters">
+              <button class="log-filter-btn active" data-filter="all" data-i18n="filter.all">All</button>
+              <button class="log-filter-btn" data-filter="warning" data-i18n="filter.important">Important</button>
+              <button class="log-filter-btn" data-filter="critical" data-i18n="filter.critical">Critical</button>
+            </div>
+          </div>
           <div id="feed-log"></div>
         </div>
 
         <div id="chronicle-panel">
-          <div id="chronicle-header" data-i18n="chronicle.header">📖 Chronicle</div>
+          <div id="chronicle-header">
+            <span data-i18n="chronicle.header">📖 Chronicle</span>
+            <div class="log-filters" id="chronicle-filters">
+              <button class="log-filter-btn" data-filter="minor" data-i18n="filter.all">All</button>
+              <button class="log-filter-btn active" data-filter="major" data-i18n="filter.important">Important</button>
+              <button class="log-filter-btn" data-filter="critical" data-i18n="filter.critical">Critical</button>
+            </div>
+          </div>
           <div id="chronicle-log"></div>
         </div>
 

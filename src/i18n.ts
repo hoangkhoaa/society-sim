@@ -57,8 +57,11 @@ const translations = {
     'topbar.ai_thinking':    '⏸ AI…',
 
     // Feed
-    'feed.header': 'Event Log',
+    'feed.header':      'Event Log',
     'chronicle.header': 'Chronicle',
+    'filter.all':       'All',
+    'filter.important': 'Important',
+    'filter.critical':  'Critical',
 
     // Demographics
     'demo.title':   'Population',
@@ -292,8 +295,11 @@ const translations = {
     'topbar.ai_thinking':    '⏸ AI…',
 
     // Feed
-    'feed.header': 'Nhật ký sự kiện',
+    'feed.header':      'Nhật ký sự kiện',
     'chronicle.header': 'Biên niên',
+    'filter.all':       'Tất cả',
+    'filter.important': 'Quan trọng',
+    'filter.critical':  'Khẩn cấp',
 
     // Demographics
     'demo.title':   'Dân số',

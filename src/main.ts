@@ -1,12 +1,12 @@
 import './css/main.css'
 import type { AIConfig, AIProvider, Constitution, WorldState } from './types'
-import { setupGreeting, setupChat, applyPreset, handlePlayerChat, resetInGameHistory } from './ai/god-agent'
+import { setupGreeting, setupChat, applyPreset, handlePlayerChat, resetInGameHistory, predictConsequences } from './ai/god-agent'
 import { listAvailableModels, PROVIDER_MODELS, getAIUsage } from './ai/provider'
-import { addFeedRaw, addFeedThinking } from './ui/feed'
+import { addFeedRaw, addFeedThinking, setFeedFilter, setChronicleFilter } from './ui/feed'
 import { showConfirm, showInfo } from './ui/modal'
 import { initWorld, tick, spawnEvent, applyInterventions } from './sim/engine'
 import { setLang, t, tf } from './i18n'
-import { initMap } from './ui/map'
+import { initMap, setMapPaused } from './ui/map'
 import type { Lang } from './i18n'
 
 // ── App state ──────────────────────────────────────────────────────────────
@@ -367,6 +367,35 @@ function updateDemographics() {
   }
 }
 
+// ── Consequence scheduler ──────────────────────────────────────────────────
+// Scheduled NPC interventions predicted by AI after an event fires.
+
+interface ScheduledConsequence {
+  triggerDay: number   // world day on which to apply
+  triggerYear: number
+  label: string
+  intervention: Parameters<typeof applyInterventions>[1][number]
+}
+
+const consequenceQueue: ScheduledConsequence[] = []
+
+function flushConsequences() {
+  if (!world) return
+  const due = consequenceQueue.filter(c =>
+    c.triggerYear < world!.year ||
+    (c.triggerYear === world!.year && c.triggerDay <= world!.day),
+  )
+  for (const c of due) {
+    const idx = consequenceQueue.indexOf(c)
+    consequenceQueue.splice(idx, 1)
+    const affected = applyInterventions(world, [c.intervention])
+    addFeedRaw(
+      `🌊 ${c.label} (${affected} affected)`,
+      'warning', world.year, world.day,
+    )
+  }
+}
+
 // ── Simulation loop ────────────────────────────────────────────────────────
 
 let paused = false
@@ -380,6 +409,7 @@ const BASE_TICK_MS = 42
 
 function setPaused(value: boolean) {
   paused = value
+  setMapPaused(value)
   btnPause.textContent = paused ? '▶' : '⏸'
 }
 
@@ -391,7 +421,10 @@ function startSimLoop() {
     const living = world.npcs.filter(n => n.lifecycle.is_alive).length
     if (living > peakPopulation) peakPopulation = living
     updateTopbar()
-    if (world.tick % 24 === 0) updateDemographics()
+    if (world.tick % 24 === 0) {
+      updateDemographics()
+      flushConsequences()
+    }
     if (living === 0) triggerGameOver()
   }, BASE_TICK_MS)
 }
@@ -519,11 +552,12 @@ async function sendChatMessage() {
 
 function injectEvent(response: Awaited<ReturnType<typeof handlePlayerChat>>) {
   if (!world || !response.event) return
-  addFeedRaw(
-    `${response.event.narrative_open ?? response.answer}`,
-    'warning', world.year, world.day,
-  )
+  const narrative = response.event.narrative_open ?? response.answer
+  addFeedRaw(narrative, 'warning', world.year, world.day)
   spawnEvent(world, response.event)
+
+  // Async consequence prediction (non-blocking)
+  void scheduleConsequences(response.event.type ?? 'event', narrative)
 }
 
 function executeIntervention(response: Awaited<ReturnType<typeof handlePlayerChat>>) {
@@ -541,11 +575,53 @@ function executeIntervention(response: Awaited<ReturnType<typeof handlePlayerCha
 
   // Companion event (e.g., radiation epidemic after nuclear bomb)
   if (response.event) {
-    addFeedRaw(
-      `${response.event.narrative_open ?? ''}`,
-      'warning', world!.year, world!.day,
-    )
+    const narrative = response.event.narrative_open ?? ''
+    addFeedRaw(narrative, 'warning', world!.year, world!.day)
     spawnEvent(world, response.event)
+  }
+
+  // Async consequence prediction (non-blocking)
+  void scheduleConsequences(response.event?.type ?? 'intervention', response.answer)
+}
+
+async function scheduleConsequences(eventType: string, narrative: string) {
+  if (!world || !aiConfig) return
+  const prediction = await predictConsequences(eventType, narrative, world, aiConfig)
+  if (!prediction || !world) return
+
+  // Show prediction summary in feed
+  addFeedRaw(`📡 ${prediction.summary}`, 'political', world.year, world.day)
+
+  // Enqueue each consequence
+  for (const c of prediction.consequences) {
+    const targetDay = world.day + c.delay_days
+    const extraYears = Math.floor(targetDay / 360)
+    const day = ((targetDay - 1) % 360) + 1
+    const year = world.year + extraYears
+
+    consequenceQueue.push({
+      triggerDay: day,
+      triggerYear: year,
+      label: c.label,
+      intervention: {
+        target: c.intervention.target as 'all' | 'zone' | 'role',
+        zones: c.intervention.zones,
+        roles: c.intervention.roles as Array<'farmer' | 'craftsman' | 'merchant' | 'scholar' | 'guard' | 'leader'> | undefined,
+        count: c.intervention.count,
+        action_state: c.intervention.action_state as never,
+        stress_delta: c.intervention.stress_delta,
+        fear_delta: c.intervention.fear_delta,
+        hunger_delta: c.intervention.hunger_delta,
+        grievance_delta: c.intervention.grievance_delta,
+        happiness_delta: c.intervention.happiness_delta,
+      },
+    })
+  }
+
+  // Show upcoming cascade in feed
+  if (prediction.consequences.length > 0) {
+    const labels = prediction.consequences.map(c => `• [+${c.delay_days}d] ${c.label}`).join('\n')
+    addFeedRaw(`⏳ Upcoming cascades:\n${labels}`, 'info', world.year, world.day)
   }
 }
 
@@ -593,5 +669,23 @@ document.getElementById('btn-constitution')!.addEventListener('click', () => {
     </table>`
 
   showInfo(t('topbar.constitution') as string, bodyHtml)
+})
+
+// ── Log filter buttons ─────────────────────────────────────────────────────
+
+document.getElementById('feed-filters')!.addEventListener('click', e => {
+  const btn = (e.target as HTMLElement).closest('.log-filter-btn') as HTMLElement | null
+  if (!btn) return
+  document.querySelectorAll('#feed-filters .log-filter-btn').forEach(b => b.classList.remove('active'))
+  btn.classList.add('active')
+  setFeedFilter(btn.dataset.filter as 'all' | 'warning' | 'critical')
+})
+
+document.getElementById('chronicle-filters')!.addEventListener('click', e => {
+  const btn = (e.target as HTMLElement).closest('.log-filter-btn') as HTMLElement | null
+  if (!btn) return
+  document.querySelectorAll('#chronicle-filters .log-filter-btn').forEach(b => b.classList.remove('active'))
+  btn.classList.add('active')
+  setChronicleFilter(btn.dataset.filter as 'minor' | 'major' | 'critical')
 })
 

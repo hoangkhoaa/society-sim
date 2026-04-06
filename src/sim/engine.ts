@@ -82,16 +82,16 @@ export function tick(state: WorldState): void {
   for (const ev of indivEvents) {
     if (chronicled >= 3) break
     if (ev.type === 'accident') {
-      addChronicle(tf('engine.accident', { name: ev.npc.name }) as string, state.year, state.day)
+      addChronicle(tf('engine.accident', { name: ev.npc.name }) as string, state.year, state.day, 'minor')
       chronicled++
     } else if (ev.type === 'illness') {
-      addChronicle(tf('engine.fell_ill', { name: ev.npc.name }) as string, state.year, state.day)
+      addChronicle(tf('engine.fell_ill', { name: ev.npc.name }) as string, state.year, state.day, 'minor')
       chronicled++
     } else if (ev.type === 'recovery') {
-      addChronicle(tf('engine.recovered', { name: ev.npc.name }) as string, state.year, state.day)
+      addChronicle(tf('engine.recovered', { name: ev.npc.name }) as string, state.year, state.day, 'minor')
       chronicled++
     } else if (ev.type === 'crime') {
-      addChronicle(tf('engine.crime', { name: ev.npc.name }) as string, state.year, state.day)
+      addChronicle(tf('engine.crime', { name: ev.npc.name }) as string, state.year, state.day, 'minor')
       chronicled++
     }
   }
@@ -107,7 +107,7 @@ export function tick(state: WorldState): void {
 
     // Flush event-caused deaths to chronicle
     if (eventDeathsThisDay > 0) {
-      addChronicle(`💀 ${eventDeathsThisDay} người tử vong do thiên tai.`, state.year, state.day)
+      addChronicle(`💀 ${eventDeathsThisDay} người tử vong do thiên tai.`, state.year, state.day, 'major')
       eventDeathsThisDay = 0
     }
   }
@@ -502,7 +502,7 @@ function checkLifecycleEvents(state: WorldState): void {
       candidate.lifecycle.spouse_id = npc.id
       npc.strong_ties              = [...new Set([...npc.strong_ties, candidate.id])]
       candidate.strong_ties        = [...new Set([...candidate.strong_ties, npc.id])]
-      addChronicle(tf('engine.married', { a: npc.name, b: candidate.name }) as string, state.year, state.day)
+      addChronicle(tf('engine.married', { a: npc.name, b: candidate.name }) as string, state.year, state.day, 'minor')
     }
   }
 
@@ -524,7 +524,7 @@ function checkLifecycleEvents(state: WorldState): void {
       spouse.lifecycle.spouse_id = null
       npc.grievance    = clamp(npc.grievance    + 20, 0, 100)
       spouse.grievance = clamp(spouse.grievance + 20, 0, 100)
-      addChronicle(tf('engine.divorced', { a: npc.name, b: spouse.name }) as string, state.year, state.day)
+      addChronicle(tf('engine.divorced', { a: npc.name, b: spouse.name }) as string, state.year, state.day, 'minor')
     }
   }
 }
@@ -548,7 +548,7 @@ function spawnBirth(state: WorldState, parent: NPC): void {
   baby.strong_ties = [parent.id]
 
   npcs.push(baby)
-  addChronicle(tf('engine.birth', { parent: parent.name }) as string, state.year, state.day)
+  addChronicle(tf('engine.birth', { parent: parent.name }) as string, state.year, state.day, 'minor')
 }
 
 // ── Community Groups ─────────────────────────────────────────────────────────
@@ -579,7 +579,7 @@ function checkCommunityGroups(state: WorldState): void {
     for (const m of coMembers.slice(0, 4)) {   // cap at 5 members (npc + 4)
       m.community_group = groupId
     }
-    addChronicle(tf('engine.community_formed', {}) as string, state.year, state.day)
+    addChronicle(tf('engine.community_formed', {}) as string, state.year, state.day, 'major')
     break  // only one new group per daily check
   }
 
