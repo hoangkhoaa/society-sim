@@ -13,7 +13,7 @@ export function close() {
   panel.classList.add('hidden')
 }
 
-export async function openSpotlight(npc: NPC, state: WorldState, config: AIConfig) {
+export async function openSpotlight(npc: NPC, state: WorldState, config: AIConfig | null) {
   panel.classList.remove('hidden')
   spName.textContent = `${npc.name} · ${npc.occupation}`
 
@@ -23,6 +23,12 @@ export async function openSpotlight(npc: NPC, state: WorldState, config: AIConfi
   const thoughtEl = document.getElementById('sp-thought-text')!
   thoughtEl.textContent = t('sp.thought_loading') as string
   thoughtEl.className   = 'sp-thought loading'
+
+  if (!config) {
+    thoughtEl.textContent = t('sp.thought_fail') as string
+    thoughtEl.className = 'sp-thought'
+    return
+  }
 
   try {
     const thought = await generateNPCThought(npc, state, config)

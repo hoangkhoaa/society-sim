@@ -778,7 +778,7 @@ function onClick(e: MouseEvent) {
   if (!canvas) return
   const world  = getWorld?.()
   const config = getConfig?.()
-  if (!world || !config) return
+  if (!world) return
 
   const rect = canvas.getBoundingClientRect()
   const mx = e.clientX - rect.left
@@ -786,7 +786,7 @@ function onClick(e: MouseEvent) {
 
   const npcId = getNPCAtPosition(world, mx, my, canvas.width, canvas.height)
   if (npcId !== null) {
-    const npc = world.npcs[npcId]
-    if (npc) openSpotlight(npc, world, config)
+    const npc = world.npcs.find(n => n.id === npcId)
+    if (npc) openSpotlight(npc, world, config ?? null)
   }
 }
