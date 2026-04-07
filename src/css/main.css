@@ -152,6 +152,9 @@ body[data-theme='light'] #clock-label,
 body[data-theme='light'] .demo-label,
 body[data-theme='light'] .feed-time,
 body[data-theme='light'] .chronicle-time { color: #5d6f86; }
+body[data-theme='light'] .macro-stat b { color: #1f3550; }
+body[data-theme='light'] .macro-stat.warn b { color: #b36b00; }
+body[data-theme='light'] .macro-stat.danger b { color: #c33636; }
 body[data-theme='light'] .form-row select,
 body[data-theme='light'] .form-row input,
 body[data-theme='light'] .btn-lang,
@@ -171,12 +174,20 @@ body[data-theme='light'] .btn-top {
   color: #35506e;
 }
 body[data-theme='light'] .btn-top:hover { background: #eef4fb; color: #1f3c5a; }
+body[data-theme='light'] #active-events { color: #ad6b00; }
+body[data-theme='light'] #ai-usage { color: #5d6f86; }
 body[data-theme='light'] #map-container { background: #eef3f8; }
 body[data-theme='light'] #right-sidebar,
 body[data-theme='light'] #feed-panel,
 body[data-theme='light'] #chatbar,
 body[data-theme='light'] #demographics { background: #f8fbff; border-color: #dbe5ef; }
 body[data-theme='light'] #chronicle-panel { background: #f2f7fd; border-top-color: #dbe5ef; }
+body[data-theme='light'] #chronicle-resizer {
+  background: #e7eef7;
+  border-top-color: #dbe5ef;
+  border-bottom-color: #dbe5ef;
+}
+body[data-theme='light'] #chronicle-resizer:hover { background: #dfe8f3; }
 body[data-theme='light'] #feed-header,
 body[data-theme='light'] #chronicle-header,
 body[data-theme='light'] .demo-title { color: #5d6f86; border-bottom-color: #e4edf6; }
@@ -184,12 +195,44 @@ body[data-theme='light'] .feed-entry { border-bottom-color: #e9eef5; }
 body[data-theme='light'] .feed-entry:hover { background: #f2f7fd; }
 body[data-theme='light'] .feed-text { color: #3c4c61; }
 body[data-theme='light'] .chronicle-entry { color: #4b5e77; border-bottom-color: #e9eef5; }
+body[data-theme='light'] .feed-entry.critical .feed-text { color: #c33636; }
+body[data-theme='light'] .feed-entry.warning .feed-text { color: #ad6b00; }
+body[data-theme='light'] .feed-entry.political .feed-text { color: #5a54b6; }
+body[data-theme='light'] .feed-entry.player .feed-text { color: #198b67; }
 body[data-theme='light'] #chat-input { color: #1f2f45; }
 body[data-theme='light'] #chat-input::placeholder { color: #8091a6; }
 body[data-theme='light'] .demo-grid b { color: #1f2e42; }
 body[data-theme='light'] .age-bar-row .age-label,
 body[data-theme='light'] .age-bar-row .age-pct { color: #4a6278; }
 body[data-theme='light'] .age-bar-row .age-track { background: #ccd8e4; }
+body[data-theme='light'] #feed-log::-webkit-scrollbar-thumb,
+body[data-theme='light'] #chronicle-log::-webkit-scrollbar-thumb { background: #c6d3e1; }
+
+/* Light mode: spotlight/institution panels */
+body[data-theme='light'] .sp-section { border-bottom-color: #e4edf6; }
+body[data-theme='light'] .sp-section-title { color: #5d6f86; }
+body[data-theme='light'] .sp-label { color: #5d6f86; }
+body[data-theme='light'] .sp-value { color: #22364f; }
+body[data-theme='light'] .sp-bar { background: #dde7f2; }
+body[data-theme='light'] .sp-thought { color: #3e526a; }
+body[data-theme='light'] .sp-thought.loading { color: #7a8ea4; }
+body[data-theme='light'] .sp-description { color: #445971; }
+body[data-theme='light'] .sp-tag {
+  background: #f1f6fc;
+  border-color: #d8e3f0;
+  color: #3f5873;
+}
+body[data-theme='light'] #sp-body::-webkit-scrollbar-thumb,
+body[data-theme='light'] #ip-body::-webkit-scrollbar-thumb { background: #c6d3e1; }
+
+/* Light mode: modal/info popup */
+body[data-theme='light'] #modal-overlay { background: rgba(35, 49, 67, 0.35); }
+body[data-theme='light'] #modal-box {
+  background: #ffffff;
+  border-color: #d9e2ec;
+}
+body[data-theme='light'] #modal-title { color: #1f2a3a; }
+body[data-theme='light'] #modal-body { color: #4c6179; }
 
 .error-msg { font-size: 11px; color: #e24b4b; margin-top: 4px; }
 .hidden { display: none !important; }

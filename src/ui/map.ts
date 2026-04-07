@@ -2,6 +2,7 @@ import type { WorldState, Role } from '../types'
 import { ZONE_LABELS } from '../types'
 import { openSpotlight } from './spotlight'
 import type { AIConfig } from '../types'
+import { t } from '../i18n'
 
 // ── Town layout ─────────────────────────────────────────────────────────────
 // Three horizontal bands that read like a real settlement from above:
@@ -13,23 +14,253 @@ import type { AIConfig } from '../types'
 // Farms are deliberately large (they're open land); civic zones are smaller
 // but centrally placed.  Adjacency in constitution.ts matches this geography.
 
-interface ZoneRect { x: number; y: number; w: number; h: number; color: string; lightColor: string; label: string }
+interface ZoneInfo {
+  seed: [number, number]
+  darkColor: string
+  lightColor: string
+  label: string
+}
 
-const ZONE_LAYOUT: Record<string, ZoneRect> = {
-  // Row 0  (y 0→0.30): northern outskirts
-  north_farm:        { x: 0.00, y: 0.00, w: 0.62, h: 0.30, color: '#0f2a0a', lightColor: '#4a8c28', label: ZONE_LABELS['north_farm'] },
-  scholar_quarter:   { x: 0.62, y: 0.00, w: 0.38, h: 0.30, color: '#0d1433', lightColor: '#3a5ab8', label: ZONE_LABELS['scholar_quarter'] },
+const ZONE_LAYOUT: Record<string, ZoneInfo> = {
+  north_farm:        { seed: [0.30, 0.16], darkColor: '#143a21', lightColor: '#b8f2cb', label: ZONE_LABELS['north_farm'] },
+  scholar_quarter:   { seed: [0.76, 0.16], darkColor: '#1b2b60', lightColor: '#c6d5ff', label: ZONE_LABELS['scholar_quarter'] },
+  residential_west:  { seed: [0.12, 0.44], darkColor: '#42256b', lightColor: '#dcc7ff', label: ZONE_LABELS['residential_west'] },
+  plaza:             { seed: [0.36, 0.43], darkColor: '#23523f', lightColor: '#bdeedd', label: ZONE_LABELS['plaza'] },
+  market_square:     { seed: [0.62, 0.43], darkColor: '#7a4f13', lightColor: '#ffe0b0', label: ZONE_LABELS['market_square'] },
+  guard_post:        { seed: [0.88, 0.42], darkColor: '#6a1f2f', lightColor: '#ffc2cf', label: ZONE_LABELS['guard_post'] },
+  south_farm:        { seed: [0.18, 0.78], darkColor: '#2a5f2f', lightColor: '#c8f0b8', label: ZONE_LABELS['south_farm'] },
+  workshop_district: { seed: [0.50, 0.78], darkColor: '#5f3721', lightColor: '#f5ccb2', label: ZONE_LABELS['workshop_district'] },
+  residential_east:  { seed: [0.82, 0.78], darkColor: '#2f3f8f', lightColor: '#cdd4ff', label: ZONE_LABELS['residential_east'] },
+}
 
-  // Row 1  (y 0.30→0.60): city core
-  residential_west:  { x: 0.00, y: 0.30, w: 0.22, h: 0.30, color: '#17143a', lightColor: '#5a4aaa', label: ZONE_LABELS['residential_west'] },
-  plaza:             { x: 0.22, y: 0.30, w: 0.28, h: 0.30, color: '#1d2b1a', lightColor: '#3a7a28', label: ZONE_LABELS['plaza'] },
-  market_square:     { x: 0.50, y: 0.30, w: 0.26, h: 0.30, color: '#2e2008', lightColor: '#b87a1a', label: ZONE_LABELS['market_square'] },
-  guard_post:        { x: 0.76, y: 0.30, w: 0.24, h: 0.30, color: '#2a0e10', lightColor: '#a83040', label: ZONE_LABELS['guard_post'] },
+// ── Island geometry ─────────────────────────────────────────────────────────
+// Control points define the rough shape; procedural fractal noise along the
+// coastline and zone borders creates natural, jagged outlines like a real map.
 
-  // Row 2  (y 0.60→1.00): southern outskirts
-  south_farm:        { x: 0.00, y: 0.60, w: 0.34, h: 0.40, color: '#122e0b', lightColor: '#4a8c28', label: ZONE_LABELS['south_farm'] },
-  workshop_district: { x: 0.34, y: 0.60, w: 0.33, h: 0.40, color: '#2a1808', lightColor: '#8a4a10', label: ZONE_LABELS['workshop_district'] },
-  residential_east:  { x: 0.67, y: 0.60, w: 0.33, h: 0.40, color: '#151240', lightColor: '#4a3a9a', label: ZONE_LABELS['residential_east'] },
+const ISLAND_OUTLINE: [number, number][] = [
+  [0.44, 0.015], [0.56, 0.012], [0.68, 0.022],
+  [0.80, 0.055], [0.88, 0.105], [0.935, 0.185], [0.96, 0.28],
+  [0.975, 0.38], [0.982, 0.48], [0.975, 0.58],
+  [0.96, 0.68], [0.925, 0.77], [0.855, 0.85], [0.765, 0.91],
+  [0.65, 0.96], [0.52, 0.985], [0.40, 0.97],
+  [0.28, 0.93], [0.18, 0.87], [0.10, 0.78],
+  [0.05, 0.67], [0.025, 0.55], [0.02, 0.43],
+  [0.03, 0.32], [0.06, 0.22], [0.12, 0.135],
+  [0.20, 0.07], [0.32, 0.03],
+]
+
+// ── Deterministic noise for natural borders ─────────────────────────────────
+
+function _hash(n: number, seed: number): number {
+  const x = Math.sin(n * 127.1 + seed * 311.7) * 43758.5453
+  return x - Math.floor(x)
+}
+
+function _smoothNoise(x: number, seed: number): number {
+  const i = Math.floor(x)
+  const f = x - i
+  const u = f * f * (3 - 2 * f)
+  return _hash(i, seed) + (_hash(i + 1, seed) - _hash(i, seed)) * u
+}
+
+function _fbm(x: number, seed: number): number {
+  return _smoothNoise(x, seed) * 0.50
+       + _smoothNoise(x * 2.3, seed + 50) * 0.30
+       + _smoothNoise(x * 5.7, seed + 100) * 0.20
+}
+
+// ── Island path (jagged coastline) ──────────────────────────────────────────
+
+let _islandPath: Path2D | null = null
+let _islandW = 0
+let _islandH = 0
+
+function getIslandPath(W: number, H: number): Path2D {
+  if (_islandPath && _islandW === W && _islandH === H) return _islandPath
+  _islandW = W
+  _islandH = H
+
+  const raw = ISLAND_OUTLINE
+  const n = raw.length
+  const SUBS = 24
+
+  const splinePts: [number, number][] = []
+  for (let i = 0; i < n; i++) {
+    const p0 = raw[(i - 1 + n) % n]
+    const p1 = raw[i]
+    const p2 = raw[(i + 1) % n]
+    const p3 = raw[(i + 2) % n]
+    for (let s = 0; s < SUBS; s++) {
+      const t = s / SUBS
+      const t2 = t * t, t3 = t2 * t
+      splinePts.push([
+        0.5 * (2 * p1[0] + (-p0[0] + p2[0]) * t + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3),
+        0.5 * (2 * p1[1] + (-p0[1] + p2[1]) * t + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3),
+      ])
+    }
+  }
+
+  const total = splinePts.length
+  const path = new Path2D()
+  for (let i = 0; i < total; i++) {
+    const prev = splinePts[(i - 1 + total) % total]
+    const next = splinePts[(i + 1) % total]
+    const dx = next[0] - prev[0], dy = next[1] - prev[1]
+    const len = Math.hypot(dx, dy) || 1
+    const normX = -dy / len, normY = dx / len
+
+    // Low-freq broad peninsulas/bays + mid-freq coves + high-freq jagged rocks
+    const broad = (_fbm(i * 0.08, 42) - 0.5) * 2
+    const mid   = (_fbm(i * 0.35, 71) - 0.5) * 2
+    const fine  = (_smoothNoise(i * 1.4, 13) - 0.5) * 2
+    const noiseVal = broad * 0.024 + mid * 0.014 + fine * 0.006
+    const px = (splinePts[i][0] + normX * noiseVal) * W
+    const py = (splinePts[i][1] + normY * noiseVal) * H
+
+    if (i === 0) path.moveTo(px, py)
+    else path.lineTo(px, py)
+  }
+  path.closePath()
+  _islandPath = path
+  return path
+}
+
+function isInsideIsland(nx: number, ny: number): boolean {
+  const pts = ISLAND_OUTLINE
+  let inside = false
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const xi = pts[i][0], yi = pts[i][1]
+    const xj = pts[j][0], yj = pts[j][1]
+    if ((yi > ny) !== (yj > ny) && nx < (xj - xi) * (ny - yi) / (yj - yi) + xi) {
+      inside = !inside
+    }
+  }
+  return inside
+}
+
+// ── Voronoi zone polygons ───────────────────────────────────────────────────
+
+type Pt = [number, number]
+
+function _clipPolyByLine(poly: Pt[], lx: number, ly: number, nx: number, ny: number): Pt[] {
+  const result: Pt[] = []
+  const len = poly.length
+  for (let i = 0; i < len; i++) {
+    const curr = poly[i], next = poly[(i + 1) % len]
+    const dc = (curr[0] - lx) * nx + (curr[1] - ly) * ny
+    const dn = (next[0] - lx) * nx + (next[1] - ly) * ny
+    if (dc <= 0) result.push(curr)
+    if ((dc <= 0) !== (dn <= 0)) {
+      const t = dc / (dc - dn)
+      result.push([curr[0] + t * (next[0] - curr[0]), curr[1] + t * (next[1] - curr[1])])
+    }
+  }
+  return result
+}
+
+function _voronoiCell(seedKey: string): Pt[] {
+  const z = ZONE_LAYOUT[seedKey]
+  const [sx, sy] = z.seed
+  let poly: Pt[] = [[-0.3, -0.3], [1.3, -0.3], [1.3, 1.3], [-0.3, 1.3]]
+
+  for (const [key, other] of Object.entries(ZONE_LAYOUT)) {
+    if (key === seedKey) continue
+    const [ox, oy] = other.seed
+    const mx = (sx + ox) / 2, my = (sy + oy) / 2
+    poly = _clipPolyByLine(poly, mx, my, ox - sx, oy - sy)
+    if (poly.length < 3) return []
+  }
+
+  // Clip to island outline (CW in screen-coords: inside where cross >= 0)
+  const coast = ISLAND_OUTLINE
+  for (let i = 0; i < coast.length && poly.length >= 3; i++) {
+    const a = coast[i], b = coast[(i + 1) % coast.length]
+    const ex = b[0] - a[0], ey = b[1] - a[1]
+    poly = _clipPolyByLine(poly, a[0], a[1], ey, -ex)
+  }
+  return poly
+}
+
+function _nearestZone(x: number, y: number): string {
+  let best = '', bestD = Infinity
+  for (const [key, z] of Object.entries(ZONE_LAYOUT)) {
+    const dx = x - z.seed[0], dy = y - z.seed[1]
+    const d = dx * dx + dy * dy
+    if (d < bestD) { bestD = d; best = key }
+  }
+  return best
+}
+
+// Cached zone polygons (normalized coords) and Path2Ds (pixel coords)
+let _zoneCells: Record<string, Pt[]> = {}
+let _zonePaths: Record<string, Path2D> = {}
+let _zoneBorderPaths: Path2D | null = null
+let _zpW = 0, _zpH = 0
+
+function _ensureZoneCells() {
+  if (Object.keys(_zoneCells).length > 0) return
+  for (const key of Object.keys(ZONE_LAYOUT)) _zoneCells[key] = _voronoiCell(key)
+}
+
+function _buildZonePolys(W: number, H: number) {
+  if (_zpW === W && _zpH === H && Object.keys(_zonePaths).length > 0) return
+  _zpW = W; _zpH = H
+  _zoneCells = {}; _zonePaths = {}
+
+  const zoneKeys = Object.keys(ZONE_LAYOUT)
+  for (const key of zoneKeys) {
+    const cell = _voronoiCell(key)
+    _zoneCells[key] = cell
+    if (cell.length < 3) continue
+    const p = new Path2D()
+    p.moveTo(cell[0][0] * W, cell[0][1] * H)
+    for (let i = 1; i < cell.length; i++) p.lineTo(cell[i][0] * W, cell[i][1] * H)
+    p.closePath()
+    _zonePaths[key] = p
+  }
+
+  // Build noisy internal border paths (edges shared between two zone cells)
+  const borderPath = new Path2D()
+  const drawnEdges = new Set<string>()
+  for (const key of zoneKeys) {
+    const cell = _zoneCells[key]
+    if (!cell || cell.length < 3) continue
+    for (let i = 0; i < cell.length; i++) {
+      const a = cell[i], b = cell[(i + 1) % cell.length]
+      const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2
+      if (!isInsideIsland(mx, my)) continue
+      const nearA = _nearestZone(a[0], a[1])
+      const nearB = _nearestZone(b[0], b[1])
+      const nearM = _nearestZone(mx, my)
+      // Skip edges that lie on the island coastline
+      if (nearA === nearB && nearB === nearM && nearM === key) continue
+      const edgeId = [a[0].toFixed(4), a[1].toFixed(4), b[0].toFixed(4), b[1].toFixed(4)].sort().join(',')
+      if (drawnEdges.has(edgeId)) continue
+      drawnEdges.add(edgeId)
+      _addNoisyEdge(borderPath, a, b, W, H)
+    }
+  }
+  _zoneBorderPaths = borderPath
+}
+
+function _addNoisyEdge(path: Path2D, a: Pt, b: Pt, W: number, H: number) {
+  const segs = 28
+  const dx = b[0] - a[0], dy = b[1] - a[1]
+  const len = Math.hypot(dx, dy) || 1
+  const nx = -dy / len, ny = dx / len
+  const seed = Math.abs(a[0] * 7919 + a[1] * 104729 + b[0] * 4507 + b[1] * 7727) % 1000
+  for (let s = 0; s <= segs; s++) {
+    const t = s / segs
+    const broad = (_fbm(t * 3, seed) - 0.5) * 2
+    const mid   = (_smoothNoise(t * 10, seed + 50) - 0.5) * 2
+    const fine  = (_smoothNoise(t * 28, seed + 120) - 0.5) * 2
+    const amp = len * 0.18
+    const noise = broad * amp * 0.50 + mid * amp * 0.30 + fine * amp * 0.20
+    const px = (a[0] + dx * t + nx * noise) * W
+    const py = (a[1] + dy * t + ny * noise) * H
+    if (s === 0) path.moveTo(px, py)
+    else path.lineTo(px, py)
+  }
 }
 
 // ── Home zone: where NPCs rest (residential areas) ─────────────────────────
@@ -53,14 +284,28 @@ function getVisualZone(workZone: string, action: string): string {
 
 // ── Role colors ────────────────────────────────────────────────────────────
 
-const ROLE_COLORS: Record<Role, string> = {
-  farmer:    '#5dcaa5',
-  craftsman: '#378add',
-  merchant:  '#ef9f27',
-  scholar:   '#7f77dd',
-  guard:     '#e24b4b',
-  leader:    '#ffffff',
-  child:     '#aaaaaa',   // light grey — children are smaller dots
+const ROLE_COLORS_DARK: Record<Role, string> = {
+  farmer:    '#5de2b7',
+  craftsman: '#4ea9ff',
+  merchant:  '#ffbe52',
+  scholar:   '#b39bff',
+  guard:     '#ff6f7a',
+  leader:    '#f5fbff',
+  child:     '#d8dde6',
+}
+
+const ROLE_COLORS_LIGHT: Record<Role, string> = {
+  farmer:    '#0f8f63',
+  craftsman: '#1e63d8',
+  merchant:  '#b16a00',
+  scholar:   '#6645d4',
+  guard:     '#c5364c',
+  leader:    '#243043',
+  child:     '#6d7788',
+}
+
+function roleColor(role: Role, light: boolean): string {
+  return light ? ROLE_COLORS_LIGHT[role] : ROLE_COLORS_DARK[role]
 }
 
 // ── Map state ──────────────────────────────────────────────────────────────
@@ -109,11 +354,8 @@ const npcVisuals = new Map<number, NPCVisual>()
 function getOrInitVisual(npc: { id: number; x: number; y: number; zone: string; action_state: string }): NPCVisual {
   if (!npcVisuals.has(npc.id)) {
     const renderZone = getVisualZone(npc.zone, npc.action_state)
-    const z = ZONE_LAYOUT[renderZone]
-    if (!z) return { x: npc.x, y: npc.y, tx: npc.x, ty: npc.y, moveIn: 0, renderZone, commute: null }
-    const cx = z.x + npc.x * z.w
-    const cy = z.y + npc.y * z.h
-    npcVisuals.set(npc.id, { x: cx, y: cy, tx: cx, ty: cy, moveIn: Math.random() * 120 | 0, renderZone, commute: null })
+    const pos = randomPosInZone(renderZone)
+    npcVisuals.set(npc.id, { x: pos.x, y: pos.y, tx: pos.x, ty: pos.y, moveIn: Math.random() * 120 | 0, renderZone, commute: null })
   }
   return npcVisuals.get(npc.id)!
 }
@@ -121,11 +363,33 @@ function getOrInitVisual(npc: { id: number; x: number; y: number; zone: string; 
 function randomPosInZone(zone: string): { x: number; y: number } {
   const z = ZONE_LAYOUT[zone]
   if (!z) return { x: 0.5, y: 0.5 }
-  const margin = 0.025
-  return {
-    x: z.x + margin + Math.random() * (z.w - margin * 2),
-    y: z.y + margin + Math.random() * (z.h - margin * 2),
+
+  _ensureZoneCells()
+  const cell = _zoneCells[zone]
+  if (cell && cell.length >= 3) {
+    let minX = 1, maxX = 0, minY = 1, maxY = 0
+    for (const [px, py] of cell) {
+      if (px < minX) minX = px; if (px > maxX) maxX = px
+      if (py < minY) minY = py; if (py > maxY) maxY = py
+    }
+    const pad = 0.02
+    minX += pad; maxX -= pad; minY += pad; maxY -= pad
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const x = minX + Math.random() * (maxX - minX)
+      const y = minY + Math.random() * (maxY - minY)
+      if (isInsideIsland(x, y) && _nearestZone(x, y) === zone) return { x, y }
+    }
   }
+
+  // Fallback: expanding radius from seed
+  const [sx, sy] = z.seed
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const r = 0.08 + attempt * 0.012
+    const x = sx + (Math.random() - 0.5) * r * 2
+    const y = sy + (Math.random() - 0.5) * r * 2
+    if (isInsideIsland(x, y) && _nearestZone(x, y) === zone) return { x, y }
+  }
+  return { x: sx, y: sy }
 }
 
 const ACTION_SPEED: Record<string, number> = {
@@ -189,12 +453,10 @@ function stepVisual(v: NPCVisual, action: string, workZone: string, family: Fami
                    : 0.15
       t.x = t.x * (1 - weight) + family.cx * weight
       t.y = t.y * (1 - weight) + family.cy * weight
-      // Clamp to stay inside zone bounds
-      const z = ZONE_LAYOUT[v.renderZone]
-      if (z) {
-        const m = 0.015
-        t.x = Math.max(z.x + m, Math.min(z.x + z.w - m, t.x))
-        t.y = Math.max(z.y + m, Math.min(z.y + z.h - m, t.y))
+      // Clamp: if family pull moved us out of our zone, snap back toward seed
+      if (_nearestZone(t.x, t.y) !== v.renderZone || !isInsideIsland(t.x, t.y)) {
+        const z = ZONE_LAYOUT[v.renderZone]
+        if (z) { t.x = t.x * 0.5 + z.seed[0] * 0.5; t.y = t.y * 0.5 + z.seed[1] * 0.5 }
       }
     }
 
@@ -241,6 +503,8 @@ function resizeCanvas() {
   if (!container) return
   canvas.width  = container.clientWidth
   canvas.height = container.clientHeight
+  _islandPath = null
+  _zpW = 0; _zpH = 0
 }
 
 // ── Drawing constants ────────────────────────────────────────────────────────
@@ -266,11 +530,10 @@ function draw() {
   const H = canvas.height
 
   ctx.clearRect(0, 0, W, H)
-  ctx.fillStyle = isLightTheme() ? '#eef3f8' : '#111'
-  ctx.fillRect(0, 0, W, H)
 
   const world = getWorld?.()
   if (!world) {
+    drawOcean(W, H)
     drawPlaceholder(W, H)
     return
   }
@@ -411,7 +674,7 @@ function drawTimeBadge(hour: number, dayLight: number, W: number) {
 
 function drawPlaceholder(W: number, H: number) {
   if (!ctx) return
-  ctx.fillStyle = isLightTheme() ? '#4a5568' : '#222'
+  ctx.fillStyle = isLightTheme() ? 'rgba(255,255,255,0.65)' : 'rgba(160,200,255,0.35)'
   ctx.font = '13px system-ui'
   ctx.textAlign = 'center'
   ctx.fillText('Initializing...', W / 2, H / 2)
@@ -425,49 +688,129 @@ function lightenHex(hex: string, mul: number): string {
   return `rgb(${Math.min(255, Math.round(r * mul))},${Math.min(255, Math.round(g * mul))},${Math.min(255, Math.round(b * mul))})`
 }
 
+function drawOcean(W: number, H: number) {
+  if (!ctx) return
+  const light = isLightTheme()
+  const grd = ctx.createRadialGradient(
+    W * 0.48, H * 0.45, Math.min(W, H) * 0.15,
+    W * 0.50, H * 0.50, Math.max(W, H) * 0.75,
+  )
+  if (light) {
+    grd.addColorStop(0, '#a8cce8')
+    grd.addColorStop(0.6, '#7fb8da')
+    grd.addColorStop(1, '#5a9ec5')
+  } else {
+    grd.addColorStop(0, '#0c1e38')
+    grd.addColorStop(0.6, '#081628')
+    grd.addColorStop(1, '#04101e')
+  }
+  ctx.fillStyle = grd
+  ctx.fillRect(0, 0, W, H)
+
+  const waveAlpha = light ? 0.07 : 0.05
+  ctx.save()
+  ctx.strokeStyle = light
+    ? `rgba(255,255,255,${waveAlpha})`
+    : `rgba(60,100,160,${waveAlpha})`
+  ctx.lineWidth = 0.8
+  for (let i = 0; i < 14; i++) {
+    const baseY = (i / 14) * H * 1.2 - H * 0.1
+    const phase = frameCount * 0.35 + i * 43
+    ctx.beginPath()
+    for (let x = -10; x <= W + 10; x += 8) {
+      const y = baseY + Math.sin((x + phase) * 0.013) * 5 + Math.sin((x * 0.7 + phase * 0.6) * 0.019) * 3.5
+      if (x <= 0) ctx.moveTo(x, y)
+      else ctx.lineTo(x, y)
+    }
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
 function drawZones(W: number, H: number) {
   if (!ctx) return
-  const gutter = Math.max(2, Math.min(W, H) * 0.008)
-  const cornerR = Math.min(14, Math.min(W, H) * 0.016)
-  const c = ctx as CanvasRenderingContext2D & { roundRect?(x: number, y: number, w: number, h: number, r: number): void }
   const light = isLightTheme()
+  const coastPath = getIslandPath(W, H)
+  _buildZonePolys(W, H)
 
-  for (const [, zone] of Object.entries(ZONE_LAYOUT)) {
-    const px = zone.x * W + gutter
-    const py = zone.y * H + gutter
-    const pw = zone.w * W - 2 * gutter
-    const ph = zone.h * H - 2 * gutter
-    if (pw < 8 || ph < 8) continue
+  drawOcean(W, H)
 
-    const baseColor = light ? zone.lightColor : zone.color
-    const grd = ctx.createLinearGradient(px, py, px, py + ph)
-    grd.addColorStop(0, lightenHex(baseColor, 1.25))
-    grd.addColorStop(0.55, baseColor)
-    grd.addColorStop(1, lightenHex(baseColor, 0.85))
+  // Beach / sand ring
+  ctx.save()
+  ctx.strokeStyle = light ? 'rgba(218,198,148,0.55)' : 'rgba(90,75,40,0.35)'
+  ctx.lineWidth = 7
+  ctx.stroke(coastPath)
+  ctx.restore()
 
+  // Island base fill (visible as thin border between zones)
+  ctx.fillStyle = light ? '#c8b888' : '#161208'
+  ctx.fill(coastPath)
+
+  // Zone polygon fills
+  ctx.save()
+  ctx.clip(coastPath)
+  for (const [key, zone] of Object.entries(ZONE_LAYOUT)) {
+    const cellPath = _zonePaths[key]
+    if (!cellPath) continue
+    const [sx, sy] = zone.seed
+    const baseColor = light ? zone.lightColor : zone.darkColor
+    const grd = ctx.createRadialGradient(
+      sx * W, sy * H, 0,
+      sx * W, sy * H, Math.max(W, H) * 0.35,
+    )
+    grd.addColorStop(0, lightenHex(baseColor, light ? 1.25 : 1.15))
+    grd.addColorStop(0.6, baseColor)
+    grd.addColorStop(1, lightenHex(baseColor, light ? 0.88 : 0.82))
     ctx.fillStyle = grd
-    ctx.beginPath()
-    if (typeof c.roundRect === 'function') c.roundRect(px, py, pw, ph, cornerR)
-    else ctx.rect(px, py, pw, ph)
-    ctx.fill()
-
-    ctx.beginPath()
-    if (typeof c.roundRect === 'function') c.roundRect(px, py, pw, ph, cornerR)
-    else ctx.rect(px, py, pw, ph)
-    ctx.strokeStyle = light ? 'rgba(0,0,0,0.18)' : 'rgba(0,0,0,0.35)'
-    ctx.lineWidth = 1.2
-    ctx.stroke()
-
-    ctx.fillStyle = light ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.42)'
-    ctx.font = '600 10px system-ui'
-    ctx.textAlign = 'center'
-    ctx.fillText(zone.label, px + pw / 2, py + 14)
-    ctx.textAlign = 'left'
+    ctx.fill(cellPath)
   }
+
+  // Noisy zone borders
+  if (_zoneBorderPaths) {
+    ctx.strokeStyle = light ? 'rgba(0,0,0,0.14)' : 'rgba(255,255,255,0.08)'
+    ctx.lineWidth = 1.4
+    ctx.stroke(_zoneBorderPaths)
+    ctx.strokeStyle = light ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.03)'
+    ctx.lineWidth = 3
+    ctx.stroke(_zoneBorderPaths)
+  }
+  ctx.restore()
+
+  // Coastline — two-pass stroke for depth
+  ctx.save()
+  ctx.strokeStyle = light ? 'rgba(80,65,35,0.55)' : 'rgba(50,40,18,0.60)'
+  ctx.lineWidth = 3
+  ctx.stroke(coastPath)
+  ctx.strokeStyle = light ? 'rgba(255,245,210,0.18)' : 'rgba(255,255,200,0.05)'
+  ctx.lineWidth = 1.2
+  ctx.stroke(coastPath)
+  ctx.restore()
+
+  // Zone labels (at seed positions)
+  ctx.font = light ? '700 11px system-ui' : '600 10px system-ui'
+  ctx.textAlign = 'center'
+  for (const [, zone] of Object.entries(ZONE_LAYOUT)) {
+    const cx = zone.seed[0] * W
+    const cy = zone.seed[1] * H - 4
+    if (light) {
+      ctx.fillStyle = 'rgba(255,255,255,0.92)'
+      for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]] as const) {
+        ctx.fillText(zone.label, cx + ox, cy + oy)
+      }
+      ctx.fillStyle = 'rgba(18, 24, 32, 0.92)'
+    } else {
+      ctx.fillStyle = 'rgba(0,0,0,0.4)'
+      ctx.fillText(zone.label, cx + 1, cy + 1)
+      ctx.fillStyle = 'rgba(255,255,255,0.45)'
+    }
+    ctx.fillText(zone.label, cx, cy)
+  }
+  ctx.textAlign = 'left'
 }
 
 function drawNPCs(world: WorldState, W: number, H: number) {
   if (!ctx) return
+  const light = isLightTheme()
 
   // ── Build family clusters ──────────────────────────────────────────────
   // For each NPC, compute the centroid of family members (spouse + children)
@@ -654,7 +997,7 @@ function drawNPCs(world: WorldState, W: number, H: number) {
     if (!pos) continue
     const { px, py } = pos
 
-    const color = ROLE_COLORS[npc.role]
+    const color = roleColor(npc.role, light)
     const isHovered = npc.id === hoveredNPCId
     // Children are rendered as smaller dots to distinguish them from adults
     const isChild = npc.role === 'child'
@@ -671,8 +1014,13 @@ function drawNPCs(world: WorldState, W: number, H: number) {
     }
 
     ctx.beginPath()
+    ctx.arc(px, py, radius + 1.1, 0, Math.PI * 2)
+    ctx.fillStyle = light ? 'rgba(255,255,255,0.75)' : 'rgba(0,0,0,0.45)'
+    ctx.fill()
+
+    ctx.beginPath()
     ctx.arc(px, py, radius, 0, Math.PI * 2)
-    ctx.fillStyle = isHovered ? '#fff' : color
+    ctx.fillStyle = isHovered ? (light ? '#111' : '#fff') : color
     ctx.fill()
 
     // Name label on hover
@@ -697,47 +1045,73 @@ function drawNPCs(world: WorldState, W: number, H: number) {
 
 function drawLegend(W: number, H: number) {
   if (!ctx) return
+  const light = isLightTheme()
   const roles: Role[] = ['farmer', 'craftsman', 'merchant', 'scholar', 'guard', 'leader', 'child']
 
-  ctx.font = '9px system-ui'
+  const margin = 12
+  const pad = 10
+  const gap = 8
+  const infoLineW = 22
+  const bgR = 6
   ctx.textAlign = 'left'
 
-  // Draw legend at bottom-right to avoid overlapping the demographics panel (bottom-left)
-  // First measure total width
-  let totalW = 0
+  ctx.font = '9px system-ui'
+  const infoLabel = String(t('sp.info_ties'))
+  const infoRowW = infoLineW + 6 + ctx.measureText(infoLabel).width
+
+  let rolesRowW = 0
   for (const role of roles) {
     const label = role.charAt(0).toUpperCase() + role.slice(1)
-    totalW += ctx.measureText(label).width + 22
-  }
-  const startX = W - totalW - 8
-  let x = startX
-  const y = H - 8
-
-  for (const role of roles) {
-    ctx.beginPath()
-    ctx.arc(x + 4, y - 4, 4, 0, Math.PI * 2)
-    ctx.fillStyle = ROLE_COLORS[role]
-    ctx.fill()
-
-    ctx.fillStyle = 'rgba(255,255,255,0.5)'
-    const label = role.charAt(0).toUpperCase() + role.slice(1)
-    ctx.fillText(label, x + 11, y)
-    x += ctx.measureText(label).width + 22
+    rolesRowW += ctx.measureText(label).width + 22
   }
 
-  // Info network line legend
-  const infoLegendY = H - 22
+  const blockW = Math.ceil(Math.max(infoRowW, rolesRowW) + pad * 2)
+  const infoRowH = 16
+  const roleRowH = 22
+  const blockH = pad + infoRowH + gap + roleRowH + pad
+
+  const blockRight = W - margin
+  const blockLeft = blockRight - blockW
+  const blockBottom = H - margin
+  const blockTop = blockBottom - blockH
+
+  // Single panel: network line on top, roles below (avoids overlap with demographics bottom-left)
+  ctx.fillStyle = light ? 'rgba(255,255,255,0.72)' : 'rgba(0,0,0,0.55)'
+  ctx.beginPath()
+  ctx.moveTo(blockLeft + bgR, blockTop)
+  ctx.arcTo(blockRight, blockTop, blockRight, blockBottom, bgR)
+  ctx.arcTo(blockRight, blockBottom, blockLeft, blockBottom, bgR)
+  ctx.arcTo(blockLeft, blockBottom, blockLeft, blockTop, bgR)
+  ctx.arcTo(blockLeft, blockTop, blockRight, blockTop, bgR)
+  ctx.fill()
+
+  const infoLineY = blockTop + pad + Math.floor(infoRowH / 2)
   ctx.setLineDash([3, 4])
   ctx.beginPath()
-  ctx.moveTo(W - 100, infoLegendY)
-  ctx.lineTo(W - 80, infoLegendY)
-  ctx.strokeStyle = 'rgba(80,160,255,0.6)'
+  ctx.moveTo(blockLeft + pad, infoLineY)
+  ctx.lineTo(blockLeft + pad + infoLineW, infoLineY)
+  ctx.strokeStyle = 'rgba(80,160,255,0.75)'
   ctx.lineWidth = 1
   ctx.stroke()
   ctx.setLineDash([])
-  ctx.fillStyle = 'rgba(255,255,255,0.4)'
-  ctx.font = '8px system-ui'
-  ctx.fillText('Info net', W - 77, infoLegendY + 3)
+
+  ctx.fillStyle = light ? 'rgba(0,0,0,0.62)' : 'rgba(255,255,255,0.55)'
+  ctx.font = '9px system-ui'
+  ctx.fillText(infoLabel, blockLeft + pad + infoLineW + 6, infoLineY + 3)
+
+  const roleBaseline = blockTop + pad + infoRowH + gap + 14
+  let x = blockLeft + pad
+  for (const role of roles) {
+    ctx.beginPath()
+    ctx.arc(x + 4, roleBaseline - 4, 4, 0, Math.PI * 2)
+    ctx.fillStyle = roleColor(role, light)
+    ctx.fill()
+
+    ctx.fillStyle = light ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.55)'
+    const label = role.charAt(0).toUpperCase() + role.slice(1)
+    ctx.fillText(label, x + 11, roleBaseline)
+    x += ctx.measureText(label).width + 22
+  }
 }
 
 // ── Interaction ────────────────────────────────────────────────────────────
