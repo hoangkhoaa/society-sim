@@ -92,7 +92,7 @@ Eight distinct zones, each with its own character:
 | ⚔️ The Garrison | Security — guards, enforcers, military presence |
 | 🌿 Southern Pastures | Rural outskirts — farmers, low resources |
 | 🔨 Artisan Row | Production — craftsmen, skilled labor |
-| 🏚 East Settlement | Peripheral — mixed population, vulnerability |
+| 🏚 East Settlement | Peripheral — mixed population, vulnerable |
 
 ---
 
