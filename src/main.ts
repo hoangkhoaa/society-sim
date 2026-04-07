@@ -329,6 +329,8 @@ function updateTopbar() {
 
   setStat('v-stability', macro.stability, 'stat-stability', 40, 25)
   setStat('v-food',      macro.food,      'stat-food',      35, 20)
+  setStat('v-resources', macro.natural_resources, 'stat-resources', 30, 15)
+  setStat('v-energy',    macro.energy,    'stat-energy',    35, 20)
   setStat('v-trust',     macro.trust,     'stat-trust',     35, 20)
   document.getElementById('v-gini')!.textContent = macro.gini.toFixed(2)
 

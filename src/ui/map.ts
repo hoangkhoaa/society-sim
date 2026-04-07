@@ -47,6 +47,7 @@ const ROLE_COLORS: Record<Role, string> = {
   scholar:   '#7f77dd',
   guard:     '#e24b4b',
   leader:    '#ffffff',
+  child:     '#aaaaaa',   // light grey — children are smaller dots
 }
 
 // ── Map state ──────────────────────────────────────────────────────────────
@@ -459,7 +460,10 @@ function drawNPCs(world: WorldState, W: number, H: number) {
 
     const color = ROLE_COLORS[npc.role]
     const isHovered = npc.id === hoveredNPCId
-    const radius = isHovered ? 5 : 2.5
+    // Children are rendered as smaller dots to distinguish them from adults
+    const isChild = npc.role === 'child'
+    const baseRadius = isChild ? 1.5 : 2.5
+    const radius = isHovered ? 5 : baseRadius
 
     // Stress ring
     if (npc.stress > 60) {
@@ -497,7 +501,7 @@ function drawNPCs(world: WorldState, W: number, H: number) {
 
 function drawLegend(W: number, H: number) {
   if (!ctx) return
-  const roles: Role[] = ['farmer', 'craftsman', 'merchant', 'scholar', 'guard', 'leader']
+  const roles: Role[] = ['farmer', 'craftsman', 'merchant', 'scholar', 'guard', 'leader', 'child']
 
   ctx.font = '9px system-ui'
   ctx.textAlign = 'left'
