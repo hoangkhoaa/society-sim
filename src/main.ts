@@ -17,6 +17,33 @@ let aiConfig: AIConfig | null = null
 let world: WorldState | null = null
 let noApiKeyMode = false
 
+type ThemeMode = 'dark' | 'light'
+const THEME_KEY = 'sim_theme'
+
+function applyTheme(theme: ThemeMode) {
+  document.body.dataset.theme = theme
+  const btn = document.getElementById('btn-theme')
+  if (btn) {
+    btn.textContent = theme === 'dark' ? '🌙' : '☀️'
+    btn.setAttribute('title', theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode')
+  }
+}
+
+function initTheme() {
+  const saved = localStorage.getItem(THEME_KEY)
+  const theme: ThemeMode = saved === 'light' ? 'light' : 'dark'
+  applyTheme(theme)
+}
+
+function toggleTheme() {
+  const current: ThemeMode = document.body.dataset.theme === 'light' ? 'light' : 'dark'
+  const next: ThemeMode = current === 'light' ? 'dark' : 'light'
+  applyTheme(next)
+  localStorage.setItem(THEME_KEY, next)
+}
+
+initTheme()
+
 // ── Language selector ──────────────────────────────────────────────────────
 
 document.querySelectorAll<HTMLButtonElement>('.btn-lang').forEach(btn => {
@@ -472,6 +499,8 @@ let speed = 1
 let simInterval: ReturnType<typeof setInterval> | null = null
 let peakPopulation = 0
 const btnPause = document.getElementById('btn-pause')!
+const btnTheme = document.getElementById('btn-theme')!
+btnTheme.addEventListener('click', toggleTheme)
 
 // Government cycle: runs once every 15 sim-days.
 // Tracks which 15-day period has already been processed to avoid double-firing at high speeds.

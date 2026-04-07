@@ -73,6 +73,7 @@ let animFrame: number | null = null
 let hoveredNPCId: number | null = null
 let frameCount = 0
 let _mapPaused = false
+function isLightTheme(): boolean { return document.body.dataset.theme === 'light' }
 
 export function setMapPaused(value: boolean) { _mapPaused = value }
 
@@ -265,7 +266,7 @@ function draw() {
   const H = canvas.height
 
   ctx.clearRect(0, 0, W, H)
-  ctx.fillStyle = '#111'
+  ctx.fillStyle = isLightTheme() ? '#eef3f8' : '#111'
   ctx.fillRect(0, 0, W, H)
 
   const world = getWorld?.()
@@ -276,12 +277,141 @@ function draw() {
 
   drawZones(W, H)
   drawNPCs(world, W, H)
+  drawAtmosphere(world, W, H)
   drawLegend(W, H)
+}
+
+function drawAtmosphere(world: WorldState, W: number, H: number) {
+  if (!ctx) return
+  const hour = world.tick % 24
+  const dayLight = computeDaylight(hour)
+
+  // Night/day tint overlay for immediate visual recognition.
+  if (dayLight < 0.98) {
+    ctx.save()
+    const darkness = (1 - dayLight)
+    ctx.fillStyle = isLightTheme()
+      ? `rgba(210,220,235,${0.10 + darkness * 0.12})`
+      : `rgba(5,10,24,${0.18 + darkness * 0.42})`
+    ctx.fillRect(0, 0, W, H)
+    ctx.restore()
+  }
+
+  const weather = computeWeather(world)
+  if (weather.rain > 0) drawRain(W, H, weather.rain)
+  if (weather.snow > 0) drawSnow(W, H, weather.snow)
+  if (weather.dryFog > 0) drawDryFog(W, H, weather.dryFog)
+  if (weather.smoke > 0) drawSmoke(W, H, weather.smoke)
+
+  drawTimeBadge(hour, dayLight, W)
+}
+
+function computeDaylight(hour: number): number {
+  // Dawn 5-8, day 8-17, dusk 17-20, night otherwise.
+  if (hour >= 8 && hour < 17) return 1
+  if (hour >= 5 && hour < 8) return 0.4 + ((hour - 5) / 3) * 0.6
+  if (hour >= 17 && hour < 20) return 1 - ((hour - 17) / 3) * 0.6
+  return 0.35
+}
+
+function computeWeather(world: WorldState): { rain: number; snow: number; dryFog: number; smoke: number } {
+  let rain = 0
+  let snow = 0
+  let dryFog = 0
+  let smoke = 0
+  for (const ev of world.active_events) {
+    const k = Math.max(0.15, Math.min(1, ev.intensity))
+    if (ev.type === 'storm' || ev.type === 'flood' || ev.type === 'tsunami') rain = Math.max(rain, k)
+    if (ev.type === 'harsh_winter') snow = Math.max(snow, k)
+    if (ev.type === 'drought') dryFog = Math.max(dryFog, k)
+    if (ev.type === 'wildfire') smoke = Math.max(smoke, k)
+  }
+  return { rain, snow, dryFog, smoke }
+}
+
+function drawRain(W: number, H: number, intensity: number) {
+  if (!ctx) return
+  const drops = Math.floor(120 + intensity * 260)
+  ctx.save()
+  ctx.strokeStyle = `rgba(130,180,255,${0.12 + intensity * 0.2})`
+  ctx.lineWidth = 1
+  for (let i = 0; i < drops; i++) {
+    const x = ((i * 47 + frameCount * (10 + intensity * 14)) % (W + 40)) - 20
+    const y = ((i * 73 + frameCount * (28 + intensity * 24)) % (H + 60)) - 30
+    const len = 5 + intensity * 7
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.lineTo(x - 2, y + len)
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
+function drawSnow(W: number, H: number, intensity: number) {
+  if (!ctx) return
+  const flakes = Math.floor(70 + intensity * 150)
+  ctx.save()
+  ctx.fillStyle = `rgba(240,245,255,${0.2 + intensity * 0.3})`
+  for (let i = 0; i < flakes; i++) {
+    const x = ((i * 59 + frameCount * (4 + intensity * 5)) % (W + 30)) - 15
+    const y = ((i * 89 + frameCount * (9 + intensity * 8)) % (H + 40)) - 20
+    const r = 0.8 + ((i % 3) * 0.45)
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.restore()
+}
+
+function drawDryFog(W: number, H: number, intensity: number) {
+  if (!ctx) return
+  ctx.save()
+  const grd = ctx.createLinearGradient(0, 0, W, H)
+  grd.addColorStop(0, `rgba(210,185,120,${0.05 + intensity * 0.08})`)
+  grd.addColorStop(1, `rgba(170,145,90,${0.08 + intensity * 0.1})`)
+  ctx.fillStyle = grd
+  ctx.fillRect(0, 0, W, H)
+  ctx.restore()
+}
+
+function drawSmoke(W: number, H: number, intensity: number) {
+  if (!ctx) return
+  const plumes = Math.floor(10 + intensity * 20)
+  ctx.save()
+  ctx.fillStyle = `rgba(80,80,85,${0.05 + intensity * 0.08})`
+  for (let i = 0; i < plumes; i++) {
+    const x = (i * 137 + frameCount * 0.8) % (W + 120) - 60
+    const y = (i * 83 + frameCount * 0.35) % (H + 80) - 40
+    const w = 80 + (i % 5) * 24
+    const h = 26 + (i % 4) * 11
+    ctx.beginPath()
+    ctx.ellipse(x, y, w, h, 0, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.restore()
+}
+
+function drawTimeBadge(hour: number, dayLight: number, W: number) {
+  if (!ctx) return
+  const night = dayLight < 0.65
+  const label = `${night ? '🌙' : '☀️'} ${String(hour).padStart(2, '0')}:00`
+  const textW = ctx.measureText(label).width
+  const x = W - textW - 18
+  const y = 24
+  ctx.save()
+  if (isLightTheme()) ctx.fillStyle = night ? 'rgba(215,225,240,0.8)' : 'rgba(255,245,215,0.85)'
+  else ctx.fillStyle = night ? 'rgba(10,14,30,0.75)' : 'rgba(35,28,10,0.55)'
+  ctx.fillRect(x - 6, y - 12, textW + 12, 18)
+  if (isLightTheme()) ctx.fillStyle = night ? 'rgba(55,75,115,0.95)' : 'rgba(120,90,20,0.95)'
+  else ctx.fillStyle = night ? 'rgba(180,200,255,0.95)' : 'rgba(255,220,150,0.95)'
+  ctx.font = '600 10px system-ui'
+  ctx.fillText(label, x, y)
+  ctx.restore()
 }
 
 function drawPlaceholder(W: number, H: number) {
   if (!ctx) return
-  ctx.fillStyle = '#222'
+  ctx.fillStyle = isLightTheme() ? '#4a5568' : '#222'
   ctx.font = '13px system-ui'
   ctx.textAlign = 'center'
   ctx.fillText('Initializing...', W / 2, H / 2)
