@@ -311,7 +311,7 @@ function computeDaylight(hour: number): number {
   if (hour >= 8 && hour < 17) return 1
   if (hour >= 5 && hour < 8) return 0.4 + ((hour - 5) / 3) * 0.6
   if (hour >= 17 && hour < 20) return 1 - ((hour - 17) / 3) * 0.6
-  return 0.35
+  return 0.4
 }
 
 function computeWeather(world: WorldState): { rain: number; snow: number; dryFog: number; smoke: number } {
