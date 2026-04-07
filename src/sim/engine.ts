@@ -1477,6 +1477,8 @@ function checkEpidemicIntelligence(state: WorldState): void {
     if (state.quarantine_zones.length > 0) {
       state.quarantine_zones = []
     }
+    cureProgress.value = 0
+    cureProgress.lastResetTick = -1
     return
   }
 
