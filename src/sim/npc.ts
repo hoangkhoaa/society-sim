@@ -206,6 +206,8 @@ export function createNPC(idx: number, total: number, constitution: Constitution
     community_group: null,
     debt: 0,
     debt_to: null,
+    faction_id: null,
+    legendary: false,
   }
 
   return {
@@ -346,6 +348,24 @@ function isNightShiftWorker(npc: NPC): boolean {
 }
 
 function updateZone(npc: NPC, state: WorldState): void {
+  // Quarantine: NPCs cannot leave a quarantined zone (except active fleeing)
+  if ((state.quarantine_zones ?? []).includes(npc.zone) && npc.action_state !== 'fleeing') {
+    return
+  }
+
+  // Epidemic flee: risk-averse NPCs preemptively move away from infected zones
+  const epidemicInZone = state.active_events.some(
+    e => e.type === 'epidemic' && e.zones.includes(npc.zone),
+  )
+  if (epidemicInZone && npc.worldview.risk_tolerance < 0.40 && Math.random() < 0.03) {
+    const adj  = ZONE_ADJACENCY[npc.zone] ?? []
+    const safe = adj.filter(z => !state.active_events.some(e => e.type === 'epidemic' && e.zones.includes(z)))
+    if (safe.length > 0) {
+      npc.zone = safe[Math.floor(Math.random() * safe.length)]
+      return
+    }
+  }
+
   // Fleeing: move to a random adjacent zone every 6 ticks
   if (npc.action_state === 'fleeing') {
     if (state.tick % 6 === npc.id % 6) {
@@ -720,6 +740,26 @@ function wealthTick(npc: NPC, state: WorldState): void {
   npc.wealth     = clamp(npc.wealth + laborIncome, 0, 50000)
   npc.daily_income = npc.daily_income * 0.99 + Math.max(0, laborIncome) * 24
 
+  // ── Shadow market (planned economies, criminals only) ─────────────────
+  // Criminal NPCs in low-market-freedom societies earn illicit income by
+  // trading outside state oversight — selling surplus food/goods at black prices.
+  const mfCheck = state.constitution.market_freedom
+  if (npc.criminal_record && mfCheck < 0.25 && npc.action_state === 'socializing'
+      && state.tick % 12 === npc.id % 12 && Math.random() < 0.15) {
+    const illicit = 20 + Math.random() * 25
+    npc.wealth = clamp(npc.wealth + illicit, 0, 50000)
+    // Sell food to hungry neighbors at a black-market premium
+    for (const tid of npc.strong_ties.slice(0, 2)) {
+      const buyer = state.npcs[tid]
+      if (!buyer?.lifecycle.is_alive || buyer.wealth < 15 || buyer.hunger < 45) continue
+      if (Math.random() < 0.50) {
+        buyer.wealth = clamp(buyer.wealth - 12, 0, 50000)
+        buyer.hunger = clamp(buyer.hunger - 18, 0, 100)
+        npc.wealth   = clamp(npc.wealth   + 12, 0, 50000)
+      }
+    }
+  }
+
   // ── P2P trade (every 12 ticks, staggered by id) ────────────────────────
   if (npc.action_state === 'socializing' && state.tick % 12 === npc.id % 12) {
     const mf = state.constitution.market_freedom
@@ -727,20 +767,22 @@ function wealthTick(npc: NPC, state: WorldState): void {
       const partner = state.npcs[tid]
       if (!partner?.lifecycle.is_alive) continue
 
+      // Commerce discovery boosts merchant trade efficiency
+      const effectiveMarkup = MERCHANT_MARKUP + ((state.discoveries ?? []).some(d => d.id === 'commerce') ? 0.05 : 0)
       if (npc.role === 'merchant') {
         // Planned economies suppress private trade — merchants can't earn markup
         if (mf < 0.15) continue
         const price = 0.5 * mf
         if (partner.wealth >= price * 3) {
           partner.wealth = clamp(partner.wealth - price, 0, 50000)
-          npc.wealth     = clamp(npc.wealth + price * (1 + MERCHANT_MARKUP), 0, 50000)
+          npc.wealth     = clamp(npc.wealth + price * (1 + effectiveMarkup), 0, 50000)
         }
       } else if (partner.role === 'merchant') {
         if (mf < 0.15) continue
         const price = 0.5 * mf
         if (npc.wealth >= price * 3) {
           npc.wealth     = clamp(npc.wealth - price, 0, 50000)
-          partner.wealth = clamp(partner.wealth + price * (1 + MERCHANT_MARKUP), 0, 50000)
+          partner.wealth = clamp(partner.wealth + price * (1 + effectiveMarkup), 0, 50000)
         }
       } else {
         // Non-merchant barter: richer gives to poorer
@@ -849,8 +891,10 @@ function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[])
 
   // ★ Random illness onset — elderly get sick more often
   if (!npc.sick) {
+    const medicineMult = (state.discoveries ?? []).some(d => d.id === 'medicine') ? 0.50 : 1.0
     const sicknessP = 0.0002
       * ageIllnessMult(npc.age)
+      * medicineMult
       * (1 + npc.exhaustion / 80)
       * (1 + npc.hunger / 80)
       * (1 + (state.active_events.some(e => e.type === 'epidemic') ? 4 : 0))

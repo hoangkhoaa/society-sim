@@ -287,6 +287,7 @@ async function startGame(constitution: Constitution) {
   showScreen('screen-game')
   addFeedRaw(t('topbar.init') as string, 'info', 1, 1)
 
+  try {
   // initWorld is now async — it yields every 50 NPCs so the UI stays responsive
   world = await initWorld(constitution)
   peakPopulation = world.npcs.filter(n => n.lifecycle.is_alive).length
@@ -334,6 +335,10 @@ async function startGame(constitution: Constitution) {
       removeSpinner()
       // Silently skip — proclamation is a narrative flourish, not critical
     }
+  }
+  } catch (err) {
+    console.error('[startGame] Initialization failed:', err)
+    addFeedRaw(`⚠ Initialization error: ${err instanceof Error ? err.message : String(err)}`, 'critical', 1, 1)
   }
 }
 
@@ -583,10 +588,14 @@ function triggerGameOver() {
     y:  world.year,
     ys: world.year !== 1 ? 's' : '',
   })
+  const milestoneHtml = world.milestones.slice(-5).map(m =>
+    `<div style="margin-top:4px;opacity:.85">${m.icon} <em>Year ${m.year}, Day ${m.day}</em> — ${m.text}</div>`,
+  ).join('')
+
   stats.innerHTML = [
     tf('gameover.stats_pop', { n: peakPopulation }),
     tf('gameover.stats_day', { d: totalDays, ds: totalDays !== 1 ? 's' : '', y: world.year }),
-  ].join('<br>')
+  ].join('<br>') + (milestoneHtml ? `<div style="margin-top:10px;font-size:0.85em"><strong>Notable Milestones</strong>${milestoneHtml}</div>` : '')
 
   // Apply i18n to the static elements in the game-over screen
   document.getElementById('gameover-title-el')?.replaceChildren()

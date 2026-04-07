@@ -75,7 +75,7 @@ function shuffle<T>(arr: T[]): T[] {
   return out
 }
 
-export function buildNetwork(npcs: NPC[], constitution: Constitution): NetworkGraph {
+export async function buildNetwork(npcs: NPC[], constitution: Constitution): Promise<NetworkGraph> {
   const strong  = new Map<number, Set<number>>()
   const weak    = new Map<number, Set<number>>()
   const info    = new Map<number, Set<number>>()
@@ -136,6 +136,9 @@ export function buildNetwork(npcs: NPC[], constitution: Constitution): NetworkGr
       }
     }
   }
+
+  // Yield after strong/weak tie construction so the browser stays responsive
+  await new Promise<void>(resolve => setTimeout(resolve, 0))
 
   // Clusters: zone → cluster id
   const ZONES_LIST = [...new Set(npcs.map(npc => npc.zone))]
