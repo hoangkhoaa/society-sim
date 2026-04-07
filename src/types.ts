@@ -1,6 +1,6 @@
 // ── Enums & Literals ───────────────────────────────────────────────────────
 
-export type Role = 'farmer' | 'craftsman' | 'scholar' | 'merchant' | 'guard' | 'leader'
+export type Role = 'farmer' | 'craftsman' | 'scholar' | 'merchant' | 'guard' | 'leader' | 'child'
 export type Gender = 'male' | 'female'
 export type ActionState = 'working' | 'resting' | 'socializing' | 'organizing' | 'fleeing' | 'complying' | 'confront'
 export type DeathCause = 'natural' | 'accident' | 'disease' | 'violence'
@@ -33,6 +33,7 @@ export interface NPCLifecycle {
   spouse_id: number | null
   children_ids: number[]
   fertility: number             // 0–1, decreases with age
+  last_birth_tick: number | null  // sim tick of the most recent child birth (for spacing)
 }
 
 // ── Trust ──────────────────────────────────────────────────────────────────
@@ -105,9 +106,13 @@ export interface NPC {
   memory: MemoryEntry[]
 
   // Network
-  strong_ties: number[]         // 5–15 NPC ids
-  weak_ties: number[]           // 50–150 NPC ids
+  strong_ties: number[]         // 5–15 NPC ids — direct face-to-face connections
+  weak_ties: number[]           // 50–150 NPC ids — geographic acquaintances
+  info_ties: number[]           // 10–40 NPC ids — information network (social media, groups, shared interests)
   influence_score: number       // network centrality
+
+  // Economics
+  daily_income: number          // average daily earnings (rolling average)
 
   // Trust per institution (two-dimensional: competence and intention)
   trust_in: TrustMap
@@ -275,6 +280,8 @@ export interface MacroStats {
   trust: number                 // 0–100 (avg govt intention)
   gini: number                  // 0–1
   political_pressure: number    // 0–100
+  natural_resources: number     // 0–100 (remaining extractable resource pool)
+  energy: number                // 0–100 (society's productive energy output)
 }
 
 // ── Network ────────────────────────────────────────────────────────────────
@@ -282,6 +289,7 @@ export interface MacroStats {
 export interface NetworkGraph {
   strong: Map<number, Set<number>>
   weak: Map<number, Set<number>>
+  info: Map<number, Set<number>>   // information network (similarity-based)
   clusters: Map<number, number>  // npcId → clusterId
 }
 
@@ -299,7 +307,8 @@ export interface WorldState {
   network: NetworkGraph
 
   macro: MacroStats
-  food_stock: number            // raw pool, tính food % từ đây
+  food_stock: number            // raw pool, compute food % from here
+  natural_resources: number     // raw natural resource pool (0–100 000)
 
   narrative_log: NarrativeEntry[]
 
@@ -398,6 +407,7 @@ export const ROLE_OCCUPATIONS: Record<Role, string[]> = {
   scholar:   ['Teacher', 'Physician', 'Scholar', 'Philosopher', 'Scribe'],
   guard:     ['Sentry', 'Militia', 'Patrol Officer', 'Squad Leader'],
   leader:    ['Council Member', 'District Chief', 'Elder', 'Official'],
+  child:     ['Child'],
 }
 
 export const ZONES = [

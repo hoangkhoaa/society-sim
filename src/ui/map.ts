@@ -47,6 +47,7 @@ const ROLE_COLORS: Record<Role, string> = {
   scholar:   '#7f77dd',
   guard:     '#e24b4b',
   leader:    '#ffffff',
+  child:     '#aaaaaa',   // light grey — children are smaller dots
 }
 
 // ── Map state ──────────────────────────────────────────────────────────────
@@ -197,6 +198,15 @@ function resizeCanvas() {
   canvas.width  = container.clientWidth
   canvas.height = container.clientHeight
 }
+
+// ── Drawing constants ────────────────────────────────────────────────────────
+// Max pixel distance to draw direct-tie lines (strong_ties are geographic, so kept short)
+const DIRECT_TIE_MAX_DRAW_PX = 120
+// Max pixel distance to draw info-tie lines (info_ties can span across zones)
+const INFO_TIE_MAX_DRAW_PX = 280
+// Info-tie alpha: base + pulse amplitude (creates a gentle breathing effect)
+const INFO_TIE_BASE_ALPHA = 0.12
+const INFO_TIE_PULSE_ALPHA = 0.10
 
 // ── Draw loop ──────────────────────────────────────────────────────────────
 
@@ -354,8 +364,9 @@ function drawNPCs(world: WorldState, W: number, H: number) {
   }
 
   // ── Social relationship lines ──────────────────────────────────────────
-  // Draw strong-tie lines for socializing/organizing pairs; faint lines when just working
+  // Draw strong-tie lines for direct connections and info-tie lines for information network
   const drawnPairs = new Set<string>()
+  const drawnInfoPairs = new Set<string>()
   const pulse = 0.5 + 0.5 * Math.sin(frameCount * 0.05)  // 0–1 pulsing
 
   for (const npc of world.npcs) {
@@ -363,6 +374,42 @@ function drawNPCs(world: WorldState, W: number, H: number) {
     const aPos = posMap.get(npc.id)
     if (!aPos) continue
 
+    // Draw information-network ties (info_ties) as blue/cyan dashed lines
+    // Visible when NPCs are actively sharing information (socializing or organizing)
+    const isActiveInfo = npc.action_state === 'socializing' || npc.action_state === 'organizing'
+    if (isActiveInfo && npc.info_ties) {
+      for (const tid of npc.info_ties) {
+        const pairKey = npc.id < tid ? `${npc.id}-${tid}` : `${tid}-${npc.id}`
+        if (drawnInfoPairs.has(pairKey)) continue
+        drawnInfoPairs.add(pairKey)
+
+        const bNpc = world.npcs[tid]
+        if (!bNpc?.lifecycle.is_alive) continue
+        const bPos = posMap.get(bNpc.id)
+        if (!bPos) continue
+
+        // Info ties can span across zones — use a longer draw distance than direct ties
+        const dist = Math.hypot(aPos.px - bPos.px, aPos.py - bPos.py)
+        if (dist > INFO_TIE_MAX_DRAW_PX) continue
+
+        const bIsActive = bNpc.action_state === 'socializing' || bNpc.action_state === 'organizing'
+        if (!bIsActive) continue
+
+        const infoAlpha = INFO_TIE_BASE_ALPHA + pulse * INFO_TIE_PULSE_ALPHA
+        ctx.beginPath()
+        ctx.moveTo(aPos.px, aPos.py)
+        ctx.lineTo(bPos.px, bPos.py)
+        ctx.strokeStyle = `rgba(80,160,255,${infoAlpha})`  // blue — information network
+        ctx.lineWidth = 0.6
+        ctx.setLineDash([3, 5])  // dashed to distinguish from direct ties
+        ctx.globalAlpha = 1
+        ctx.stroke()
+        ctx.setLineDash([])  // reset dash
+        ctx.globalAlpha = 1
+      }
+    }
+
+    // Draw direct strong-tie lines (face-to-face connections)
     for (const tid of npc.strong_ties) {
       const pairKey = npc.id < tid ? `${npc.id}-${tid}` : `${tid}-${npc.id}`
       if (drawnPairs.has(pairKey)) continue
@@ -375,27 +422,22 @@ function drawNPCs(world: WorldState, W: number, H: number) {
 
       // Canvas-space distance
       const dist = Math.hypot(aPos.px - bPos.px, aPos.py - bPos.py)
-      if (dist > 120) continue  // only draw lines for nearby pairs
+      if (dist > DIRECT_TIE_MAX_DRAW_PX) continue  // direct ties are geographic — draw only nearby
 
       const isSocializing = npc.action_state === 'socializing' || bNpc.action_state === 'socializing'
       const isOrganizing  = npc.action_state === 'organizing'  || bNpc.action_state === 'organizing'
       const isFleeing     = npc.action_state === 'fleeing'
 
       let lineColor: string
-      let alpha: number
 
       if (isOrganizing) {
         lineColor = `rgba(239,159,39,${0.3 + pulse * 0.3})`  // amber — mobilising
-        alpha = 1
       } else if (isSocializing) {
         lineColor = `rgba(93,202,165,${0.25 + pulse * 0.2})`  // teal — socialising
-        alpha = 1
       } else if (isFleeing) {
         lineColor = `rgba(226,75,75,0.15)`  // red dim — panic network
-        alpha = 1
       } else {
         lineColor = `rgba(255,255,255,0.05)`  // near-invisible working ties
-        alpha = 1
       }
 
       ctx.beginPath()
@@ -403,7 +445,7 @@ function drawNPCs(world: WorldState, W: number, H: number) {
       ctx.lineTo(bPos.px, bPos.py)
       ctx.strokeStyle = lineColor
       ctx.lineWidth = isSocializing || isOrganizing ? 1 : 0.5
-      ctx.globalAlpha = alpha
+      ctx.globalAlpha = 1
       ctx.stroke()
       ctx.globalAlpha = 1
     }
@@ -418,7 +460,10 @@ function drawNPCs(world: WorldState, W: number, H: number) {
 
     const color = ROLE_COLORS[npc.role]
     const isHovered = npc.id === hoveredNPCId
-    const radius = isHovered ? 5 : 2.5
+    // Children are rendered as smaller dots to distinguish them from adults
+    const isChild = npc.role === 'child'
+    const baseRadius = isChild ? 1.5 : 2.5
+    const radius = isHovered ? 5 : baseRadius
 
     // Stress ring
     if (npc.stress > 60) {
@@ -456,7 +501,7 @@ function drawNPCs(world: WorldState, W: number, H: number) {
 
 function drawLegend(W: number, H: number) {
   if (!ctx) return
-  const roles: Role[] = ['farmer', 'craftsman', 'merchant', 'scholar', 'guard', 'leader']
+  const roles: Role[] = ['farmer', 'craftsman', 'merchant', 'scholar', 'guard', 'leader', 'child']
 
   ctx.font = '9px system-ui'
   ctx.textAlign = 'left'
@@ -483,6 +528,20 @@ function drawLegend(W: number, H: number) {
     ctx.fillText(label, x + 11, y)
     x += ctx.measureText(label).width + 22
   }
+
+  // Info network line legend
+  const infoLegendY = H - 22
+  ctx.setLineDash([3, 4])
+  ctx.beginPath()
+  ctx.moveTo(W - 100, infoLegendY)
+  ctx.lineTo(W - 80, infoLegendY)
+  ctx.strokeStyle = 'rgba(80,160,255,0.6)'
+  ctx.lineWidth = 1
+  ctx.stroke()
+  ctx.setLineDash([])
+  ctx.fillStyle = 'rgba(255,255,255,0.4)'
+  ctx.font = '8px system-ui'
+  ctx.fillText('Info net', W - 77, infoLegendY + 3)
 }
 
 // ── Interaction ────────────────────────────────────────────────────────────

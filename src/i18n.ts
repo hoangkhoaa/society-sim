@@ -54,6 +54,8 @@ const translations = {
       'Constitution established. {n} citizens. Initial Gini: {g}. State power: {p}%.',
     'topbar.stat_stability': 'Stability',
     'topbar.stat_food':      'Food',
+    'topbar.stat_resources': 'Resources',
+    'topbar.stat_energy':    'Energy',
     'topbar.stat_trust':     'Trust',
     'topbar.stat_gini':      'Gini',
     'topbar.ai_thinking':    '⏸ AI…',
@@ -134,8 +136,10 @@ const translations = {
 
     // Spotlight — network
     'sp.strong_ties':     'Close ties',
+    'sp.info_ties':       'Info network',
     'sp.weak_ties':       'Acquaintances',
     'sp.influence':       'Influence',
+    'sp.daily_income':    'Daily income',
     'sp.community_group': 'Community group',
     'sp.group':           'Group',
     'sp.flags':           'Status flags',
@@ -208,13 +212,14 @@ const translations = {
     'inst.community':  'Community Assembly',
     'inst.guard':      'Guard Corps',
 
-    // Role occupations
-    'occ.farmer':    ['Rice Farmer', 'Vegetable Grower', 'Livestock Keeper', 'Gardener'],
-    'occ.craftsman': ['Blacksmith', 'Carpenter', 'Weaver', 'Potter', 'Mason'],
-    'occ.merchant':  ['Trader', 'Innkeeper', 'Money Changer', 'Peddler'],
-    'occ.scholar':   ['Teacher', 'Physician', 'Scholar', 'Philosopher', 'Scribe'],
-    'occ.guard':     ['Sentry', 'Militia', 'Patrol Officer', 'Squad Leader'],
-    'occ.leader':    ['Council Member', 'District Chief', 'Elder', 'Official'],
+    // Role occupations (expanded for social model variety)
+    'occ.farmer':    ['Rice Farmer', 'Vegetable Grower', 'Livestock Keeper', 'Gardener', 'Fisherman', 'Orchard Keeper'],
+    'occ.craftsman': ['Blacksmith', 'Carpenter', 'Weaver', 'Potter', 'Mason', 'Tailor', 'Tanner', 'Jeweler', 'Engineer', 'Mechanic'],
+    'occ.merchant':  ['Trader', 'Innkeeper', 'Money Changer', 'Peddler', 'Banker', 'Broker', 'Shopkeeper'],
+    'occ.scholar':   ['Teacher', 'Physician', 'Scholar', 'Philosopher', 'Scribe', 'Scientist', 'Lawyer', 'Archivist', 'Theologian', 'Programmer'],
+    'occ.guard':     ['Sentry', 'Militia', 'Patrol Officer', 'Squad Leader', 'Sheriff', 'Soldier', 'Prison Warden'],
+    'occ.leader':    ['Council Member', 'District Chief', 'Elder', 'Official', 'Mayor', 'Commissioner', 'Party Secretary'],
+    'occ.child':     ['Child'],
 
     // Preset descriptions
     'preset.nordic_desc': 'Nordic social democracy — high equality, strong state, high social trust.',
@@ -295,6 +300,8 @@ const translations = {
       'Hiến pháp đã được thiết lập. {n} người dân. Gini ban đầu: {g}. Quyền lực nhà nước: {p}%.',
     'topbar.stat_stability': 'Ổn định',
     'topbar.stat_food':      'Lương thực',
+    'topbar.stat_resources': 'Tài nguyên',
+    'topbar.stat_energy':    'Năng lượng',
     'topbar.stat_trust':     'Tin tưởng',
     'topbar.stat_gini':      'Gini',
     'topbar.ai_thinking':    '⏸ AI…',
@@ -375,8 +382,10 @@ const translations = {
 
     // Spotlight — network
     'sp.strong_ties':     'Thân thiết',
+    'sp.info_ties':       'Mạng thông tin',
     'sp.weak_ties':       'Quen biết',
     'sp.influence':       'Ảnh hưởng',
+    'sp.daily_income':    'Thu nhập/ngày',
     'sp.community_group': 'Nhóm cộng đồng',
     'sp.group':           'Nhóm',
     'sp.flags':           'Trạng thái',
@@ -448,13 +457,14 @@ const translations = {
     'inst.community':  'Cộng đồng',
     'inst.guard':      'Lực lượng bảo vệ',
 
-    // Role occupations
-    'occ.farmer':    ['Nông dân trồng lúa', 'Người trồng rau', 'Người nuôi gia súc', 'Người làm vườn'],
-    'occ.craftsman': ['Thợ rèn', 'Thợ mộc', 'Thợ dệt', 'Thợ gốm', 'Thợ xây'],
-    'occ.merchant':  ['Thương nhân', 'Chủ quán trọ', 'Người đổi tiền', 'Lái buôn'],
-    'occ.scholar':   ['Giáo viên', 'Thầy thuốc', 'Học giả', 'Triết gia', 'Thư ký'],
-    'occ.guard':     ['Lính canh', 'Dân quân', 'Tuần tra', 'Chỉ huy đội'],
-    'occ.leader':    ['Thành viên hội đồng', 'Trưởng khu', 'Trưởng lão', 'Quan chức'],
+    // Role occupations (expanded for social model variety)
+    'occ.farmer':    ['Nông dân trồng lúa', 'Người trồng rau', 'Người nuôi gia súc', 'Người làm vườn', 'Ngư dân', 'Người trồng cây ăn quả'],
+    'occ.craftsman': ['Thợ rèn', 'Thợ mộc', 'Thợ dệt', 'Thợ gốm', 'Thợ xây', 'Thợ may', 'Thợ thuộc da', 'Thợ kim hoàn', 'Kỹ sư', 'Thợ cơ khí'],
+    'occ.merchant':  ['Thương nhân', 'Chủ quán trọ', 'Người đổi tiền', 'Lái buôn', 'Chủ ngân hàng', 'Môi giới', 'Chủ tiệm'],
+    'occ.scholar':   ['Giáo viên', 'Thầy thuốc', 'Học giả', 'Triết gia', 'Thư ký', 'Nhà khoa học', 'Luật sư', 'Lưu trữ viên', 'Thần học gia', 'Lập trình viên'],
+    'occ.guard':     ['Lính canh', 'Dân quân', 'Tuần tra', 'Chỉ huy đội', 'Cảnh sát trưởng', 'Binh sĩ', 'Quản ngục'],
+    'occ.leader':    ['Thành viên hội đồng', 'Trưởng khu', 'Trưởng lão', 'Quan chức', 'Thị trưởng', 'Ủy viên', 'Bí thư đảng'],
+    'occ.child':     ['Trẻ em'],
 
     // Preset descriptions
     'preset.nordic_desc': 'Dân chủ xã hội Bắc Âu — bình đẳng cao, nhà nước mạnh, tin tưởng cao.',

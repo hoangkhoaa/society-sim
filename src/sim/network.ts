@@ -3,9 +3,14 @@ import { clamp } from './constitution'
 
 // ── Small-world network builder ─────────────────────────────────────────────
 //
-// Strong ties: 5–15 neighbors, prefer same zone + same role + close age
-// Weak ties:   50–150, same zone + adjacent zones
-// Clusters:    Louvain-lite (zone-based community assignment)
+// Strong ties:   5–15 neighbors, prefer same zone + same role + close age
+//               → direct face-to-face social connections
+// Weak ties:     50–150, same zone + adjacent zones
+//               → geographic acquaintances
+// Info ties:     10–40, based on worldview similarity + role + community
+//               → information network (social media, messaging groups, shared interests)
+//               → transcends geography; creates ideological echo chambers
+// Clusters:      Louvain-lite (zone-based community assignment)
 //
 // Time: O(N × k) per category, acceptable for 10k NPCs
 
@@ -19,6 +24,38 @@ const ZONE_ADJACENCY: Record<string, string[]> = {
   residential_west:  ['north_farm', 'workshop_district', 'plaza'],
   guard_post:        ['plaza', 'residential_east', 'residential_west'],
   plaza:             ['market_square', 'scholar_quarter', 'residential_east', 'residential_west', 'guard_post'],
+}
+
+// ── Info-network similarity score ───────────────────────────────────────────
+// Info ties connect NPCs with similar worldviews, same role, or same community group.
+// Geographic proximity does NOT matter — this models digital/social-media connections.
+
+function infoAffinityScore(a: NPC, b: NPC): number {
+  if (a.id === b.id) return -1
+
+  let score = 0
+
+  // Worldview similarity (each dimension contributes)
+  const collectivismDiff = Math.abs(a.worldview.collectivism - b.worldview.collectivism)
+  const authorityDiff    = Math.abs(a.worldview.authority_trust - b.worldview.authority_trust)
+  const riskDiff         = Math.abs(a.worldview.risk_tolerance - b.worldview.risk_tolerance)
+  if (collectivismDiff < 0.15) score += 3
+  else if (collectivismDiff < 0.30) score += 1
+  if (authorityDiff < 0.15) score += 2
+  else if (authorityDiff < 0.30) score += 1
+  if (riskDiff < 0.20) score += 1
+
+  // Same role: people in the same profession follow the same online spaces
+  if (a.role === b.role) score += 3
+
+  // Same community group: explicit group membership creates direct info ties
+  if (a.community_group !== null && a.community_group === b.community_group) score += 4
+
+  // Similar wealth bracket: class-based information bubbles
+  const wealthRatio = Math.max(a.wealth, b.wealth) / (Math.min(a.wealth, b.wealth) + 1)
+  if (wealthRatio < 1.5) score += 1
+
+  return score
 }
 
 function proximityScore(a: NPC, b: NPC): number {
@@ -37,14 +74,27 @@ function proximityScore(a: NPC, b: NPC): number {
   return score
 }
 
+// ── Fisher-Yates shuffle (uniform random permutation) ──────────────────────
+
+function shuffle<T>(arr: T[]): T[] {
+  const out = arr.slice()
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[out[i], out[j]] = [out[j], out[i]]
+  }
+  return out
+}
+
 export function buildNetwork(npcs: NPC[], constitution: Constitution): NetworkGraph {
   const strong  = new Map<number, Set<number>>()
   const weak    = new Map<number, Set<number>>()
+  const info    = new Map<number, Set<number>>()
   const clusters = new Map<number, number>()
 
   for (const npc of npcs) {
     strong.set(npc.id, new Set())
     weak.set(npc.id, new Set())
+    info.set(npc.id, new Set())
   }
 
   // Cohesion scales neighbor counts
@@ -103,5 +153,39 @@ export function buildNetwork(npcs: NPC[], constitution: Constitution): NetworkGr
   ZONES_LIST.forEach((z, i) => { zoneToCluster[z] = i })
   for (const npc of npcs) clusters.set(npc.id, zoneToCluster[npc.zone] ?? 0)
 
-  return { strong, weak, clusters }
+  // Info ties: worldview-similarity + role + community — NOT geographic
+  // Build by-role index for efficient candidate lookup
+  const byRole: Record<string, NPC[]> = {}
+  for (const npc of npcs) {
+    if (!byRole[npc.role]) byRole[npc.role] = []
+    byRole[npc.role].push(npc)
+  }
+
+  // Target info-tie count scales with network cohesion (10–40)
+  const infoTarget = Math.round(10 + cohesion * 30)
+
+  for (const npc of npcs) {
+    // Candidates: same role (primary echo chamber) + a uniformly random cross-role sample
+    const sameRoleCandidates = (byRole[npc.role] ?? []).filter(c => c.id !== npc.id)
+    // Cross-role sample uses Fisher-Yates shuffle for uniform random selection,
+    // allowing ~50% of info slots to connect outside the primary role echo chamber.
+    const crossRoleSample = shuffle(
+      npcs.filter(c => c.id !== npc.id && c.role !== npc.role),
+    ).slice(0, Math.ceil(infoTarget * 0.5))
+
+    const infoCandidates = [...sameRoleCandidates, ...crossRoleSample]
+      .filter(c => c.id !== npc.id)
+      .sort((a, b) => infoAffinityScore(b, npc) - infoAffinityScore(a, npc))
+      .slice(0, infoTarget * 3)
+
+    const inf = info.get(npc.id)!
+    for (const candidate of infoCandidates) {
+      if (inf.size >= infoTarget) break
+      if (infoAffinityScore(candidate, npc) <= 0) continue
+      inf.add(candidate.id)
+      info.get(candidate.id)!.add(npc.id)
+    }
+  }
+
+  return { strong, weak, info, clusters }
 }

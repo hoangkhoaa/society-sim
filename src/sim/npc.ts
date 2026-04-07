@@ -19,6 +19,7 @@ const ROLE_WORLDVIEW_BONUS: Record<Role, Partial<Record<string, number>>> = {
   scholar:   { risk_tolerance: -0.05, time_preference: +0.15 },
   merchant:  { collectivism: -0.15, risk_tolerance: +0.10 },
   craftsman: {},
+  child:     {},
 }
 
 export const ROLE_WEALTH_EXPECTATION: Record<Role, number> = {
@@ -28,6 +29,7 @@ export const ROLE_WEALTH_EXPECTATION: Record<Role, number> = {
   craftsman: 60,
   guard:     55,
   farmer:    45,
+  child:     0,   // children have no income expectation
 }
 
 // ── Pareto wealth distribution ─────────────────────────────────────────────
@@ -43,15 +45,19 @@ function paretoSample(gini: number): number {
 // ── Role assignment ────────────────────────────────────────────────────────
 
 function assignRole(idx: number, total: number, ratios: Constitution['role_ratios']): Role {
-  const roles: Role[] = ['farmer', 'craftsman', 'merchant', 'scholar', 'guard', 'leader']
+  // 'child' is excluded from initial population assignment — only newborns get it
+  const roles: Array<keyof typeof ratios> = ['farmer', 'craftsman', 'merchant', 'scholar', 'guard', 'leader']
   let cumulative = 0
   const frac = idx / total
   for (const role of roles) {
     cumulative += ratios[role]
-    if (frac < cumulative) return role
+    if (frac < cumulative) return role as Role
   }
   return 'farmer'
 }
+
+// Zones where children and families live. Exported so engine.ts can use the same list.
+export const RESIDENTIAL_ZONES = ['residential_west', 'residential_east'] as const
 
 function assignZone(role: Role): string {
   const ROLE_ZONES: Record<Role, string[]> = {
@@ -61,6 +67,7 @@ function assignZone(role: Role): string {
     scholar:   ['scholar_quarter'],
     guard:     ['guard_post', 'plaza'],
     leader:    ['plaza', 'scholar_quarter'],
+    child:     [...RESIDENTIAL_ZONES],  // children live in residential zones
   }
   const zoneList = ROLE_ZONES[role]
   return zoneList[Math.floor(Math.random() * zoneList.length)]
@@ -155,6 +162,7 @@ export function createNPC(idx: number, total: number, constitution: Constitution
       spouse_id: null,
       children_ids: [],
       fertility: fertilityByAge(age, gender),
+      last_birth_tick: null,
     },
     occupation,
     daily_thought: '',
@@ -178,7 +186,9 @@ export function createNPC(idx: number, total: number, constitution: Constitution
     memory: [],
     strong_ties: [],
     weak_ties: [],
+    info_ties: [],
     influence_score: 0,
+    daily_income: 0,
     trust_in,
     wealth: paretoSample(constitution.gini_start),
     grievance: rand(0, 20),
@@ -325,6 +335,8 @@ function updateGrievance(npc: NPC, state: WorldState): void {
 }
 
 // ── Worldview Drift ────────────────────────────────────────────────────────
+// Information-network ties (info_ties) drive ideological echo-chamber effects.
+// Direct social ties (strong_ties) drive mutual radicalization when both are unstable.
 
 function updateWorldview(npc: NPC, state: WorldState): void {
   let dDelta = 0
@@ -338,25 +350,46 @@ function updateWorldview(npc: NPC, state: WorldState): void {
 
   if (!npc.susceptible) return
 
-  const influencers = npc.strong_ties
+  // Worldview influence comes from the information network (info_ties):
+  // NPCs are shaped by what they read/watch/share, not just who they meet face-to-face.
+  const infoInfluencers = npc.info_ties
     .map(id => state.npcs[id])
     .filter(Boolean)
     .sort((a, b) => b.influence_score - a.influence_score)
-    .slice(0, 3)
+    .slice(0, 5)
 
-  if (influencers.length === 0) return
+  if (infoInfluencers.length > 0) {
+    const dims = ['collectivism', 'authority_trust', 'risk_tolerance', 'time_preference'] as const
+    // Echo-chamber check: if most info contacts share similar views, reinforce them
+    const allSimilarWorldview = infoInfluencers.every(n => n.dissonance_acc >= 20)
 
-  const dims = ['collectivism', 'authority_trust', 'risk_tolerance', 'time_preference'] as const
-  const allUnstable = influencers.every(n => n.dissonance_acc >= 30)
+    for (const dim of dims) {
+      const avgNeighbor = infoInfluencers.reduce((s, n) => s + n.worldview[dim], 0) / infoInfluencers.length
+      // Info-network pull is stronger than direct-contact pull (media echo chamber)
+      const pull = (avgNeighbor - npc.worldview[dim]) * npc.adaptability * 0.008
+      npc.worldview[dim] = clamp(npc.worldview[dim] + pull, 0, 1)
+    }
 
-  for (const dim of dims) {
-    const avgNeighbor = influencers.reduce((s, n) => s + n.worldview[dim], 0) / influencers.length
-    const pull = (avgNeighbor - npc.worldview[dim]) * npc.adaptability * 0.005
-    npc.worldview[dim] = clamp(npc.worldview[dim] + pull, 0, 1)
+    if (allSimilarWorldview) {
+      // Information echo chamber: shared content reinforces extreme views
+      for (const dim of ['collectivism', 'authority_trust'] as const) {
+        npc.worldview[dim] = npc.worldview[dim] > 0.5
+          ? clamp(npc.worldview[dim] + 0.003, 0, 1)
+          : clamp(npc.worldview[dim] - 0.003, 0, 1)
+      }
+    }
   }
 
-  if (allUnstable) {
-    // mutual radicalization
+  // Direct social ties (strong_ties) add a secondary mutual radicalization effect
+  // when face-to-face contacts are also unstable — physical protest dynamics
+  const directInfluencers = npc.strong_ties
+    .map(id => state.npcs[id])
+    .filter(Boolean)
+    .filter(n => n.dissonance_acc >= 30)
+    .slice(0, 3)
+
+  if (directInfluencers.length >= 2) {
+    // Mutual radicalization through direct contact (street-level escalation)
     for (const dim of ['collectivism', 'authority_trust'] as const) {
       npc.worldview[dim] = npc.worldview[dim] > 0.5
         ? clamp(npc.worldview[dim] + 0.002, 0, 1)
@@ -377,10 +410,50 @@ export function computeProductivity(npc: NPC, _state: WorldState): number {
   return Math.max(0, npc.base_skill * motivation * (1 + fairnessBonus) * (1 - stressPenalty) * (1 - sickPenalty))
 }
 
+// ── Wealth tick ────────────────────────────────────────────────────────────
+// Each NPC earns from labor (productivity-based) and small peer-to-peer trades
+// via direct connections (strong_ties). Information-network ties (info_ties)
+// spread economic opportunity awareness but do not directly transfer wealth.
+
+// Fraction of a direct trade that the recipient keeps (rest is friction/overhead).
+const TRADE_EFFICIENCY = 0.8
+
 function wealthTick(npc: NPC, state: WorldState): void {
+  // Children and fleeing/confronting NPCs do not earn income
+  if (npc.role === 'child') return
   if (npc.action_state === 'fleeing' || npc.action_state === 'confront') return
+
   const productivity = computeProductivity(npc, state)
-  npc.wealth = clamp(npc.wealth + (productivity - 0.5) * 0.1, 0, 5000)
+  const laborIncome = (productivity - 0.5) * 0.1
+  npc.wealth = clamp(npc.wealth + laborIncome, 0, 5000)
+
+  // Exponential moving average of daily income.
+  // Decay: 0.99 per tick × 24 ticks/day gives ~a 100-tick (4-day) half-life.
+  // Multiplier: ×24 converts per-tick earnings to a per-day rate estimate.
+  npc.daily_income = npc.daily_income * 0.99 + Math.max(0, laborIncome) * 24
+
+  // Peer-to-peer economic exchange via direct connections (strong_ties).
+  // Checked every 12 ticks (≈ twice a sim-day), staggered by NPC id so that
+  // not all 500 NPCs trigger trade on the same tick (distributes CPU load).
+  if (npc.action_state === 'socializing' && state.tick % 12 === npc.id % 12) {
+    const marketFreedom = state.constitution.market_freedom
+    for (const tid of npc.strong_ties.slice(0, 3)) {
+      const partner = state.npcs[tid]
+      if (!partner?.lifecycle.is_alive) continue
+
+      // Merchants facilitate larger trades; others do small exchanges (food, goods)
+      const isMerchantTrade = npc.role === 'merchant' || partner.role === 'merchant'
+      const baseTransfer = isMerchantTrade ? 0.8 : 0.2
+
+      // Wealth flows from richer to poorer through direct trade.
+      // Market freedom scales how actively wealth circulates.
+      if (npc.wealth > partner.wealth + 10) {
+        const transfer = baseTransfer * marketFreedom * Math.min(1, (npc.wealth - partner.wealth) / 200)
+        npc.wealth     = clamp(npc.wealth     - transfer, 0, 5000)
+        partner.wealth = clamp(partner.wealth + transfer * TRADE_EFFICIENCY, 0, 5000)
+      }
+    }
+  }
 }
 
 // ── Lifecycle checks ───────────────────────────────────────────────────────
@@ -508,7 +581,74 @@ function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[])
   if (state.tick > 0 && state.tick % 8640 === npc.id % 8640) {
     npc.age++
     npc.lifecycle.fertility = fertilityByAge(npc.age, npc.gender)
+
+    // Career transition: children become adults at 18 and choose an occupation
+    if (npc.role === 'child' && npc.age >= 18) {
+      transitionToAdultCareer(npc, state)
+    }
   }
+}
+
+// ── Career transition (child → adult) ─────────────────────────────────────
+// When a child turns 18, they are assigned an adult role based on:
+//   1. Parent role (social class / apprenticeship — boosts parent's role weight by 40%)
+//   2. Constitution role_ratios (societal demand — base weight ×35)
+//   3. Personal worldview (individual aptitude — additional ±15 points per dimension)
+// 'leader' is suppressed for born-in-society NPCs unless the society is feudal.
+
+function transitionToAdultCareer(npc: NPC, state: WorldState): void {
+  const adultRoles: Role[] = ['farmer', 'craftsman', 'merchant', 'scholar', 'guard', 'leader']
+  const ratios = state.constitution.role_ratios
+  const wv = npc.worldview
+
+  // Base weights from constitution's role demand
+  const weights: Record<string, number> = {
+    farmer:    ratios.farmer * 35,
+    craftsman: ratios.craftsman * 35,
+    merchant:  ratios.merchant * 35,
+    scholar:   ratios.scholar * 35,
+    guard:     ratios.guard * 35,
+    leader:    ratios.leader * 35,
+  }
+
+  // Worldview adjustments (personal inclination)
+  weights.guard    += wv.authority_trust * 15 + wv.risk_tolerance * 5
+  weights.leader   += wv.authority_trust * 10 + wv.time_preference * 8
+  weights.scholar  += wv.time_preference * 12 + (1 - wv.risk_tolerance) * 5
+  weights.merchant += wv.risk_tolerance * 15 + (1 - wv.collectivism) * 8
+  weights.farmer   += wv.collectivism * 8 + wv.time_preference * 5
+  weights.craftsman += wv.time_preference * 8 + wv.collectivism * 5
+
+  // Parent role bonus: find the NPC whose children_ids includes this NPC — that is the parent.
+  // Check via strong_ties (parent was added to network at birth).
+  for (const tid of npc.strong_ties) {
+    const contact = state.npcs[tid]
+    if (contact?.lifecycle.children_ids.includes(npc.id) && contact.role !== 'child') {
+      // This contact is a parent — class inheritance boosts their role by 40%
+      const parentRole = contact.role
+      if (parentRole in weights) {
+        weights[parentRole] = (weights[parentRole] ?? 0) * 1.4
+      }
+      break
+    }
+  }
+
+  // Suppress the 'leader' role for society-born NPCs (leaders emerge from adult selection,
+  // not from hereditary birth — unless it's a feudal/high-inequality society)
+  const isFeudal = state.constitution.gini_start > 0.60 && state.constitution.state_power > 0.50
+  if (!isFeudal) weights.leader *= 0.3
+
+  // Ensure all weights are positive
+  for (const role of adultRoles) {
+    if (weights[role] <= 0) weights[role] = 0.1
+  }
+
+  // Pick role using weighted random selection
+  const selectedRole = weightedRandom(weights as Record<string, number>) as Role
+  npc.role        = selectedRole
+  npc.zone        = assignZone(selectedRole)
+  npc.occupation  = tOcc(selectedRole)
+  npc.description = generateDescription(npc)  // refresh description with new role
 }
 
 // ── Trust update ───────────────────────────────────────────────────────────

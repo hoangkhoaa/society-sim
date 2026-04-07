@@ -1,5 +1,5 @@
 import type { WorldState, Constitution, NPC, SimEvent, NarrativeEntry, NPCIntervention } from '../types'
-import { createNPC, tickNPC, computeProductivity } from './npc'
+import { createNPC, tickNPC, computeProductivity, RESIDENTIAL_ZONES } from './npc'
 import type { IndividualEvent } from './npc'
 import { buildNetwork } from './network'
 import { initInstitutions, clamp } from './constitution'
@@ -20,7 +20,7 @@ export function initWorld(constitution: Constitution): WorldState {
     npcs.push(createNPC(i, POPULATION, constitution))
   }
 
-  const { strong, weak, clusters } = buildNetwork(npcs, constitution)
+  const { strong, weak, info, clusters } = buildNetwork(npcs, constitution)
 
   // Write ties back onto NPCs
   for (const [id, ties] of strong) {
@@ -28,6 +28,9 @@ export function initWorld(constitution: Constitution): WorldState {
   }
   for (const [id, ties] of weak) {
     if (npcs[id]) npcs[id].weak_ties = [...ties]
+  }
+  for (const [id, ties] of info) {
+    if (npcs[id]) npcs[id].info_ties = [...ties]
   }
 
   // Influence score = normalized strong-tie degree centrality
@@ -38,7 +41,10 @@ export function initWorld(constitution: Constitution): WorldState {
 
   const institutions = initInstitutions(constitution)
 
-  const macro = computeMacroStats({ npcs, institutions, active_events: [], food_stock: POPULATION * 30, constitution } as unknown as WorldState)
+  // Natural resource pool: starts at 100k × (1 - scarcity)
+  const naturalResourcesInit = clamp(100000 * (1 - constitution.resource_scarcity), 10000, 100000)
+
+  const macro = computeMacroStats({ npcs, institutions, active_events: [], food_stock: POPULATION * 30, natural_resources: naturalResourcesInit, constitution } as unknown as WorldState)
 
   return {
     tick: 0,
@@ -48,9 +54,10 @@ export function initWorld(constitution: Constitution): WorldState {
     npcs,
     institutions,
     active_events: [],
-    network: { strong, weak, clusters },
+    network: { strong, weak, info, clusters },
     macro,
     food_stock: POPULATION * 30,
+    natural_resources: naturalResourcesInit,
     narrative_log: [],
     drift_score: 0,
     crisis_pending: false,
@@ -334,6 +341,25 @@ export function computeMacroStats(state: WorldState): WorldState['macro'] {
   state.food_stock = clamp((state.food_stock ?? 0) + dailyProduction - dailyConsumption, 0, 999999)
   const food = clamp(state.food_stock / (npcs.length * 30) * 100, 0, 100)
 
+  // Natural resources — craftsmen and farmers extract resources; slow natural regeneration
+  const craftsmen = npcs.filter(n => n.role === 'craftsman')
+  const extractionRate = (
+    craftsmen.reduce((s, n) => s + computeProductivity(n, state), 0) * 0.3 +
+    farmers.reduce((s, n) => s + computeProductivity(n, state), 0) * 0.1
+  ) * scarcityFactor
+  const regenRate = (state.natural_resources ?? 50000) * 0.00002  // 0.002% per tick
+  state.natural_resources = clamp(
+    (state.natural_resources ?? 50000) + regenRate - extractionRate,
+    0, 100000,
+  )
+  const natural_resources = clamp(state.natural_resources / 1000, 0, 100)
+
+  // Energy index — productive output of the whole society, normalized 0–100
+  const workingNPCs = npcs.filter(n => n.action_state === 'working' || n.action_state === 'socializing')
+  const totalProductivity = workingNPCs.reduce((s, n) => s + computeProductivity(n, state), 0)
+  const maxPossibleProductivity = npcs.length * 1.0   // 1.0 is max base_skill
+  const energy = clamp(totalProductivity / Math.max(maxPossibleProductivity, 1) * 100, 0, 100)
+
   // Gini
   const wealths = npcs.map(n => n.wealth).sort((a, b) => a - b)
   const gini = computeGini(wealths)
@@ -362,7 +388,7 @@ export function computeMacroStats(state: WorldState): WorldState['macro'] {
     0, 100,
   )
 
-  return { food, gini, political_pressure: politicalPressure, trust, stability }
+  return { food, gini, political_pressure: politicalPressure, trust, stability, natural_resources, energy }
 }
 
 function computeGini(sorted: number[]): number {
@@ -428,9 +454,28 @@ function emitCrisisEvent(state: WorldState): void {
 
 // ── Lifecycle Events (birth / marriage) ─────────────────────────────────────
 
+// Minimum sim-ticks between births for the same couple.
+// 720 sim-days × 24 ticks/day = 17 280 ticks ≈ 2 sim-years inter-birth interval.
+const MIN_BIRTH_SPACING_TICKS = 720 * 24
+
+// Maximum children per couple (varies with constitution safety net — wealthier / safer → fewer)
+function maxChildrenPerCouple(state: WorldState): number {
+  return Math.round(clamp(6 - state.constitution.safety_net * 3, 2, 8))
+}
+
 function computeBirthChancePerDay(a: NPC, b: NPC, state: WorldState): number {
   const baseFertility = Math.min(a.lifecycle.fertility, b.lifecycle.fertility)
   if (baseFertility <= 0) return 0
+
+  // Enforce birth spacing — at least MIN_BIRTH_SPACING_TICKS since the last birth
+  const lastA = a.lifecycle.last_birth_tick ?? -Infinity
+  const lastB = b.lifecycle.last_birth_tick ?? -Infinity
+  const lastBirth = Math.max(lastA, lastB)
+  if (state.tick - lastBirth < MIN_BIRTH_SPACING_TICKS) return 0
+
+  // Enforce maximum children per couple
+  const totalChildren = new Set([...a.lifecycle.children_ids, ...b.lifecycle.children_ids]).size
+  if (totalChildren >= maxChildrenPerCouple(state)) return 0
 
   const avgHappiness = (a.happiness + b.happiness) / 2
   const avgStress = (a.stress + b.stress) / 2
@@ -451,7 +496,12 @@ function computeBirthChancePerDay(a: NPC, b: NPC, state: WorldState): number {
   const trustFactor = clamp(0.75 + avgTrustGov * 0.35, 0.75, 1.1)
   const foodFactor = clamp(0.55 + state.macro.food / 150, 0.55, 1.2)
 
-  const chance = 0.025 * baseFertility
+  // Base rate of 0.0008/day gives ~0.29 births/year per couple when all factors are at baseline (~1.0).
+  // This matches a pre-modern TFR of ~3.5 over a ~12-year average fertile window per couple,
+  // assuming factors combine to ~1.0 on average (good conditions) across the fertile years.
+  // With all factors maximally favorable the cap is 0.003/day (~1.1/year).
+  // Spacing and max-children limits (maxChildrenPerCouple) ensure realistic lifetime family sizes.
+  const chance = 0.0008 * baseFertility
     * happinessFactor
     * stressFactor
     * fearFactor
@@ -460,7 +510,7 @@ function computeBirthChancePerDay(a: NPC, b: NPC, state: WorldState): number {
     * trustFactor
     * foodFactor
 
-  return clamp(chance, 0, 0.06)
+  return clamp(chance, 0, 0.003)
 }
 
 function checkLifecycleEvents(state: WorldState): void {
@@ -533,19 +583,31 @@ function spawnBirth(state: WorldState, parent: NPC): void {
   const { constitution, npcs } = state
   const newId = npcs.length
   const baby  = createNPC(newId, npcs.length + 1, constitution)
-  baby.age     = 0
-  baby.lifecycle.fertility = 0
+
+  // Babies start as children — they will grow up and choose a career at age 18
+  baby.age              = 0
+  baby.role             = 'child'
+  baby.zone             = (RESIDENTIAL_ZONES as readonly string[]).includes(parent.zone)
+    ? parent.zone : RESIDENTIAL_ZONES[Math.floor(Math.random() * RESIDENTIAL_ZONES.length)]
+  baby.lifecycle.fertility    = 0
   baby.lifecycle.children_ids = []
 
   parent.lifecycle.children_ids.push(newId)
+  parent.lifecycle.last_birth_tick = state.tick
+
   if (parent.lifecycle.spouse_id !== null) {
     const spouse = npcs[parent.lifecycle.spouse_id]
-    if (spouse) spouse.lifecycle.children_ids.push(newId)
+    if (spouse) {
+      spouse.lifecycle.children_ids.push(newId)
+      spouse.lifecycle.last_birth_tick = state.tick
+    }
   }
 
   // Add to network
   state.network.strong.set(newId, new Set([parent.id]))
+  state.network.info.set(newId, new Set())
   baby.strong_ties = [parent.id]
+  baby.info_ties   = []
 
   npcs.push(baby)
   addChronicle(tf('engine.birth', { parent: parent.name }) as string, state.year, state.day, 'minor')
