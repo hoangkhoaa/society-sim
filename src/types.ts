@@ -105,9 +105,13 @@ export interface NPC {
   memory: MemoryEntry[]
 
   // Network
-  strong_ties: number[]         // 5–15 NPC ids
-  weak_ties: number[]           // 50–150 NPC ids
+  strong_ties: number[]         // 5–15 NPC ids — direct face-to-face connections
+  weak_ties: number[]           // 50–150 NPC ids — geographic acquaintances
+  info_ties: number[]           // 10–40 NPC ids — information network (social media, groups, shared interests)
   influence_score: number       // network centrality
+
+  // Economics
+  daily_income: number          // average daily earnings (rolling average)
 
   // Trust per institution (two-dimensional: competence and intention)
   trust_in: TrustMap
@@ -282,6 +286,7 @@ export interface MacroStats {
 export interface NetworkGraph {
   strong: Map<number, Set<number>>
   weak: Map<number, Set<number>>
+  info: Map<number, Set<number>>   // information network (similarity-based)
   clusters: Map<number, number>  // npcId → clusterId
 }
 

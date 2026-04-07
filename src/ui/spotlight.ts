@@ -130,12 +130,20 @@ function renderStatic(npc: NPC, _state: WorldState): string {
         <span class="sp-value">${npc.strong_ties.length} ${t('sp.people')}</span>
       </div>
       <div class="sp-row">
+        <span class="sp-label">${t('sp.info_ties')}</span>
+        <span class="sp-value" style="color:#50a0ff">${(npc.info_ties ?? []).length} ${t('sp.people')}</span>
+      </div>
+      <div class="sp-row">
         <span class="sp-label">${t('sp.weak_ties')}</span>
         <span class="sp-value">${npc.weak_ties.length} ${t('sp.people')}</span>
       </div>
       <div class="sp-row">
         <span class="sp-label">${t('sp.influence')}</span>
         <span class="sp-value">${Math.round(npc.influence_score * 100)}%</span>
+      </div>
+      <div class="sp-row">
+        <span class="sp-label">${t('sp.daily_income')}</span>
+        <span class="sp-value">${(npc.daily_income ?? 0).toFixed(2)}</span>
       </div>
       ${npc.community_group !== null ? `
       <div class="sp-row">

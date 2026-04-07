@@ -134,8 +134,10 @@ const translations = {
 
     // Spotlight — network
     'sp.strong_ties':     'Close ties',
+    'sp.info_ties':       'Info network',
     'sp.weak_ties':       'Acquaintances',
     'sp.influence':       'Influence',
+    'sp.daily_income':    'Daily income',
     'sp.community_group': 'Community group',
     'sp.group':           'Group',
     'sp.flags':           'Status flags',
@@ -375,8 +377,10 @@ const translations = {
 
     // Spotlight — network
     'sp.strong_ties':     'Thân thiết',
+    'sp.info_ties':       'Mạng thông tin',
     'sp.weak_ties':       'Quen biết',
     'sp.influence':       'Ảnh hưởng',
+    'sp.daily_income':    'Thu nhập/ngày',
     'sp.community_group': 'Nhóm cộng đồng',
     'sp.group':           'Nhóm',
     'sp.flags':           'Trạng thái',

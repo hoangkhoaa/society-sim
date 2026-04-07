@@ -20,7 +20,7 @@ export function initWorld(constitution: Constitution): WorldState {
     npcs.push(createNPC(i, POPULATION, constitution))
   }
 
-  const { strong, weak, clusters } = buildNetwork(npcs, constitution)
+  const { strong, weak, info, clusters } = buildNetwork(npcs, constitution)
 
   // Write ties back onto NPCs
   for (const [id, ties] of strong) {
@@ -28,6 +28,9 @@ export function initWorld(constitution: Constitution): WorldState {
   }
   for (const [id, ties] of weak) {
     if (npcs[id]) npcs[id].weak_ties = [...ties]
+  }
+  for (const [id, ties] of info) {
+    if (npcs[id]) npcs[id].info_ties = [...ties]
   }
 
   // Influence score = normalized strong-tie degree centrality
@@ -48,7 +51,7 @@ export function initWorld(constitution: Constitution): WorldState {
     npcs,
     institutions,
     active_events: [],
-    network: { strong, weak, clusters },
+    network: { strong, weak, info, clusters },
     macro,
     food_stock: POPULATION * 30,
     narrative_log: [],
@@ -545,7 +548,9 @@ function spawnBirth(state: WorldState, parent: NPC): void {
 
   // Add to network
   state.network.strong.set(newId, new Set([parent.id]))
+  state.network.info.set(newId, new Set())
   baby.strong_ties = [parent.id]
+  baby.info_ties   = []
 
   npcs.push(baby)
   addChronicle(tf('engine.birth', { parent: parent.name }) as string, state.year, state.day, 'minor')

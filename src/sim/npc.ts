@@ -178,7 +178,9 @@ export function createNPC(idx: number, total: number, constitution: Constitution
     memory: [],
     strong_ties: [],
     weak_ties: [],
+    info_ties: [],
     influence_score: 0,
+    daily_income: 0,
     trust_in,
     wealth: paretoSample(constitution.gini_start),
     grievance: rand(0, 20),
@@ -325,6 +327,8 @@ function updateGrievance(npc: NPC, state: WorldState): void {
 }
 
 // ── Worldview Drift ────────────────────────────────────────────────────────
+// Information-network ties (info_ties) drive ideological echo-chamber effects.
+// Direct social ties (strong_ties) drive mutual radicalization when both are unstable.
 
 function updateWorldview(npc: NPC, state: WorldState): void {
   let dDelta = 0
@@ -338,25 +342,46 @@ function updateWorldview(npc: NPC, state: WorldState): void {
 
   if (!npc.susceptible) return
 
-  const influencers = npc.strong_ties
+  // Worldview influence comes from the information network (info_ties):
+  // NPCs are shaped by what they read/watch/share, not just who they meet face-to-face.
+  const infoInfluencers = npc.info_ties
     .map(id => state.npcs[id])
     .filter(Boolean)
     .sort((a, b) => b.influence_score - a.influence_score)
-    .slice(0, 3)
+    .slice(0, 5)
 
-  if (influencers.length === 0) return
+  if (infoInfluencers.length > 0) {
+    const dims = ['collectivism', 'authority_trust', 'risk_tolerance', 'time_preference'] as const
+    // Echo-chamber check: if most info contacts share similar views, reinforce them
+    const allSimilarWorldview = infoInfluencers.every(n => n.dissonance_acc >= 20)
 
-  const dims = ['collectivism', 'authority_trust', 'risk_tolerance', 'time_preference'] as const
-  const allUnstable = influencers.every(n => n.dissonance_acc >= 30)
+    for (const dim of dims) {
+      const avgNeighbor = infoInfluencers.reduce((s, n) => s + n.worldview[dim], 0) / infoInfluencers.length
+      // Info-network pull is stronger than direct-contact pull (media echo chamber)
+      const pull = (avgNeighbor - npc.worldview[dim]) * npc.adaptability * 0.008
+      npc.worldview[dim] = clamp(npc.worldview[dim] + pull, 0, 1)
+    }
 
-  for (const dim of dims) {
-    const avgNeighbor = influencers.reduce((s, n) => s + n.worldview[dim], 0) / influencers.length
-    const pull = (avgNeighbor - npc.worldview[dim]) * npc.adaptability * 0.005
-    npc.worldview[dim] = clamp(npc.worldview[dim] + pull, 0, 1)
+    if (allSimilarWorldview) {
+      // Information echo chamber: shared content reinforces extreme views
+      for (const dim of ['collectivism', 'authority_trust'] as const) {
+        npc.worldview[dim] = npc.worldview[dim] > 0.5
+          ? clamp(npc.worldview[dim] + 0.003, 0, 1)
+          : clamp(npc.worldview[dim] - 0.003, 0, 1)
+      }
+    }
   }
 
-  if (allUnstable) {
-    // mutual radicalization
+  // Direct social ties (strong_ties) add a secondary mutual radicalization effect
+  // when face-to-face contacts are also unstable — physical protest dynamics
+  const directInfluencers = npc.strong_ties
+    .map(id => state.npcs[id])
+    .filter(Boolean)
+    .filter(n => n.dissonance_acc >= 30)
+    .slice(0, 3)
+
+  if (directInfluencers.length >= 2) {
+    // Mutual radicalization through direct contact (street-level escalation)
     for (const dim of ['collectivism', 'authority_trust'] as const) {
       npc.worldview[dim] = npc.worldview[dim] > 0.5
         ? clamp(npc.worldview[dim] + 0.002, 0, 1)
@@ -377,10 +402,48 @@ export function computeProductivity(npc: NPC, _state: WorldState): number {
   return Math.max(0, npc.base_skill * motivation * (1 + fairnessBonus) * (1 - stressPenalty) * (1 - sickPenalty))
 }
 
+// ── Wealth tick ────────────────────────────────────────────────────────────
+// Each NPC earns from labor (productivity-based) and small peer-to-peer trades
+// via direct connections (strong_ties). Information-network ties (info_ties)
+// spread economic opportunity awareness but do not directly transfer wealth.
+
+// Fraction of a direct trade that the recipient keeps (rest is friction/overhead).
+const TRADE_EFFICIENCY = 0.8
+
 function wealthTick(npc: NPC, state: WorldState): void {
   if (npc.action_state === 'fleeing' || npc.action_state === 'confront') return
+
   const productivity = computeProductivity(npc, state)
-  npc.wealth = clamp(npc.wealth + (productivity - 0.5) * 0.1, 0, 5000)
+  const laborIncome = (productivity - 0.5) * 0.1
+  npc.wealth = clamp(npc.wealth + laborIncome, 0, 5000)
+
+  // Exponential moving average of daily income.
+  // Decay: 0.99 per tick × 24 ticks/day gives ~a 100-tick (4-day) half-life.
+  // Multiplier: ×24 converts per-tick earnings to a per-day rate estimate.
+  npc.daily_income = npc.daily_income * 0.99 + Math.max(0, laborIncome) * 24
+
+  // Peer-to-peer economic exchange via direct connections (strong_ties).
+  // Checked every 12 ticks (≈ twice a sim-day), staggered by NPC id so that
+  // not all 500 NPCs trigger trade on the same tick (distributes CPU load).
+  if (npc.action_state === 'socializing' && state.tick % 12 === npc.id % 12) {
+    const marketFreedom = state.constitution.market_freedom
+    for (const tid of npc.strong_ties.slice(0, 3)) {
+      const partner = state.npcs[tid]
+      if (!partner?.lifecycle.is_alive) continue
+
+      // Merchants facilitate larger trades; others do small exchanges (food, goods)
+      const isMerchantTrade = npc.role === 'merchant' || partner.role === 'merchant'
+      const baseTransfer = isMerchantTrade ? 0.8 : 0.2
+
+      // Wealth flows from richer to poorer through direct trade.
+      // Market freedom scales how actively wealth circulates.
+      if (npc.wealth > partner.wealth + 10) {
+        const transfer = baseTransfer * marketFreedom * Math.min(1, (npc.wealth - partner.wealth) / 200)
+        npc.wealth     = clamp(npc.wealth     - transfer, 0, 5000)
+        partner.wealth = clamp(partner.wealth + transfer * TRADE_EFFICIENCY, 0, 5000)
+      }
+    }
+  }
 }
 
 // ── Lifecycle checks ───────────────────────────────────────────────────────
