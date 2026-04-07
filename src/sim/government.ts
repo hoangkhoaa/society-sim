@@ -10,6 +10,7 @@ import { applyInterventions } from './engine'
 import { clamp } from './constitution'
 import { getLang } from '../i18n'
 import { getLatestHeadlines } from './press'
+import { describeAlert, noAlertsSummaryLine, pickRoutineMessage } from '../local/government'
 
 // ── Alert thresholds ──────────────────────────────────────────────────────────
 
@@ -87,92 +88,39 @@ function detectAlerts(state: WorldState): Alert[] {
   const alerts: Alert[] = []
 
   if (m.food <= ALERT_THRESHOLDS.food_critical) {
-    alerts.push({ stat: 'food', value: m.food, level: 'critical', description: `food supply critically low (${Math.round(m.food)}%)` })
+    alerts.push({ stat: 'food', value: m.food, level: 'critical', description: describeAlert(getLang(), 'food', 'critical', m.food) })
   } else if (m.food <= ALERT_THRESHOLDS.food_warning) {
-    alerts.push({ stat: 'food', value: m.food, level: 'warning', description: `food supply low (${Math.round(m.food)}%)` })
+    alerts.push({ stat: 'food', value: m.food, level: 'warning', description: describeAlert(getLang(), 'food', 'warning', m.food) })
   }
 
   if (m.stability <= ALERT_THRESHOLDS.stability_critical) {
-    alerts.push({ stat: 'stability', value: m.stability, level: 'critical', description: `societal stability dangerously low (${Math.round(m.stability)}%)` })
+    alerts.push({ stat: 'stability', value: m.stability, level: 'critical', description: describeAlert(getLang(), 'stability', 'critical', m.stability) })
   } else if (m.stability <= ALERT_THRESHOLDS.stability_warning) {
-    alerts.push({ stat: 'stability', value: m.stability, level: 'warning', description: `stability declining (${Math.round(m.stability)}%)` })
+    alerts.push({ stat: 'stability', value: m.stability, level: 'warning', description: describeAlert(getLang(), 'stability', 'warning', m.stability) })
   }
 
   if (m.trust <= ALERT_THRESHOLDS.trust_critical) {
-    alerts.push({ stat: 'trust', value: m.trust, level: 'critical', description: `trust in government at crisis level (${Math.round(m.trust)}%)` })
+    alerts.push({ stat: 'trust', value: m.trust, level: 'critical', description: describeAlert(getLang(), 'trust', 'critical', m.trust) })
   } else if (m.trust <= ALERT_THRESHOLDS.trust_warning) {
-    alerts.push({ stat: 'trust', value: m.trust, level: 'warning', description: `government trust declining (${Math.round(m.trust)}%)` })
+    alerts.push({ stat: 'trust', value: m.trust, level: 'warning', description: describeAlert(getLang(), 'trust', 'warning', m.trust) })
   }
 
   if (m.political_pressure >= ALERT_THRESHOLDS.pressure_critical) {
-    alerts.push({ stat: 'political_pressure', value: m.political_pressure, level: 'critical', description: `civil unrest at critical level (${Math.round(m.political_pressure)}%)` })
+    alerts.push({ stat: 'political_pressure', value: m.political_pressure, level: 'critical', description: describeAlert(getLang(), 'pressure', 'critical', m.political_pressure) })
   } else if (m.political_pressure >= ALERT_THRESHOLDS.pressure_warning) {
-    alerts.push({ stat: 'political_pressure', value: m.political_pressure, level: 'warning', description: `political pressure rising (${Math.round(m.political_pressure)}%)` })
+    alerts.push({ stat: 'political_pressure', value: m.political_pressure, level: 'warning', description: describeAlert(getLang(), 'pressure', 'warning', m.political_pressure) })
   }
 
   if (m.natural_resources <= ALERT_THRESHOLDS.resources_critical) {
-    alerts.push({ stat: 'natural_resources', value: m.natural_resources, level: 'critical', description: `natural resources critically depleted (${Math.round(m.natural_resources)}%)` })
+    alerts.push({ stat: 'natural_resources', value: m.natural_resources, level: 'critical', description: describeAlert(getLang(), 'resources', 'critical', m.natural_resources) })
   } else if (m.natural_resources <= ALERT_THRESHOLDS.resources_warning) {
-    alerts.push({ stat: 'natural_resources', value: m.natural_resources, level: 'warning', description: `natural resources depleting (${Math.round(m.natural_resources)}%)` })
+    alerts.push({ stat: 'natural_resources', value: m.natural_resources, level: 'warning', description: describeAlert(getLang(), 'resources', 'warning', m.natural_resources) })
   }
 
   return alerts
 }
 
-// ── Routine messages (no alerts, no AI needed) ────────────────────────────────
-
-const ROUTINE_MESSAGES: Record<RegimeType, string[]> = {
-  authoritarian: [
-    'The Governing Council convened its quarterly session. All indicators were declared optimal. Dissenting statistics have been corrected.',
-    'The Ministry of Information reports record public satisfaction. Citizens are reminded that unauthorized happiness surveys remain prohibited.',
-    'Council Decree #4471 passed unanimously: next quarter\'s production quotas are hereby retroactively fulfilled ahead of schedule.',
-    'The Council has renewed its oversight mandate. For efficiency, the opposition was not consulted — or notified.',
-    'State media celebrates 100% voter participation in last night\'s unscheduled policy referendum. The motion passed.',
-  ],
-  libertarian: [
-    'The Market Advisory Board recommends the market continue self-regulating. The Board considers its quarterly job complete.',
-    'Deregulation Directive #892 passed: forms previously required to submit deregulation requests are now officially optional.',
-    'This quarter\'s Council meeting was canceled. The scheduling committee deemed it "excessive government intervention."',
-    'The Council reaffirms: the invisible hand is working. Citizens asking where it went are encouraged to trust the process.',
-    'Wealth concentration report: the top 10% hold 71% of assets. The Council calls this "robust growth metrics."',
-  ],
-  welfare: [
-    'The Social Welfare Committee approved version 5.2 of the Parental Leave Integration Policy Framework (Revised).',
-    'The Council passed a motion to commission a comprehensive study on the efficacy of commissioning comprehensive studies.',
-    'A 0.3% increase to the Community Enrichment Fund was approved. Celebration was cautiously measured.',
-    'An accessibility audit of all public benches has been ordered. Results expected sometime in the next two to four quarters.',
-    'The Wellness Subcommittee submitted 87 pages of recommendations. Three will be reviewed. One may be implemented.',
-  ],
-  feudal: [
-    'The High Council reaffirmed the noble right to collect grain levies. Serfs are reminded that gratitude is an expected civic response.',
-    'The Lord\'s Chamberlain announces the bi-annual land permit renewal period. Late fees apply at the Lord\'s sole discretion.',
-    'The Council has graciously chosen not to raise tithes this season. Formal praise should be submitted in triplicate before month\'s end.',
-    'A petition from the peasant quarter was received, reviewed by a herald, and filed appropriately.',
-    'The Guild of Heralds confirms: the nobility\'s proclamation of continued authority has been duly proclaimed.',
-  ],
-  theocratic: [
-    'The High Council of Elders completed its biweekly prayer session. All omens were declared favorable. Dissenters will pray harder.',
-    'The Office of Sacred Texts has updated the civic rulebook. Revisions are divinely inspired and thus not subject to appeal.',
-    'The Council confirmed that last month\'s tremor was an omen of approval, not disapproval. Theological consensus was unanimous.',
-    'The annual Festival of Compliance approaches. Attendance is voluntary. The divine is observing.',
-    'A citizen inquiry about secular governance was forwarded to the Department of Doctrinal Correction for appropriate counseling.',
-  ],
-  technocratic: [
-    'The Algorithm Advisory Board completed its 15-day review cycle. All output metrics are nominal. No human intuition was required.',
-    'Efficiency Council Session 847 concluded: the society is operating at 94.7% of projected optimal parameters. Cause unknown.',
-    'The Data Ethics Committee has optimized the ethics review process, achieving a 12% reduction in ethics overhead.',
-    'Resource Allocation Model v3.1 has been deployed. Citizens are reminded their behavioral data contributes to the model.',
-    'The Innovation Index Committee reports all 17 innovation metrics trending upward. The definition of "upward" was also revised upward.',
-  ],
-  moderate: [
-    'The Governing Council completed its quarterly review. Everything is broadly fine. Probably.',
-    'A motion to rename the Council Chamber was tabled for the seventh consecutive session. No consensus was reached.',
-    'The Trade Oversight Committee submitted its 34-page report on optimal cart axle width standards. Distribution is pending.',
-    'Council approved installation of a new fountain in the Plaza. Construction commences once funding is finalized.',
-    'The Agricultural Advisory Board recommended farmers "try harder this season." The board considers this actionable guidance.',
-    'The Committee on Committee Oversight held its monthly meeting. Quorum was achieved with two members to spare.',
-  ],
-}
+// ── Routine messages (localized) live in `src/local/government.ts` ────────────
 
 // ── Regime personality for AI system prompt ───────────────────────────────────
 
@@ -461,44 +409,54 @@ export async function runGovernmentCycle(
 
   try {
     const alerts = detectAlerts(state)
-
-    if (alerts.length === 0) {
-      // No alerts — log a witty routine message; no API key required
-      const regime = detectRegime(state.constitution)
-      const pool = ROUTINE_MESSAGES[regime]
-      const msg = pool[Math.floor(Math.random() * pool.length)]
-      addFeedRaw(`🏛 ${msg}`, 'political', state.year, state.day)
-      return
-    }
-
     const hasCritical = alerts.some(a => a.level === 'critical')
     const feedSeverity = hasCritical ? 'critical' : 'political'
-    const alertSummary = alerts.map(a => `• ${a.description}`).join('\n')
+    const alertSummary = alerts.length > 0
+      ? alerts.map(a => `• ${a.description}`).join('\n')
+      : noAlertsSummaryLine(getLang())
 
     if (!config) {
-      // No API key — deterministic fallback policy
-      const policy = generateFallbackPolicy(state, alerts)
-      applyPolicy(state, policy)
-      const msg = [
-        `🏛 [Government Policy] ${policy.policy_name}`,
-        policy.description,
-        `📢 "${policy.public_statement}"`,
-        `📊 Alerts: ${alertSummary}`,
-      ].join('\n')
-      addFeedRaw(msg, feedSeverity, state.year, state.day)
-      addChronicle(`🏛 Government enacted: ${policy.policy_name}`, state.year, state.day, hasCritical ? 'critical' : 'major')
+      // No API key — deterministic mode
+      if (alerts.length === 0) {
+        const regime = detectRegime(state.constitution)
+        addFeedRaw(`🏛 ${pickRoutineMessage(getLang(), regime)}`, 'political', state.year, state.day)
+      } else {
+        const policy = generateFallbackPolicy(state, alerts)
+        applyPolicy(state, policy)
+        const msg = [
+          `🏛 [Government Policy] ${policy.policy_name}`,
+          policy.description,
+          `📢 "${policy.public_statement}"`,
+          `📊 Alerts: ${alertSummary}`,
+        ].join('\n')
+        addFeedRaw(msg, feedSeverity, state.year, state.day)
+        addChronicle(`🏛 Government enacted: ${policy.policy_name}`, state.year, state.day, hasCritical ? 'critical' : 'major')
+      }
       return
     }
 
-    // AI-powered policy decision
+    // AI-powered policy decision — always runs when config is available
     const pressHeadlines = getLatestHeadlines()
     const pressBlock = pressHeadlines.length > 0
       ? ['', 'RECENT PRESS HEADLINES (public sentiment):', ...pressHeadlines.map(h => `  ${h}`)]
       : []
+
+    const activeEvents = state.active_events
+    const eventsBlock = activeEvents.length > 0
+      ? ['', 'ACTIVE EVENTS:', ...activeEvents.map(e => {
+          const remain = Math.ceil((e.duration_ticks - e.elapsed_ticks) / 24)
+          return `  • ${e.type} (intensity ${e.intensity.toFixed(1)}, ${remain} days remaining, zones: ${e.zones.join(', ') || 'all'})`
+        })]
+      : []
+
+    const directive = alerts.length > 0
+      ? 'Decide your government\'s policy response to these alerts.'
+      : 'No critical alerts currently. Review the overall state and decide on PROACTIVE policy — investments, infrastructure, trade deals, reforms, preparations, or public morale initiatives. Your regime should still act, not idle.'
+
     const prompt = [
       `GOVERNMENT REVIEW — Day ${state.day}, Year ${state.year}`,
       '',
-      'ACTIVE ALERTS:',
+      'SITUATION REPORT:',
       alertSummary,
       '',
       'MACRO STATISTICS:',
@@ -509,9 +467,11 @@ export async function runGovernmentCycle(
       `  Natural resources: ${Math.round(state.macro.natural_resources)}%`,
       `  Gini coefficient: ${state.macro.gini.toFixed(2)}`,
       `  Energy/productivity: ${Math.round(state.macro.energy)}%`,
+      `  Literacy: ${Math.round(state.macro.literacy)}%`,
+      ...eventsBlock,
       ...pressBlock,
       '',
-      'Decide your government\'s policy response to these alerts.',
+      directive,
     ].join('\n')
 
     try {
@@ -526,16 +486,21 @@ export async function runGovernmentCycle(
       addFeedRaw(msg, feedSeverity, state.year, state.day)
       addChronicle(`🏛 Government enacted: ${policy.policy_name}`, state.year, state.day, hasCritical ? 'critical' : 'major')
     } catch {
-      // AI call failed — use deterministic fallback silently
-      const policy = generateFallbackPolicy(state, alerts)
-      applyPolicy(state, policy)
-      const msg = [
-        `🏛 [Government Policy] ${policy.policy_name}`,
-        policy.description,
-        `📢 "${policy.public_statement}"`,
-      ].join('\n')
-      addFeedRaw(msg, feedSeverity, state.year, state.day)
-      addChronicle(`🏛 Government enacted: ${policy.policy_name}`, state.year, state.day, hasCritical ? 'critical' : 'major')
+      // AI call failed — use deterministic fallback or routine message
+      if (alerts.length > 0) {
+        const policy = generateFallbackPolicy(state, alerts)
+        applyPolicy(state, policy)
+        const msg = [
+          `🏛 [Government Policy] ${policy.policy_name}`,
+          policy.description,
+          `📢 "${policy.public_statement}"`,
+        ].join('\n')
+        addFeedRaw(msg, feedSeverity, state.year, state.day)
+        addChronicle(`🏛 Government enacted: ${policy.policy_name}`, state.year, state.day, hasCritical ? 'critical' : 'major')
+      } else {
+        const regime = detectRegime(state.constitution)
+        addFeedRaw(`🏛 ${pickRoutineMessage(getLang(), regime)}`, 'political', state.year, state.day)
+      }
     }
   } finally {
     _governmentBusy = false

@@ -13,36 +13,14 @@ import type { WorldState, AIConfig } from '../types'
 import { addFeedRaw, addChronicle } from '../ui/feed'
 import { callAI } from '../ai/provider'
 import { getLang } from '../i18n'
+import {
+  pressSystemPrompt,
+  pressSnapshotPrompt,
+  pressShouldUseAI,
+  type PressScan,
+} from '../local/press'
 
 // ── Snapshot of societal signals for condition matching ─────────────────────
-
-interface PressScan {
-  food: number
-  stability: number
-  trust: number
-  gini: number
-  pressure: number
-  resources: number
-  energy: number
-  literacy: number
-  population: number
-  sickPct: number
-  fleeingPct: number
-  organizingPct: number
-  confrontPct: number
-  restingPct: number
-  avgGrievance: number
-  avgStress: number
-  avgHappiness: number
-  avgHunger: number
-  epidemicActive: boolean
-  threatActive: boolean
-  blockadeActive: boolean
-  droughtActive: boolean
-  isWinter: boolean
-  merchantAvgWealth: number
-  farmerAvgWealth: number
-}
 
 function scanSociety(state: WorldState): PressScan {
   const living = state.npcs.filter(n => n.lifecycle.is_alive)
@@ -252,50 +230,9 @@ function selectHeadlines(scan: PressScan, maxCount: number): { text: string; sev
 
 // ── AI headline generation ──────────────────────────────────────────────────
 
-function buildPressSystemPrompt(): string {
-  const lang = getLang()
-  const langDirective = lang === 'vi'
-    ? 'IMPORTANT: All headline and body text MUST be written in Vietnamese.'
-    : 'All headline and body text must be in English.'
-  return `You are a free press journalist inside a society simulation.
-You observe societal statistics and NPC behavioral data, then write 2–4 newspaper headlines + one-sentence descriptions.
-Your tone is factual but vivid — like a real newspaper. Report what citizens are DOING, not just what stats say.
-Focus on human behavior: protests, market changes, migration, community responses, resistance, adaptation.
-
-${langDirective}
-
-Return JSON array:
-[
-  { "headline": "Short punchy title", "body": "One-sentence description.", "severity": "info"|"warning"|"critical" },
-  ...
-]
-Only return JSON. No commentary.`
-}
-
 async function generateAIHeadlines(state: WorldState, scan: PressScan, config: AIConfig): Promise<Array<{ headline: string; body: string; severity: string }>> {
-  const prompt = [
-    'SOCIETY SNAPSHOT:',
-    `  Population: ${scan.population} | Food: ${Math.round(scan.food)}% | Stability: ${Math.round(scan.stability)}%`,
-    `  Trust: ${Math.round(scan.trust)}% | Gini: ${scan.gini.toFixed(2)} | Energy: ${Math.round(scan.energy)}%`,
-    `  Political pressure: ${Math.round(scan.pressure)}% | Resources: ${Math.round(scan.resources)}%`,
-    `  Literacy: ${Math.round(scan.literacy)}% | Avg stress: ${Math.round(scan.avgStress)} | Avg happiness: ${Math.round(scan.avgHappiness)}`,
-    `  Avg grievance: ${Math.round(scan.avgGrievance)} | Avg hunger: ${Math.round(scan.avgHunger)}`,
-    '',
-    'NPC BEHAVIOR:',
-    `  Fleeing: ${scan.fleeingPct.toFixed(1)}% | Organizing: ${scan.organizingPct.toFixed(1)}% | Confronting: ${scan.confrontPct.toFixed(1)}%`,
-    `  Sick: ${scan.sickPct.toFixed(1)}% | Resting (excessive): ${scan.restingPct.toFixed(1)}%`,
-    '',
-    'ACTIVE EVENTS:',
-    `  Epidemic: ${scan.epidemicActive} | External threat: ${scan.threatActive} | Blockade: ${scan.blockadeActive} | Drought: ${scan.droughtActive}`,
-    `  Season: ${scan.isWinter ? 'Winter' : 'Non-winter'} | Day ${state.day}, Year ${state.year}`,
-    '',
-    'ECONOMY:',
-    `  Merchant avg wealth: ${Math.round(scan.merchantAvgWealth)} | Farmer avg wealth: ${Math.round(scan.farmerAvgWealth)}`,
-    '',
-    'Write 2–4 headlines that capture what the PEOPLE are doing in response to these conditions.',
-  ].join('\n')
-
-  const raw = await callAI(config, buildPressSystemPrompt(), prompt)
+  const lang = getLang()
+  const raw = await callAI(config, pressSystemPrompt(lang), pressSnapshotPrompt(state, scan))
   const jsonMatch = raw.match(/\[[\s\S]*\]/)
   if (!jsonMatch) return []
   return JSON.parse(jsonMatch[0])
@@ -321,11 +258,11 @@ export async function runPressCycle(
     const scan = scanSociety(state)
     const headlines: Array<{ text: string; severity: 'info' | 'warning' | 'critical' }> = []
 
-    const useAI = config && config.token_mode === 'unlimited'
+    const useAI = pressShouldUseAI(config)
 
     if (useAI) {
       try {
-        const aiResults = await generateAIHeadlines(state, scan, config)
+        const aiResults = await generateAIHeadlines(state, scan, config!)
         for (const r of aiResults.slice(0, 4)) {
           const sev = (r.severity === 'critical' || r.severity === 'warning' || r.severity === 'info') ? r.severity : 'info'
           headlines.push({ text: `📰 ${r.headline} — ${r.body}`, severity: sev as 'info' | 'warning' | 'critical' })

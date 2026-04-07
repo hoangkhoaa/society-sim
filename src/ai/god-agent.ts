@@ -4,6 +4,12 @@ import type {
   WorldState, NPC,
 } from '../types'
 import { getLang } from '../i18n'
+import {
+  aiConfirmInitMessage,
+  aiTokenModeBlockedMessage,
+  aiParseFallbackMessage,
+  aiNpcThoughtFallback,
+} from '../local/ai'
 
 // ── Conversation history (persists for the session) ────────────────────────
 
@@ -28,8 +34,8 @@ export function resetInGameHistory() {
 
 function langDirective(): string {
   return getLang() === 'vi'
-    ? 'Always reply in Vietnamese.'
-    : 'Always reply in English.'
+    ? 'Respond in Vietnamese.'
+    : 'Respond in English.'
 }
 
 // ── System Prompts ─────────────────────────────────────────────────────────
@@ -222,9 +228,7 @@ export async function setupChat(
       // Return a friendly confirmation message instead of raw JSON
       const confirmMsg = json.message
         ?? json.summary
-        ?? (getLang() === 'vi'
-          ? 'Hiến pháp đã được xác nhận. Đang khởi tạo xã hội...'
-          : 'Constitution confirmed. Initializing your society...')
+        ?? aiConfirmInitMessage(getLang())
       return { text: confirmMsg, constitution: json.constitution as Constitution }
     }
   } catch {
@@ -363,12 +367,9 @@ export async function generateConstitutionText(
   ].join('\n')
 
   const lang = getLang()
-  const system = lang === 'vi'
-    ? 'Bạn là người chép sử của một xã hội mới thành lập. Hãy viết tuyên bố thành lập ngắn gọn, súc tích, giàu cảm xúc.'
-    : 'You are the founding scribe of a newly established society. Write a short, vivid, emotionally resonant founding proclamation.'
-  const prompt = lang === 'vi'
-    ? `Với các thông số xã hội sau:\n${params}\nHãy viết 2-3 câu tuyên bố thành lập mang văn phong hào hùng của văn kiện lịch sử. Chỉ trả lời bằng đoạn văn, không thêm tiêu đề hay giải thích.`
-    : `Given these society parameters:\n${params}\nWrite 2-3 sentences in the solemn register of a historical founding document. Return only the proclamation text, no title or explanation.`
+  const outputDirective = lang === 'vi' ? 'Write in Vietnamese.' : 'Write in English.'
+  const system = 'You are the founding scribe of a newly established society. Write a short, vivid, emotionally resonant founding proclamation.'
+  const prompt = `Given these society parameters:\n${params}\nWrite 2-3 sentences in the solemn register of a historical founding document. ${outputDirective} Return only the proclamation text, no title or explanation.`
 
   return callAI(config, system, prompt)
 }
@@ -401,9 +402,7 @@ export async function handlePlayerChat(
   try {
     const json = JSON.parse(extractJSON(raw)) as GodResponse
     if (config.token_mode === 'events_only' && json.type === 'intervention') {
-      const blockedAnswer = getLang() === 'vi'
-        ? 'Chế độ token hiện tại chỉ cho phép tạo sự kiện và hậu quả. Hãy chuyển sang mức 2 hoặc 3 để điều khiển trực tiếp NPC.'
-        : 'Current token mode only allows world events and consequences. Switch to level 2 or 3 to directly control NPCs.'
+      const blockedAnswer = aiTokenModeBlockedMessage(getLang())
       inGameHistory.push({ user: userMessage, answer: blockedAnswer })
       if (inGameHistory.length > 20) inGameHistory.splice(0, 1)
       return { type: 'answer', event: null, answer: blockedAnswer, requires_confirm: false }
@@ -413,9 +412,7 @@ export async function handlePlayerChat(
     return json
   } catch {
     // Don't leak raw JSON into the feed — show a friendly retry message
-    const friendlyFallback = getLang() === 'vi'
-      ? 'Không thể diễn giải phản hồi của AI. Hãy thử lại.'
-      : 'Could not parse AI response. Please try again.'
+    const friendlyFallback = aiParseFallbackMessage(getLang())
     inGameHistory.push({ user: userMessage, answer: friendlyFallback })
     if (inGameHistory.length > 20) inGameHistory.splice(0, 1)
     return {
@@ -431,10 +428,7 @@ export async function handlePlayerChat(
 
 export async function generateNPCThought(npc: NPC, state: WorldState, config: AIConfig): Promise<string> {
   if (config.token_mode !== 'unlimited') {
-    if (getLang() === 'vi') {
-      return `Hôm nay mình ${npc.action_state}, áp lực ${Math.round(npc.stress)}%, tâm trạng ${Math.round(npc.happiness)}%.`
-    }
-    return `Today I am ${npc.action_state}, with stress at ${Math.round(npc.stress)}% and mood at ${Math.round(npc.happiness)}%.`
+    return aiNpcThoughtFallback(getLang(), npc.action_state, Math.round(npc.stress), Math.round(npc.happiness))
   }
 
   const recentMemory = npc.memory

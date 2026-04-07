@@ -359,6 +359,20 @@ function updateTopbar() {
   const rpm = aiConfig?.rpm_limit ?? 0
   const rpmStr = rpm > 0 ? ` · ${getRemainingRPM(rpm)}/${rpm} rpm` : ''
   document.getElementById('ai-usage')!.textContent = `${requests} req · ${tokStr} tok${rpmStr}`
+
+  // Active events indicator
+  const evEl = document.getElementById('active-events')!
+  const activeEvs = world.active_events
+  if (activeEvs.length > 0) {
+    const labels = activeEvs.map(ev => {
+      const pct = Math.round((1 - ev.elapsed_ticks / ev.duration_ticks) * 100)
+      return `${ev.type} ${pct}%`
+    })
+    evEl.textContent = `⚡ ${labels.join(' · ')}`
+    evEl.classList.remove('hidden')
+  } else {
+    evEl.classList.add('hidden')
+  }
 }
 
 function setStat(valueId: string, value: number, statId: string, warnAt: number, dangerAt: number) {
@@ -457,6 +471,46 @@ const btnPause = document.getElementById('btn-pause')!
 // Government cycle: runs once every 15 sim-days.
 // Tracks which 15-day period has already been processed to avoid double-firing at high speeds.
 let lastGovernmentPeriod = -1
+let govBusy = false
+const GOV_PERIOD_DAYS = 15
+
+const govCdEl = document.getElementById('gov-cd')!
+const btnGov  = document.getElementById('btn-gov')!
+
+function updateGovCooldown() {
+  if (!world) { govCdEl.textContent = '–'; return }
+  if (govBusy) {
+    govCdEl.textContent = '⏳'
+    govCdEl.className = 'waiting'
+    return
+  }
+  const nextGovDay = (lastGovernmentPeriod + 1) * GOV_PERIOD_DAYS
+  const remaining = Math.max(0, nextGovDay - world.day)
+  if (remaining === 0) {
+    govCdEl.textContent = '✓'
+    govCdEl.className = 'ready'
+  } else {
+    govCdEl.textContent = `${remaining}d`
+    govCdEl.className = 'waiting'
+  }
+}
+
+async function triggerGovernment() {
+  if (!world || govBusy) return
+  govBusy = true
+  updateGovCooldown()
+  const rpmBudget = aiConfig ? getRemainingRPM(aiConfig.rpm_limit) : Infinity
+  const govConfig = (rpmBudget >= 2) ? aiConfig : null
+  lastGovernmentPeriod = Math.floor(world.day / GOV_PERIOD_DAYS)
+  try {
+    await runGovernmentCycle(world, govConfig)
+  } finally {
+    govBusy = false
+    updateGovCooldown()
+  }
+}
+
+btnGov.addEventListener('click', () => { void triggerGovernment() })
 
 // 1 tick = 1 sim-hour; 1000ms interval = 1 tick/second at 1× → 1 real second = 1 sim-hour
 const BASE_TICK_MS = 1000
@@ -471,7 +525,15 @@ function startSimLoop() {
   if (simInterval) clearInterval(simInterval)
   simInterval = setInterval(() => {
     if (paused || !world) return
+    const beforeIds = new Set(world.active_events.map(e => e.id))
     for (let i = 0; i < speed; i++) tick(world)
+    // Detect events that expired this tick batch
+    const afterIds = new Set(world.active_events.map(e => e.id))
+    for (const id of beforeIds) {
+      if (!afterIds.has(id)) {
+        addFeedRaw(`✅ Event ended.`, 'info', world.year, world.day)
+      }
+    }
     const living = world.npcs.filter(n => n.lifecycle.is_alive).length
     if (living > peakPopulation) peakPopulation = living
     updateTopbar()
@@ -484,11 +546,9 @@ function startSimLoop() {
     const rpmBudget = aiConfig ? getRemainingRPM(aiConfig.rpm_limit) : Infinity
     const pressConfig = (rpmBudget >= 3) ? aiConfig : null
     checkPressTrigger(world, pressConfig)
-    // Government cycle: every 15 sim-days (period changes at day 15, 30, 45, …)
-    const govPeriod = Math.floor(world.day / 15)
-    if (govPeriod !== lastGovernmentPeriod && world.day >= 15) {
-      lastGovernmentPeriod = govPeriod
-      // Government gets full config if budget allows, otherwise fallback mode
+    // Government cycle: every GOV_PERIOD_DAYS sim-days
+    const govPeriod = Math.floor(world.day / GOV_PERIOD_DAYS)
+    if (govPeriod !== lastGovernmentPeriod && world.day >= GOV_PERIOD_DAYS && !govBusy) {
       const govConfig = (rpmBudget >= 2) ? aiConfig : null
       if (!govConfig && aiConfig) {
         const wait = getWaitSeconds(aiConfig.rpm_limit)
@@ -497,8 +557,11 @@ function startSimLoop() {
           'info', world.year, world.day,
         )
       }
-      void runGovernmentCycle(world, govConfig)
+      govBusy = true
+      lastGovernmentPeriod = govPeriod
+      runGovernmentCycle(world, govConfig).finally(() => { govBusy = false; updateGovCooldown() })
     }
+    updateGovCooldown()
     if (living === 0) triggerGameOver()
   }, BASE_TICK_MS)
 }

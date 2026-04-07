@@ -245,6 +245,22 @@ body {
 }
 .btn-top:hover { background: #1a1a1a; color: #ccc; }
 
+#active-events {
+  font-size: 10px;
+  color: #ef9f27;
+  white-space: nowrap;
+  padding: 0 4px;
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+@keyframes pulse-glow {
+  0%, 100% { opacity: .7; }
+  50% { opacity: 1; }
+}
+#btn-gov { font-size: 10px; }
+#btn-gov .ready { color: #5dcaa5; }
+#btn-gov .waiting { color: #ef9f27; }
+#gov-cd { font-variant-numeric: tabular-nums; }
+
 #ai-usage {
   font-size: 10px;
   color: #444;
@@ -501,12 +517,25 @@ body {
   top: 12px;
   left: 12px;
   width: 240px;
+  max-height: calc(100% - 24px);
+  display: flex;
+  flex-direction: column;
   background: #141414;
   border: 1px solid #222;
   border-radius: 8px;
   overflow: hidden;
   z-index: 10;
 }
+#sp-body, #ip-body {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: #333 transparent;
+}
+#sp-body::-webkit-scrollbar, #ip-body::-webkit-scrollbar { width: 5px; }
+#sp-body::-webkit-scrollbar-thumb, #ip-body::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+#sp-body::-webkit-scrollbar-track, #ip-body::-webkit-scrollbar-track { background: transparent; }
 .panel-header {
   display: flex;
   align-items: center;
