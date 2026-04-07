@@ -227,7 +227,7 @@ Return JSON in EXACTLY this format (all numeric values are optional, omit if not
   "farmer_hunger_delta": <integer, optional>
 }
 
-SCALE GUIDE: food_delta 1000 feeds ~33 citizens for 1 month. NPC deltas are additive to current stat values (clamped 0–100).
+SCALE GUIDE: food_delta adds to raw food stock (population ~500 consumes ~250 units/day; each citizen needs ~0.5/day). A food_delta of +1500 adds about 3 days of full supply. The macro "food%" reflects stock vs. (population × 30-day buffer). NPC deltas are additive to current stat values (clamped 0–100).
 SEVERITY: "critical" only when at least one stat is below 25% or unrest exceeds 72%; else "important".
 ${langNote}
 Only return JSON. No explanation outside JSON.`
@@ -283,7 +283,10 @@ function generateFallbackPolicy(state: WorldState, alerts: Alert[]): GovernmentP
   const regime = detectRegime(c)
 
   // Sort: critical alerts first
-  const sorted = [...alerts].sort((a, b) => (a.level === 'critical' ? -1 : 1) - (b.level === 'critical' ? -1 : 1))
+  const sorted = [...alerts].sort((a, b) => {
+    if (a.level === b.level) return 0
+    return a.level === 'critical' ? -1 : 1
+  })
   const top = sorted[0]
   const isCritical = top.level === 'critical'
 
