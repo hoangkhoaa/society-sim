@@ -1467,7 +1467,7 @@ function resolveReferendum(state: WorldState): void {
 // Guards can quarantine epidemic zones (blocking NPC movement).
 // Cure breakthrough: epidemic intensity halved and quarantine lifted.
 
-const cureProgress = { value: 0, lastResetTick: -1 }
+const cureProgress = { value: 0, lastResetTick: -1, epidemicId: '' }
 
 function checkEpidemicIntelligence(state: WorldState): void {
   const epidemic = state.active_events.find(e => e.type === 'epidemic')
@@ -1479,13 +1479,15 @@ function checkEpidemicIntelligence(state: WorldState): void {
     }
     cureProgress.value = 0
     cureProgress.lastResetTick = -1
+    cureProgress.epidemicId = ''
     return
   }
 
-  // Reset cure counter when a new epidemic starts
-  if (cureProgress.lastResetTick < 0 || state.tick - cureProgress.lastResetTick > epidemic.duration_ticks) {
+  // Reset cure counter when a new epidemic starts (detected by epidemic ID change)
+  if (cureProgress.epidemicId !== epidemic.id) {
     cureProgress.value = 0
     cureProgress.lastResetTick = state.tick
+    cureProgress.epidemicId = epidemic.id
   }
 
   // Scholars in scholar_quarter accumulate cure progress each day
