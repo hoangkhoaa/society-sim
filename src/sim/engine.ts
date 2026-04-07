@@ -160,7 +160,7 @@ export function tick(state: WorldState): void {
 
     // Flush event-caused deaths to chronicle
     if (eventDeathsThisDay > 0) {
-      addChronicle(`💀 ${eventDeathsThisDay} người tử vong do thiên tai.`, state.year, state.day, 'major')
+      addChronicle(tf('engine.event_deaths', { n: eventDeathsThisDay }) as string, state.year, state.day, 'major')
       eventDeathsThisDay = 0
     }
   }
