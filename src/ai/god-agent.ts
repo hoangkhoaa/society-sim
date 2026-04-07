@@ -70,9 +70,8 @@ When the player confirms, return JSON in this exact format (MUST include "confir
 If not yet confirmed, reply conversationally — concise but insightful.
 
 Available presets if the player selects one:
-- Nordic:      gini=0.28, market=0.55, state=0.65, safety=0.80, trust=0.72, cohesion=0.70
-- Capitalist:  gini=0.48, market=0.90, state=0.25, safety=0.20, trust=0.45, cohesion=0.40
-- Socialist:   gini=0.18, market=0.15, state=0.90, safety=0.75, trust=0.65, cohesion=0.60
+- nordic, capitalist, socialist, feudal, theocracy, technocracy, warlord, commune, marxist
+- If player asks for one, adapt its profile and still explain trade-offs briefly.
 
 ${langDirective()}`
 }
@@ -89,7 +88,7 @@ When receiving input from The Architect, decide what kind of response is most ap
    {
      "type": "event",
      "event": {
-       "type": "storm"|"drought"|"flood"|"epidemic"|"resource_boom"|"scandal_leak"|"charismatic_npc"|"martyr"|"tech_shift"|"trade_offer"|"refugee_wave"|"ideology_import"|"external_threat",
+      "type": "storm"|"drought"|"flood"|"tsunami"|"epidemic"|"resource_boom"|"harsh_winter"|"trade_offer"|"refugee_wave"|"ideology_import"|"external_threat"|"blockade"|"scandal_leak"|"charismatic_npc"|"martyr"|"tech_shift"|"wildfire"|"earthquake",
        "intensity": 0.0-1.0,
        "zones": ["zone_name", ...],
        "duration_ticks": <number>,
@@ -112,7 +111,7 @@ When receiving input from The Architect, decide what kind of response is most ap
        {
          "target": "all"|"zone"|"role"|"id_list",
          "zones": ["zone_name"],          // only if target === "zone"
-         "roles": ["farmer"|"craftsman"|"scholar"|"merchant"|"guard"|"leader"],  // only if target === "role"
+        "roles": ["farmer"|"craftsman"|"scholar"|"merchant"|"guard"|"leader"|"child"],  // only if target === "role"
          "npc_ids": [<id>, ...],          // only if target === "id_list"
          "count": <number>,               // optional: cap number of affected NPCs
          "kill": true|false,
@@ -562,7 +561,7 @@ Return JSON in EXACTLY this format:
       "intervention": {
         "target": "all"|"zone"|"role",
         "zones": ["zone_name"],
-        "roles": ["farmer"|"craftsman"|"scholar"|"merchant"|"guard"|"leader"],
+        "roles": ["farmer"|"craftsman"|"scholar"|"merchant"|"guard"|"leader"|"child"],
         "count": <number or omit for all matching>,
         "action_state": "working"|"resting"|"socializing"|"organizing"|"fleeing"|"complying"|"confront",
         "stress_delta": <-50 to 50>,
