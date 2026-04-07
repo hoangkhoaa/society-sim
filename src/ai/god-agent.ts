@@ -141,6 +141,10 @@ When receiving input from The Architect, decide what kind of response is most ap
    }
 
 ━━━ ZONES ━━━
+The town is arranged in 3 bands (north→south):
+  Top: "north_farm" (Northern Fields, large) + "scholar_quarter" (Academy Hill)
+  Core: "residential_west" (West Village) → "plaza" (Town Square, civic center) → "market_square" (Market Quarter) → "guard_post" (The Garrison)
+  South: "south_farm" (Southern Pastures) + "workshop_district" (Artisan Row) + "residential_east" (East Settlement)
 Valid zone names: "north_farm", "south_farm", "workshop_district", "market_square", "scholar_quarter", "residential_east", "residential_west", "guard_post", "plaza"
 
 ━━━ CRITICAL RULE — KILLING NPCs ━━━

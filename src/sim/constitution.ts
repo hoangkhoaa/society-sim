@@ -60,16 +60,20 @@ export function getSeasonFactor(day: number): number {
 }
 
 // ── Zone adjacency (shared by engine & npc) ────────────────────────────────
+// Adjacency mirrors the 3-row town layout in map.ts:
+//   Row 0: north_farm (wide) | scholar_quarter
+//   Row 1: residential_west | plaza | market_square | guard_post
+//   Row 2: south_farm | workshop_district | residential_east
 export const ZONE_ADJACENCY: Record<string, string[]> = {
-  north_farm:        ['south_farm', 'residential_west'],
-  south_farm:        ['north_farm', 'market_square'],
-  workshop_district: ['market_square', 'residential_east'],
-  market_square:     ['south_farm', 'workshop_district', 'plaza'],
-  scholar_quarter:   ['plaza', 'residential_east'],
-  residential_east:  ['residential_west', 'workshop_district', 'scholar_quarter'],
-  residential_west:  ['residential_east', 'north_farm', 'guard_post'],
-  guard_post:        ['residential_west', 'plaza'],
-  plaza:             ['market_square', 'guard_post', 'scholar_quarter'],
+  north_farm:        ['residential_west', 'plaza', 'scholar_quarter'],
+  scholar_quarter:   ['north_farm', 'market_square', 'guard_post'],
+  residential_west:  ['north_farm', 'plaza', 'south_farm'],
+  plaza:             ['north_farm', 'residential_west', 'market_square', 'south_farm', 'workshop_district'],
+  market_square:     ['scholar_quarter', 'plaza', 'guard_post', 'workshop_district', 'residential_east'],
+  guard_post:        ['scholar_quarter', 'market_square', 'residential_east'],
+  south_farm:        ['residential_west', 'plaza', 'workshop_district'],
+  workshop_district: ['south_farm', 'plaza', 'market_square', 'residential_east'],
+  residential_east:  ['workshop_district', 'market_square', 'guard_post'],
 }
 
 export const SEASON_LABELS: Record<Season, string> = {

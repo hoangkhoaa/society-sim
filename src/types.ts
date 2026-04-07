@@ -333,6 +333,7 @@ export interface AIConfig {
   model?: string
   token_mode: TokenMode
   base_url?: string
+  rpm_limit: number             // user-configured requests per minute (0 = unlimited)
 }
 
 // ── NPC Intervention ───────────────────────────────────────────────────────
@@ -429,15 +430,15 @@ export const ZONES = [
 export type Zone = typeof ZONES[number]
 
 export const ZONE_LABELS: Record<string, string> = {
-  north_farm: 'North Farmlands',
-  south_farm: 'South Farmlands',
-  workshop_district: 'Workshop District',
-  market_square: 'Market Square',
-  scholar_quarter: 'Scholar Quarter',
-  residential_east: 'East Residential',
-  residential_west: 'West Residential',
-  guard_post: 'Guard Post',
-  plaza: 'Plaza',
+  north_farm: 'Northern Fields',
+  south_farm: 'Southern Pastures',
+  workshop_district: 'Artisan Row',
+  market_square: 'Market Quarter',
+  scholar_quarter: 'Academy Hill',
+  residential_east: 'East Settlement',
+  residential_west: 'West Village',
+  guard_post: 'The Garrison',
+  plaza: 'Town Square',
 }
 
 export const FEED_ICONS: Record<string, string> = {

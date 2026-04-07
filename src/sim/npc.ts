@@ -223,21 +223,129 @@ export function tickNPC(npc: NPC, state: WorldState, events?: IndividualEvent[])
   npc.happiness = computeHappiness(npc, state)
   updateGrievance(npc, state)
   updateWorldview(npc, state)
+  applyResistanceBehavior(npc, state)
   npc.action_state = selectAction(npc, state)
   updateZone(npc, state)
   wealthTick(npc, state)
   checkLifecycle(npc, state, events)
 }
 
+// ── Resistance / self-preservation behavior ─────────────────────────────────
+// NPCs adaptively resist societal conditions to protect their own interests.
+// Each behavior fires only when a specific condition is met and is weighted
+// by the NPC's worldview so identical crises produce heterogeneous responses.
+
+function applyResistanceBehavior(npc: NPC, state: WorldState): void {
+  if (npc.role === 'child') return
+  const m = state.macro
+  const c = state.constitution
+
+  // Epidemic → self-isolation: reduce social activity desire
+  const epidemicActive = state.active_events.some(e => e.type === 'epidemic')
+  if (epidemicActive) {
+    const caution = 1 - npc.worldview.risk_tolerance
+    npc.isolation += caution * 0.8
+    npc.fear += caution * 0.4
+    if (npc.action_state === 'socializing' && Math.random() < caution * 0.20) {
+      npc.action_state = 'resting'
+    }
+  }
+
+  // High inequality + high taxes (state_power > 0.6) → reduce trade activity
+  // ("I won't buy if the state takes it all anyway")
+  if (m.gini > 0.45 && c.state_power > 0.55 && npc.grievance > 35) {
+    const tradeResist = npc.worldview.collectivism * 0.3
+    npc.daily_income *= (1 - tradeResist * 0.02)
+  }
+
+  // Food crisis → hoarding: NPCs eat less (hunger decays slower) but gain stress
+  if (m.food < 25 && npc.hunger > 30) {
+    npc.hunger = clamp(npc.hunger - 0.15, 0, 100)
+    npc.stress = clamp(npc.stress + 0.3, 0, 100)
+    npc.fear   = clamp(npc.fear   + 0.2, 0, 100)
+  }
+
+  // Government crackdown (high guard power + low individual rights) → fear-driven compliance OR defiance
+  const guardPower = state.institutions.find(i => i.id === 'guard')?.power ?? 0.3
+  if (guardPower > 0.7 && c.individual_rights_floor < 0.25) {
+    if (npc.worldview.authority_trust > 0.55) {
+      npc.fear = clamp(npc.fear + 0.5, 0, 100)
+      npc.dissonance_acc = clamp(npc.dissonance_acc - 0.3, 0, 100)
+    } else {
+      npc.grievance = clamp(npc.grievance + 0.4, 0, 100)
+      npc.dissonance_acc = clamp(npc.dissonance_acc + 0.5, 0, 100)
+    }
+  }
+
+  // Market crash / resource depletion → merchants & craftsmen reduce risk
+  if (m.energy < 30 && (npc.role === 'merchant' || npc.role === 'craftsman')) {
+    npc.worldview.risk_tolerance = clamp(npc.worldview.risk_tolerance - 0.002, 0, 1)
+    npc.stress = clamp(npc.stress + 0.3, 0, 100)
+  }
+
+  // High political pressure → scholars become more vocal (radicalize faster)
+  if (m.political_pressure > 50 && npc.role === 'scholar') {
+    npc.dissonance_acc = clamp(npc.dissonance_acc + 0.4, 0, 100)
+    npc.worldview.collectivism = clamp(npc.worldview.collectivism + 0.001, 0, 1)
+  }
+
+  // External threat → rally-around-the-flag (temporary trust boost for obedient NPCs)
+  const threatActive = state.active_events.some(e => e.type === 'external_threat')
+  if (threatActive && npc.worldview.authority_trust > 0.5) {
+    npc.trust_in.government.intention = clamp(npc.trust_in.government.intention + 0.003, 0, 1)
+    npc.fear = clamp(npc.fear + 0.3, 0, 100)
+  }
+
+  // Blockade → merchants suffer most (trade halted), farmers hoard
+  const blockadeActive = state.active_events.some(e => e.type === 'blockade')
+  if (blockadeActive) {
+    if (npc.role === 'merchant') {
+      npc.grievance = clamp(npc.grievance + 0.6, 0, 100)
+      npc.stress    = clamp(npc.stress    + 0.4, 0, 100)
+    }
+    if (npc.role === 'farmer') {
+      npc.worldview.time_preference = clamp(npc.worldview.time_preference + 0.002, 0, 1)
+    }
+  }
+
+  // Low trust in government → tax evasion (wealth preserved more, but isolation up)
+  if (npc.trust_in.government.intention < 0.25 && c.state_power > 0.4) {
+    npc.isolation = clamp(npc.isolation + 0.2, 0, 100)
+  }
+
+  // Widespread unrest → moderate NPCs withdraw; extremists double down
+  if (m.stability < 30) {
+    if (npc.worldview.risk_tolerance < 0.35) {
+      npc.fear = clamp(npc.fear + 0.4, 0, 100)
+    } else {
+      npc.grievance = clamp(npc.grievance + 0.3, 0, 100)
+    }
+  }
+}
+
 // ── Zone Movement ─────────────────────────────────────────────────────────
-// NPCs move between zones based on time of day and action state.
-// home_zone = permanent work zone; zone = current location.
+// home_zone = workplace (or duty post); zone = current sim location.
+// Location follows action_state, which uses per-NPC daily rhythms (staggered
+// commute, night-shift workers, children’s shorter days).
 
 const SOCIAL_HUBS = ['market_square', 'plaza'] as const
 
-function updateZone(npc: NPC, state: WorldState): void {
-  const hour = state.tick % 24
+/** Stable 0–1 from id — same every session. */
+function scheduleUnit(id: number, salt: number): number {
+  const x = Math.sin((id + 1) * 12.9898 + salt * 78.233) * 43758.5453
+  return x - Math.floor(x)
+}
 
+function residentialBed(npc: NPC): string {
+  return npc.id % 2 === 0 ? 'residential_east' : 'residential_west'
+}
+
+function isNightShiftWorker(npc: NPC): boolean {
+  if (npc.role !== 'merchant' && npc.role !== 'craftsman') return false
+  return scheduleUnit(npc.id, 11) < 0.11
+}
+
+function updateZone(npc: NPC, state: WorldState): void {
   // Fleeing: move to a random adjacent zone every 6 ticks
   if (npc.action_state === 'fleeing') {
     if (state.tick % 6 === npc.id % 6) {
@@ -247,25 +355,21 @@ function updateZone(npc: NPC, state: WorldState): void {
     return
   }
 
-  // Night (22–5): go home to residential zone
-  if (hour >= 22 || hour < 6) {
-    if (!['guard', 'leader'].includes(npc.role)) {
-      npc.zone = npc.id % 2 === 0 ? 'residential_east' : 'residential_west'
-    } else {
-      npc.zone = npc.home_zone
-    }
+  // Resting → home (residential for most; guard/leader stay at their post/quarters)
+  if (npc.action_state === 'resting') {
+    if (npc.role === 'guard' || npc.role === 'leader') npc.zone = npc.home_zone
+    else npc.zone = residentialBed(npc)
     return
   }
 
-  // Socializing during evening (18–21): 25% chance to drift to a social hub
+  // Evening social: occasional drift to a hub (still staggered by tick % 12)
   if (npc.action_state === 'socializing' && state.tick % 12 === npc.id % 12) {
-    if (Math.random() < 0.25) {
+    if (Math.random() < 0.28) {
       npc.zone = SOCIAL_HUBS[npc.id % SOCIAL_HUBS.length]
       return
     }
   }
 
-  // Default: return to home zone for work
   npc.zone = npc.home_zone
 }
 
@@ -375,10 +479,48 @@ function computeHappiness(npc: NPC, state: WorldState): number {
 
 // ── Action Selection ───────────────────────────────────────────────────────
 
-function normalRoutine(_npc: NPC, state: WorldState): ActionState {
-  const hour = state.tick % 24   // sim hour (0–23); 0 = midnight
-  if (hour >= 22 || hour < 6) return 'resting'
-  if (hour >= 18) return 'socializing'
+function normalRoutine(npc: NPC, state: WorldState): ActionState {
+  const hour = state.tick % 24
+
+  // Guards: short sleep block, mostly on duty
+  if (npc.role === 'guard') {
+    if (hour >= 23 || hour < 5) return 'resting'
+    return 'working'
+  }
+
+  // Leaders: long office hours, short social window
+  if (npc.role === 'leader') {
+    if (hour >= 23 || hour < 6) return 'resting'
+    if (hour >= 19) return 'socializing'
+    return 'working'
+  }
+
+  // Children: later wake / earlier bed, spread by id
+  if (npc.role === 'child') {
+    const wake = 7 + Math.floor(scheduleUnit(npc.id, 15) * 2)      // 7–8
+    const sleep = 20 + Math.floor(scheduleUnit(npc.id, 16) * 2)  // 20–21
+    if (hour >= sleep || hour < wake) return 'resting'
+    if (hour >= 16) return 'socializing'
+    return 'working'
+  }
+
+  // Night-shift merchants/craftsmen: sleep ~daytime, work evenings through dawn
+  if (isNightShiftWorker(npc)) {
+    const lateSleeper = scheduleUnit(npc.id, 12) < 0.35
+    const sleepStart = lateSleeper ? 10 : 8
+    const sleepEnd = lateSleeper ? 18 : 17
+    if (hour >= sleepStart && hour < sleepEnd) return 'resting'
+    if (hour >= 17 && hour < 20) return 'socializing'
+    return 'working'
+  }
+
+  // Typical adult: wake 5–8, work until 15–18, socialize until 21–23, then rest
+  const morningEnd = 5 + Math.floor(scheduleUnit(npc.id, 2) * 4)    // 5–8
+  const leaveWork = 15 + Math.floor(scheduleUnit(npc.id, 14) * 4)   // 15–18
+  const nightStart = 21 + Math.floor(scheduleUnit(npc.id, 1) * 3)   // 21–23
+
+  if (hour >= nightStart || hour < morningEnd) return 'resting'
+  if (hour >= leaveWork) return 'socializing'
   return 'working'
 }
 

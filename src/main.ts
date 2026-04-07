@@ -1,7 +1,7 @@
 import './css/main.css'
 import type { AIConfig, AIProvider, Constitution, WorldState } from './types'
 import { setupGreeting, setupChat, applyPreset, handlePlayerChat, resetInGameHistory, predictConsequences, generateConstitutionText } from './ai/god-agent'
-import { listAvailableModels, PROVIDER_MODELS, getAIUsage } from './ai/provider'
+import { listAvailableModels, PROVIDER_MODELS, getAIUsage, getRemainingRPM, getWaitSeconds } from './ai/provider'
 import { addFeedRaw, addFeedThinking, setFeedFilter, setChronicleFilter } from './ui/feed'
 import { showConfirm, showInfo } from './ui/modal'
 import { initWorld, tick, spawnEvent, applyInterventions } from './sim/engine'
@@ -9,6 +9,7 @@ import { setLang, t, tf } from './i18n'
 import { initMap, setMapPaused } from './ui/map'
 import type { Lang } from './i18n'
 import { runGovernmentCycle } from './sim/government'
+import { checkPressTrigger } from './sim/press'
 
 // ── App state ──────────────────────────────────────────────────────────────
 
@@ -45,6 +46,7 @@ const baseUrlRow     = document.getElementById('base-url-row')!
 const providerSelect = document.getElementById('provider-select') as HTMLSelectElement
 const modelSelect    = document.getElementById('model-select') as HTMLSelectElement
 const tokenModeSelect = document.getElementById('token-mode-select') as HTMLSelectElement
+const rpmLimitInput  = document.getElementById('rpm-limit-input') as HTMLInputElement
 const onboardingErr  = document.getElementById('onboarding-error')!
 
 let onboardingModelsReady = false
@@ -162,6 +164,7 @@ btnStart.addEventListener('click', async () => {
     token_mode: tokenModeSelect.value as AIConfig['token_mode'],
     key,
     base_url: baseUrl || undefined,
+    rpm_limit: Math.max(0, parseInt(rpmLimitInput.value, 10) || 0),
   }
 
   btnStart.textContent = t('onboarding.connecting') as string
@@ -353,7 +356,9 @@ function updateTopbar() {
 
   const { requests, tokens } = getAIUsage()
   const tokStr = tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : `${tokens}`
-  document.getElementById('ai-usage')!.textContent = `${requests} req · ${tokStr} tok`
+  const rpm = aiConfig?.rpm_limit ?? 0
+  const rpmStr = rpm > 0 ? ` · ${getRemainingRPM(rpm)}/${rpm} rpm` : ''
+  document.getElementById('ai-usage')!.textContent = `${requests} req · ${tokStr} tok${rpmStr}`
 }
 
 function setStat(valueId: string, value: number, statId: string, warnAt: number, dangerAt: number) {
@@ -474,11 +479,25 @@ function startSimLoop() {
       updateDemographics()
       flushConsequences()
     }
+    // Free press: every 5 sim-days — generates headlines before government reads them
+    // If RPM budget is tight, press runs in template-only mode (pass null config)
+    const rpmBudget = aiConfig ? getRemainingRPM(aiConfig.rpm_limit) : Infinity
+    const pressConfig = (rpmBudget >= 3) ? aiConfig : null
+    checkPressTrigger(world, pressConfig)
     // Government cycle: every 15 sim-days (period changes at day 15, 30, 45, …)
     const govPeriod = Math.floor(world.day / 15)
     if (govPeriod !== lastGovernmentPeriod && world.day >= 15) {
       lastGovernmentPeriod = govPeriod
-      void runGovernmentCycle(world, aiConfig)
+      // Government gets full config if budget allows, otherwise fallback mode
+      const govConfig = (rpmBudget >= 2) ? aiConfig : null
+      if (!govConfig && aiConfig) {
+        const wait = getWaitSeconds(aiConfig.rpm_limit)
+        addFeedRaw(
+          `🏛 Government policy delayed — RPM budget exhausted. Resuming in ~${Math.ceil(wait)}s.`,
+          'info', world.year, world.day,
+        )
+      }
+      void runGovernmentCycle(world, govConfig)
     }
     if (living === 0) triggerGameOver()
   }, BASE_TICK_MS)
@@ -540,8 +559,36 @@ document.getElementById('btn-pause')!.addEventListener('click', function () {
 })
 
 document.getElementById('btn-speed')!.addEventListener('click', function () {
+  const prevSpeed = speed
   speed = speed === 1 ? 3 : speed === 3 ? 10 : 1
   this.textContent = `${speed}×`
+
+  if (aiConfig && speed > prevSpeed) {
+    const rpm = aiConfig.rpm_limit
+    if (rpm > 0) {
+      // At faster speeds sim-days pass faster → more government + press cycles per real minute.
+      // At 1×: 1 real sec = 1 sim-hour → 1 sim-day ≈ 24s → ~2.5 days/min
+      // At 3×: ~7.5 days/min  At 10×: ~25 days/min
+      const daysPerMin = (speed * 60) / 24
+      const govCallsPerMin = daysPerMin / 15
+      const pressCallsPerMin = aiConfig.token_mode === 'unlimited' ? daysPerMin / 5 : 0
+      const bgPerMin = govCallsPerMin + pressCallsPerMin
+      const remaining = getRemainingRPM(rpm)
+      const estimate = bgPerMin.toFixed(1)
+
+      if (bgPerMin > rpm * 0.5) {
+        addFeedRaw(
+          `⚠️ Speed ${speed}× will use ~${estimate} AI calls/min for government` +
+          (pressCallsPerMin > 0 ? ` + press` : '') +
+          `. Your RPM limit is ${rpm}. ` +
+          (remaining < 5 ? `Only ${remaining} calls left this minute — game may pause AI features until budget recovers.` : `${remaining} calls remaining.`),
+          'warning',
+          world?.year ?? 1,
+          world?.day ?? 1,
+        )
+      }
+    }
+  }
 })
 
 // ── In-game chat ───────────────────────────────────────────────────────────

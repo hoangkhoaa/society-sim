@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 
 export default defineConfig({
+  base: '/society-sim/',
   server: {
     headers: {
       // Required for SharedArrayBuffer (Web Worker zero-copy)

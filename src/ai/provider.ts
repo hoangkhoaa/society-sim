@@ -13,6 +13,53 @@ export function resetAIUsage() {
   _totalTokens = 0
 }
 
+// ── Rate limiter (sliding-window RPM) ────────────────────────────────────
+// Tracks timestamps of recent requests; before each callAI, waits if the
+// window is full.  `rpm_limit = 0` means no limit.
+
+const _requestTimestamps: number[] = []
+
+function pruneTimestamps() {
+  const cutoff = Date.now() - 60_000
+  while (_requestTimestamps.length > 0 && _requestTimestamps[0] < cutoff) {
+    _requestTimestamps.shift()
+  }
+}
+
+/** How many more requests can be sent right now without waiting. */
+export function getRemainingRPM(rpmLimit: number): number {
+  if (rpmLimit <= 0) return Infinity
+  pruneTimestamps()
+  return Math.max(0, rpmLimit - _requestTimestamps.length)
+}
+
+/** Estimated seconds until next slot opens (0 if a slot is available). */
+export function getWaitSeconds(rpmLimit: number): number {
+  if (rpmLimit <= 0) return 0
+  pruneTimestamps()
+  if (_requestTimestamps.length < rpmLimit) return 0
+  return Math.max(0, (_requestTimestamps[0] + 60_000 - Date.now()) / 1000)
+}
+
+/** True if at least `n` requests can fit in the current minute window. */
+export function canAfford(rpmLimit: number, n: number): boolean {
+  return getRemainingRPM(rpmLimit) >= n
+}
+
+async function waitForSlot(rpmLimit: number): Promise<void> {
+  if (rpmLimit <= 0) return
+  pruneTimestamps()
+  while (_requestTimestamps.length >= rpmLimit) {
+    const waitMs = _requestTimestamps[0] + 60_000 - Date.now() + 50
+    if (waitMs > 0) await new Promise(r => setTimeout(r, waitMs))
+    pruneTimestamps()
+  }
+}
+
+function recordRequest() {
+  _requestTimestamps.push(Date.now())
+}
+
 interface ProviderDef {
   defaultModel: string
   url: (model: string, key: string, baseUrl: string) => string
@@ -267,12 +314,16 @@ export async function callAI(
   systemPrompt: string,
   userMessage: string,
 ): Promise<string> {
+  await waitForSlot(config.rpm_limit ?? 0)
+
   const p = PROVIDERS[config.provider]
   const requestedModel = config.model?.trim()
   const model = requestedModel || p.defaultModel
   const url = p.url(model, config.key, config.base_url ?? '')
   const headers = p.headers(config.key)
   const body = p.buildBody(systemPrompt, userMessage, model)
+
+  recordRequest()
 
   const res = await fetch(url, {
     method: 'POST',

@@ -1,5 +1,5 @@
 import type { NPC, Constitution, NetworkGraph } from '../types'
-import { clamp } from './constitution'
+import { clamp, ZONE_ADJACENCY } from './constitution'
 
 // ── Small-world network builder ─────────────────────────────────────────────
 //
@@ -14,17 +14,7 @@ import { clamp } from './constitution'
 //
 // Time: O(N × k) per category, acceptable for 10k NPCs
 
-const ZONE_ADJACENCY: Record<string, string[]> = {
-  north_farm:        ['south_farm', 'residential_west', 'plaza'],
-  south_farm:        ['north_farm', 'residential_east', 'market_square'],
-  workshop_district: ['market_square', 'residential_east', 'residential_west'],
-  market_square:     ['south_farm', 'workshop_district', 'plaza', 'scholar_quarter'],
-  scholar_quarter:   ['market_square', 'plaza', 'residential_east'],
-  residential_east:  ['south_farm', 'workshop_district', 'scholar_quarter', 'plaza'],
-  residential_west:  ['north_farm', 'workshop_district', 'plaza'],
-  guard_post:        ['plaza', 'residential_east', 'residential_west'],
-  plaza:             ['market_square', 'scholar_quarter', 'residential_east', 'residential_west', 'guard_post'],
-}
+// ZONE_ADJACENCY is imported from constitution.ts (single source of truth)
 
 // ── Info-network similarity score ───────────────────────────────────────────
 // Info ties connect NPCs with similar worldviews, same role, or same community group.

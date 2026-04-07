@@ -58,6 +58,14 @@
             <option value="unlimited">3) Unlimited — max capability</option>
           </select>
         </div>
+        <div class="form-row">
+          <label data-i18n="onboarding.rpm_limit">Rate limit (RPM)</label>
+          <input type="number" id="rpm-limit-input" min="0" max="999" value="15"
+            data-i18n-ph="onboarding.rpm_limit_ph"
+            placeholder="Requests per minute (0 = unlimited)"
+            style="width:100%">
+          <small style="color:#777;font-size:11px" data-i18n="onboarding.rpm_hint">Gemini free: 15 RPM · Paid: 60+ RPM · 0 = no limit</small>
+        </div>
         <button id="btn-start" class="btn-primary" data-i18n="onboarding.btn_start">Begin →</button>
         <button id="btn-start-no-api" class="btn-ghost" style="width:100%" data-i18n="onboarding.btn_no_api_key">Play without API Key</button>
         <div id="onboarding-error" class="error-msg hidden"></div>

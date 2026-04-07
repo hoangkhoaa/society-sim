@@ -9,6 +9,7 @@ import { addFeedRaw, addChronicle } from '../ui/feed'
 import { applyInterventions } from './engine'
 import { clamp } from './constitution'
 import { getLang } from '../i18n'
+import { getLatestHeadlines } from './press'
 
 // ── Alert thresholds ──────────────────────────────────────────────────────────
 
@@ -490,6 +491,10 @@ export async function runGovernmentCycle(
     }
 
     // AI-powered policy decision
+    const pressHeadlines = getLatestHeadlines()
+    const pressBlock = pressHeadlines.length > 0
+      ? ['', 'RECENT PRESS HEADLINES (public sentiment):', ...pressHeadlines.map(h => `  ${h}`)]
+      : []
     const prompt = [
       `GOVERNMENT REVIEW — Day ${state.day}, Year ${state.year}`,
       '',
@@ -504,6 +509,7 @@ export async function runGovernmentCycle(
       `  Natural resources: ${Math.round(state.macro.natural_resources)}%`,
       `  Gini coefficient: ${state.macro.gini.toFixed(2)}`,
       `  Energy/productivity: ${Math.round(state.macro.energy)}%`,
+      ...pressBlock,
       '',
       'Decide your government\'s policy response to these alerts.',
     ].join('\n')

@@ -3,20 +3,33 @@ import { ZONE_LABELS } from '../types'
 import { openSpotlight } from './spotlight'
 import type { AIConfig } from '../types'
 
-// ── Zone layout (normalized 0–1 grid, 3×3) ─────────────────────────────────
+// ── Town layout ─────────────────────────────────────────────────────────────
+// Three horizontal bands that read like a real settlement from above:
+//
+//   Top  : farmland (wide) + academy hill on the prestigious east
+//   Core : west village → civic town square → market quarter → garrison
+//   South: southern pastures + artisan row + east settlement
+//
+// Farms are deliberately large (they're open land); civic zones are smaller
+// but centrally placed.  Adjacency in constitution.ts matches this geography.
 
 interface ZoneRect { x: number; y: number; w: number; h: number; color: string; label: string }
 
 const ZONE_LAYOUT: Record<string, ZoneRect> = {
-  north_farm:        { x: 0.00, y: 0.00, w: 0.33, h: 0.35, color: '#0d2408', label: ZONE_LABELS['north_farm'] },
-  south_farm:        { x: 0.00, y: 0.35, w: 0.33, h: 0.30, color: '#102c0a', label: ZONE_LABELS['south_farm'] },
-  residential_west:  { x: 0.00, y: 0.65, w: 0.33, h: 0.35, color: '#13102a', label: ZONE_LABELS['residential_west'] },
-  workshop_district: { x: 0.33, y: 0.00, w: 0.34, h: 0.40, color: '#261608', label: ZONE_LABELS['workshop_district'] },
-  plaza:             { x: 0.33, y: 0.40, w: 0.34, h: 0.25, color: '#1a2218', label: ZONE_LABELS['plaza'] },
-  residential_east:  { x: 0.33, y: 0.65, w: 0.34, h: 0.35, color: '#12102a', label: ZONE_LABELS['residential_east'] },
-  scholar_quarter:   { x: 0.67, y: 0.00, w: 0.33, h: 0.33, color: '#08102e', label: ZONE_LABELS['scholar_quarter'] },
-  market_square:     { x: 0.67, y: 0.33, w: 0.33, h: 0.34, color: '#281f08', label: ZONE_LABELS['market_square'] },
-  guard_post:        { x: 0.67, y: 0.67, w: 0.33, h: 0.33, color: '#28080a', label: ZONE_LABELS['guard_post'] },
+  // Row 0  (y 0→0.30): northern outskirts
+  north_farm:        { x: 0.00, y: 0.00, w: 0.62, h: 0.30, color: '#0f2a0a', label: ZONE_LABELS['north_farm'] },
+  scholar_quarter:   { x: 0.62, y: 0.00, w: 0.38, h: 0.30, color: '#0d1433', label: ZONE_LABELS['scholar_quarter'] },
+
+  // Row 1  (y 0.30→0.60): city core
+  residential_west:  { x: 0.00, y: 0.30, w: 0.22, h: 0.30, color: '#17143a', label: ZONE_LABELS['residential_west'] },
+  plaza:             { x: 0.22, y: 0.30, w: 0.28, h: 0.30, color: '#1d2b1a', label: ZONE_LABELS['plaza'] },
+  market_square:     { x: 0.50, y: 0.30, w: 0.26, h: 0.30, color: '#2e2008', label: ZONE_LABELS['market_square'] },
+  guard_post:        { x: 0.76, y: 0.30, w: 0.24, h: 0.30, color: '#2a0e10', label: ZONE_LABELS['guard_post'] },
+
+  // Row 2  (y 0.60→1.00): southern outskirts
+  south_farm:        { x: 0.00, y: 0.60, w: 0.34, h: 0.40, color: '#122e0b', label: ZONE_LABELS['south_farm'] },
+  workshop_district: { x: 0.34, y: 0.60, w: 0.33, h: 0.40, color: '#2a1808', label: ZONE_LABELS['workshop_district'] },
+  residential_east:  { x: 0.67, y: 0.60, w: 0.33, h: 0.40, color: '#151240', label: ZONE_LABELS['residential_east'] },
 }
 
 // ── Home zone: where NPCs rest (residential areas) ─────────────────────────
@@ -28,8 +41,8 @@ const WORK_TO_HOME: Record<string, string> = {
   workshop_district: 'residential_east',
   market_square:     'residential_east',
   scholar_quarter:   'residential_east',
-  plaza:             'residential_east',
-  guard_post:        'guard_post',       // guards bunk at their post
+  plaza:             'residential_west',
+  guard_post:        'guard_post',
   residential_west:  'residential_west',
   residential_east:  'residential_east',
 }
@@ -65,13 +78,21 @@ export function setMapPaused(value: boolean) { _mapPaused = value }
 
 // ── NPC visual state (separate from sim data) ──────────────────────────────
 
+interface CommuteState {
+  sx: number; sy: number
+  ex: number; ey: number
+  t: number; duration: number
+  destZone: string
+}
+
 interface NPCVisual {
-  x: number        // current canvas-normalised position (0–1)
+  x: number
   y: number
-  tx: number       // target position
+  tx: number
   ty: number
-  moveIn: number   // frames until next target pick
-  renderZone: string  // which zone is currently rendered (may differ from sim zone when resting)
+  moveIn: number
+  renderZone: string
+  commute: CommuteState | null
 }
 
 // ── Family cluster info for attraction ─────────────────────────────────────
@@ -88,10 +109,10 @@ function getOrInitVisual(npc: { id: number; x: number; y: number; zone: string; 
   if (!npcVisuals.has(npc.id)) {
     const renderZone = getVisualZone(npc.zone, npc.action_state)
     const z = ZONE_LAYOUT[renderZone]
-    if (!z) return { x: npc.x, y: npc.y, tx: npc.x, ty: npc.y, moveIn: 0, renderZone }
+    if (!z) return { x: npc.x, y: npc.y, tx: npc.x, ty: npc.y, moveIn: 0, renderZone, commute: null }
     const cx = z.x + npc.x * z.w
     const cy = z.y + npc.y * z.h
-    npcVisuals.set(npc.id, { x: cx, y: cy, tx: cx, ty: cy, moveIn: Math.random() * 120 | 0, renderZone })
+    npcVisuals.set(npc.id, { x: cx, y: cy, tx: cx, ty: cy, moveIn: Math.random() * 120 | 0, renderZone, commute: null })
   }
   return npcVisuals.get(npc.id)!
 }
@@ -116,21 +137,43 @@ const ACTION_SPEED: Record<string, number> = {
   complying:  0.0005,
 }
 
-function stepVisual(v: NPCVisual, action: string, workZone: string, family: FamilyCluster | null) {
-  if (_mapPaused) return   // freeze animation while game is paused
+function easeInOutCubic(t: number): number {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+}
+
+function commuteDuration(npcId: number, _fromZ: string, _toZ: string): number {
+  return 55 + (npcId % 37) * 2 + 35 + (npcId % 23)
+}
+
+function stepVisual(v: NPCVisual, action: string, workZone: string, family: FamilyCluster | null, npcId: number) {
+  if (_mapPaused) return
 
   const targetZone = getVisualZone(workZone, action)
 
-  // Zone changed (e.g., NPC started resting and should go home):
-  // snap to new zone immediately so they don't drift through unrelated zones.
+  // Smooth commute: lerp between zones instead of snapping
+  if (v.commute) {
+    if (v.commute.destZone !== targetZone) {
+      const p = randomPosInZone(targetZone)
+      v.commute = { sx: v.x, sy: v.y, ex: p.x, ey: p.y, t: 0, duration: commuteDuration(npcId, v.renderZone, targetZone), destZone: targetZone }
+    }
+    v.commute.t++
+    const u = easeInOutCubic(Math.min(1, v.commute.t / v.commute.duration))
+    v.x = v.commute.sx + (v.commute.ex - v.commute.sx) * u
+    v.y = v.commute.sy + (v.commute.ey - v.commute.sy) * u
+    if (v.commute.t >= v.commute.duration) {
+      v.renderZone = v.commute.destZone
+      v.commute = null
+      v.moveIn = 0
+      const settle = randomPosInZone(v.renderZone)
+      v.tx = settle.x; v.ty = settle.y
+    }
+    return
+  }
+
   if (targetZone !== v.renderZone) {
-    v.renderZone = targetZone
-    const snap = randomPosInZone(targetZone)
-    v.x = snap.x
-    v.y = snap.y
-    v.tx = snap.x
-    v.ty = snap.y
-    v.moveIn = 0
+    const p = randomPosInZone(targetZone)
+    v.commute = { sx: v.x, sy: v.y, ex: p.x, ey: p.y, t: 0, duration: commuteDuration(npcId, v.renderZone, targetZone), destZone: targetZone }
+    return
   }
 
   v.moveIn--
@@ -245,27 +288,48 @@ function drawPlaceholder(W: number, H: number) {
   ctx.textAlign = 'left'
 }
 
+function lightenHex(hex: string, mul: number): string {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgb(${Math.min(255, Math.round(r * mul))},${Math.min(255, Math.round(g * mul))},${Math.min(255, Math.round(b * mul))})`
+}
+
 function drawZones(W: number, H: number) {
   if (!ctx) return
+  const gutter = Math.max(2, Math.min(W, H) * 0.008)
+  const cornerR = Math.min(14, Math.min(W, H) * 0.016)
+  const c = ctx as CanvasRenderingContext2D & { roundRect?(x: number, y: number, w: number, h: number, r: number): void }
+
   for (const [, zone] of Object.entries(ZONE_LAYOUT)) {
-    const px = zone.x * W
-    const py = zone.y * H
-    const pw = zone.w * W
-    const ph = zone.h * H
+    const px = zone.x * W + gutter
+    const py = zone.y * H + gutter
+    const pw = zone.w * W - 2 * gutter
+    const ph = zone.h * H - 2 * gutter
+    if (pw < 8 || ph < 8) continue
 
-    ctx.fillStyle = zone.color
-    ctx.fillRect(px, py, pw, ph)
+    const grd = ctx.createLinearGradient(px, py, px, py + ph)
+    grd.addColorStop(0, lightenHex(zone.color, 1.25))
+    grd.addColorStop(0.55, zone.color)
+    grd.addColorStop(1, lightenHex(zone.color, 0.85))
 
-    // Slightly thicker, more visible border between zones
-    ctx.strokeStyle = '#333'
-    ctx.lineWidth = 1.5
-    ctx.strokeRect(px, py, pw, ph)
+    ctx.fillStyle = grd
+    ctx.beginPath()
+    if (typeof c.roundRect === 'function') c.roundRect(px, py, pw, ph, cornerR)
+    else ctx.rect(px, py, pw, ph)
+    ctx.fill()
 
-    // Zone label — centered, larger font, higher opacity for readability
-    ctx.fillStyle = 'rgba(255,255,255,0.45)'
-    ctx.font = 'bold 11px system-ui'
+    ctx.beginPath()
+    if (typeof c.roundRect === 'function') c.roundRect(px, py, pw, ph, cornerR)
+    else ctx.rect(px, py, pw, ph)
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)'
+    ctx.lineWidth = 1.2
+    ctx.stroke()
+
+    ctx.fillStyle = 'rgba(255,255,255,0.42)'
+    ctx.font = '600 10px system-ui'
     ctx.textAlign = 'center'
-    ctx.fillText(zone.label, px + pw / 2, py + 16)
+    ctx.fillText(zone.label, px + pw / 2, py + 14)
     ctx.textAlign = 'left'
   }
 }
@@ -320,7 +384,7 @@ function drawNPCs(world: WorldState, W: number, H: number) {
     if (!ZONE_LAYOUT[npc.zone]) continue
 
     const v = getOrInitVisual(npc)
-    stepVisual(v, npc.action_state, npc.zone, familyClusters.get(npc.id) ?? null)
+    stepVisual(v, npc.action_state, npc.zone, familyClusters.get(npc.id) ?? null, npc.id)
 
     const px = v.x * W
     const py = v.y * H
