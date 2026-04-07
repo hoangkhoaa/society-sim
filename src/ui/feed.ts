@@ -111,6 +111,8 @@ export function addChronicle(text: string, year: number, day: number, level: Chr
   const el = document.createElement('div')
   el.className = 'chronicle-entry'
   el.dataset.level = level
+  el.dataset.year = String(year)
+  el.dataset.day = String(day)
   el.innerHTML = `<span class="chronicle-time">${timeLabel}</span> ${text}`
   if (!shouldShow(level)) el.style.display = 'none'
   chronicleLog.prepend(el)
@@ -118,5 +120,17 @@ export function addChronicle(text: string, year: number, day: number, level: Chr
   // Cap at 100 entries
   while (chronicleLog.children.length > 100) {
     chronicleLog.removeChild(chronicleLog.lastChild!)
+  }
+}
+
+export function refreshChronicleTimestamps() {
+  for (const child of Array.from(chronicleLog.children)) {
+    const el = child as HTMLElement
+    const year = parseInt(el.dataset.year ?? '1', 10)
+    const day = parseInt(el.dataset.day ?? '1', 10)
+    const month = Math.ceil(day / 30)
+    const dayOfMonth = day % 30 || 30
+    const timeSpan = el.querySelector('.chronicle-time')
+    if (timeSpan) timeSpan.textContent = tf('topbar.clock', { y: year, m: month, d: dayOfMonth })
   }
 }

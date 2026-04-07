@@ -186,6 +186,10 @@ body[data-theme='light'] .feed-text { color: #3c4c61; }
 body[data-theme='light'] .chronicle-entry { color: #4b5e77; border-bottom-color: #e9eef5; }
 body[data-theme='light'] #chat-input { color: #1f2f45; }
 body[data-theme='light'] #chat-input::placeholder { color: #8091a6; }
+body[data-theme='light'] .demo-grid b { color: #1f2e42; }
+body[data-theme='light'] .age-bar-row .age-label,
+body[data-theme='light'] .age-bar-row .age-pct { color: #4a6278; }
+body[data-theme='light'] .age-bar-row .age-track { background: #ccd8e4; }
 
 .error-msg { font-size: 11px; color: #e24b4b; margin-top: 4px; }
 .hidden { display: none !important; }

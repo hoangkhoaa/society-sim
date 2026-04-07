@@ -2,7 +2,7 @@ import './css/main.css'
 import type { AIConfig, AIProvider, Constitution, WorldState } from './types'
 import { setupGreeting, setupChat, applyPreset, handlePlayerChat, resetInGameHistory, predictConsequences, generateConstitutionText } from './ai/god-agent'
 import { listAvailableModels, PROVIDER_MODELS, getAIUsage, getRemainingRPM, getWaitSeconds } from './ai/provider'
-import { addFeedRaw, addFeedThinking, setFeedFilter, setChronicleFilter } from './ui/feed'
+import { addFeedRaw, addFeedThinking, setFeedFilter, setChronicleFilter, refreshChronicleTimestamps } from './ui/feed'
 import { showConfirm, showInfo } from './ui/modal'
 import { initWorld, tick, spawnEvent, applyInterventions } from './sim/engine'
 import { setLang, t, tf } from './i18n'
@@ -50,6 +50,7 @@ document.querySelectorAll<HTMLButtonElement>('.btn-lang').forEach(btn => {
   btn.addEventListener('click', () => {
     const lang = btn.dataset.lang as Lang
     setLang(lang)
+    refreshChronicleTimestamps()
     document.querySelectorAll('.btn-lang').forEach(b => b.classList.remove('active'))
     btn.classList.add('active')
   })
@@ -320,6 +321,7 @@ async function startGame(constitution: Constitution) {
   peakPopulation = world.npcs.filter(n => n.lifecycle.is_alive).length
 
   updateTopbar()
+  updateDemographics()
 
   // Initialize the canvas map
   const mapCanvas = document.getElementById('map-canvas') as HTMLCanvasElement
