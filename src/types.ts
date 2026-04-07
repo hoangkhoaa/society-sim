@@ -3,7 +3,7 @@
 export type Role = 'farmer' | 'craftsman' | 'scholar' | 'merchant' | 'guard' | 'leader' | 'child'
 export type Gender = 'male' | 'female'
 export type ActionState = 'working' | 'resting' | 'socializing' | 'organizing' | 'fleeing' | 'complying' | 'confront'
-export type DeathCause = 'natural' | 'accident' | 'disease' | 'violence'
+export type DeathCause = 'natural' | 'accident' | 'disease' | 'violence' | 'starvation'
 export type InstitutionId = 'government' | 'market' | 'opposition' | 'community' | 'guard'
 export type EventType =
   | 'storm' | 'drought' | 'flood' | 'tsunami' | 'epidemic' | 'resource_boom' | 'harsh_winter'
@@ -77,7 +77,8 @@ export interface NPC {
   daily_thought: string         // dynamic, LLM-generated on click / event
   last_thought_tick: number
 
-  zone: string
+  zone: string                  // current location (changes with action/time of day)
+  home_zone: string             // permanent work/residence zone (never changes)
   x: number
   y: number
   role: Role
@@ -130,6 +131,10 @@ export interface NPC {
   sick_ticks: number            // ticks remaining sick
   criminal_record: boolean      // has a crime record — reduces trust, social ties
   community_group: number | null // id of community group they belong to (-1 = none)
+
+  // Debt (merchant lending system)
+  debt: number                  // total amount owed (0 = debt-free)
+  debt_to: number | null        // creditor NPC id
 }
 
 // ── Constitution ───────────────────────────────────────────────────────────
@@ -282,6 +287,7 @@ export interface MacroStats {
   political_pressure: number    // 0–100
   natural_resources: number     // 0–100 (remaining extractable resource pool)
   energy: number                // 0–100 (society's productive energy output)
+  literacy: number              // 0–100 (driven by scholar output; boosts economy & info spread)
 }
 
 // ── Network ────────────────────────────────────────────────────────────────
@@ -296,7 +302,7 @@ export interface NetworkGraph {
 // ── World State ────────────────────────────────────────────────────────────
 
 export interface WorldState {
-  tick: number                  // 1 tick = 1 giờ sim
+  tick: number                  // 1 tick = 1 sim hour, 24 ticks = 1 day
   day: number
   year: number
 
@@ -446,15 +452,3 @@ export const FEED_ICONS: Record<string, string> = {
   death: '💀',
   marriage: '💍',
 }
-
-export const VIETNAMESE_NAMES_MALE = [
-  'An', 'Bình', 'Dũng', 'Hùng', 'Long', 'Minh', 'Nam', 'Phong',
-  'Quân', 'Sơn', 'Tâm', 'Tuấn', 'Việt', 'Xuân', 'Khoa', 'Đức',
-  'Hải', 'Kiên', 'Lâm', 'Nhân', 'Quý', 'Thịnh', 'Uy', 'Văn',
-]
-
-export const VIETNAMESE_NAMES_FEMALE = [
-  'Châu', 'Em', 'Giang', 'Hoa', 'Lan', 'Linh', 'Mai', 'Oanh',
-  'Thảo', 'Uyên', 'Xuân', 'Yến', 'Ánh', 'Chi', 'Duyên', 'Hằng',
-  'Khánh', 'Lệ', 'Ngọc', 'Phương', 'Quỳnh', 'Thanh', 'Vân', 'Diễm',
-]

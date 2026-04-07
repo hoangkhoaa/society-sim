@@ -1,6 +1,6 @@
 import type { NPC, Constitution, WorldState, Role, TrustMap, ActionState } from '../types'
-import { VIETNAMESE_NAMES_MALE, VIETNAMESE_NAMES_FEMALE } from '../types'
-import { clamp, gaussian, rand, randInt, weightedRandom } from './constitution'
+import { faker } from '@faker-js/faker'
+import { clamp, gaussian, rand, randInt, weightedRandom, getSeason, ZONE_ADJACENCY } from './constitution'
 import { t, tf, tOcc } from '../i18n'
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -23,12 +23,12 @@ const ROLE_WORLDVIEW_BONUS: Record<Role, Partial<Record<string, number>>> = {
 }
 
 export const ROLE_WEALTH_EXPECTATION: Record<Role, number> = {
-  leader:    120,
-  merchant:  100,
-  scholar:   80,
-  craftsman: 60,
-  guard:     55,
-  farmer:    45,
+  leader:    1200,
+  merchant:  1000,
+  scholar:   800,
+  craftsman: 600,
+  guard:     550,
+  farmer:    450,
   child:     0,   // children have no income expectation
 }
 
@@ -39,7 +39,7 @@ function paretoSample(gini: number): number {
   // clamped to avoid extreme values
   const alpha = clamp((1 + 1 / Math.max(gini, 0.05)) / 2, 1.1, 5)
   const u = Math.random()
-  return Math.max(10, 30 * Math.pow(1 - u, -1 / alpha))
+  return Math.max(100, 300 * Math.pow(1 - u, -1 / alpha))
 }
 
 // ── Role assignment ────────────────────────────────────────────────────────
@@ -101,11 +101,16 @@ function fertilityByAge(age: number, gender: 'male' | 'female'): number {
 // ── Create NPC ─────────────────────────────────────────────────────────────
 
 export function createNPC(idx: number, total: number, constitution: Constitution): NPC {
-  const role = assignRole(idx, total, constitution.role_ratios)
+  // In planned economies (market_freedom < 0.10), private merchant class doesn't exist —
+  // redistribute their population share to craftsmen (state-run production).
+  const effectiveRatios = { ...constitution.role_ratios }
+  if (constitution.market_freedom < 0.10) {
+    effectiveRatios.craftsman = clamp(effectiveRatios.craftsman + effectiveRatios.merchant, 0, 1)
+    effectiveRatios.merchant  = 0
+  }
+  const role = assignRole(idx, total, effectiveRatios)
   const gender: 'male' | 'female' = Math.random() < 0.5 ? 'male' : 'female'
-  const namePool = gender === 'male' ? VIETNAMESE_NAMES_MALE : VIETNAMESE_NAMES_FEMALE
-  const surname = ['Nguyễn', 'Trần', 'Lê', 'Phạm', 'Hoàng', 'Phan', 'Vũ', 'Đặng', 'Bùi', 'Đỗ']
-  const name = `${surname[Math.floor(Math.random() * surname.length)]} ${namePool[Math.floor(Math.random() * namePool.length)]}`
+  const name = faker.person.fullName({ sex: gender })
   const age = randInt(18, 70)
   const zone = assignZone(role)
 
@@ -168,6 +173,7 @@ export function createNPC(idx: number, total: number, constitution: Constitution
     daily_thought: '',
     last_thought_tick: -999,
     zone,
+    home_zone: zone,   // permanent work/residence zone; zone changes dynamically
     x: rand(0, 1),
     y: rand(0, 1),
     role,
@@ -198,6 +204,8 @@ export function createNPC(idx: number, total: number, constitution: Constitution
     sick_ticks: 0,
     criminal_record: false,
     community_group: null,
+    debt: 0,
+    debt_to: null,
   }
 
   return {
@@ -216,26 +224,109 @@ export function tickNPC(npc: NPC, state: WorldState, events?: IndividualEvent[])
   updateGrievance(npc, state)
   updateWorldview(npc, state)
   npc.action_state = selectAction(npc, state)
+  updateZone(npc, state)
   wealthTick(npc, state)
   checkLifecycle(npc, state, events)
+}
+
+// ── Zone Movement ─────────────────────────────────────────────────────────
+// NPCs move between zones based on time of day and action state.
+// home_zone = permanent work zone; zone = current location.
+
+const SOCIAL_HUBS = ['market_square', 'plaza'] as const
+
+function updateZone(npc: NPC, state: WorldState): void {
+  const hour = state.tick % 24
+
+  // Fleeing: move to a random adjacent zone every 6 ticks
+  if (npc.action_state === 'fleeing') {
+    if (state.tick % 6 === npc.id % 6) {
+      const adj = ZONE_ADJACENCY[npc.zone]
+      if (adj?.length) npc.zone = adj[Math.floor(Math.random() * adj.length)]
+    }
+    return
+  }
+
+  // Night (22–5): go home to residential zone
+  if (hour >= 22 || hour < 6) {
+    if (!['guard', 'leader'].includes(npc.role)) {
+      npc.zone = npc.id % 2 === 0 ? 'residential_east' : 'residential_west'
+    } else {
+      npc.zone = npc.home_zone
+    }
+    return
+  }
+
+  // Socializing during evening (18–21): 25% chance to drift to a social hub
+  if (npc.action_state === 'socializing' && state.tick % 12 === npc.id % 12) {
+    if (Math.random() < 0.25) {
+      npc.zone = SOCIAL_HUBS[npc.id % SOCIAL_HUBS.length]
+      return
+    }
+  }
+
+  // Default: return to home zone for work
+  npc.zone = npc.home_zone
+}
+
+// ── Age Productivity Factor ────────────────────────────────────────────────
+// Productivity peaks 20–40, declines gradually, significant drop 65+.
+
+function ageProductivityFactor(age: number): number {
+  if (age < 16)  return 0.30   // children/early teens
+  if (age < 22)  return 0.70   // apprentice years
+  if (age < 42)  return 1.00   // peak working years
+  if (age < 56)  return 0.90   // slight mid-life decline
+  if (age < 66)  return 0.75   // noticeable decline
+  return 0.55                   // elderly: significant decline
+}
+
+// Elderly illness multiplier: risk scales with age past 45.
+function ageIllnessMult(age: number): number {
+  if (age < 45) return 1.0
+  if (age < 60) return 1.6
+  return 2.8
 }
 
 // ── Needs Decay ────────────────────────────────────────────────────────────
 
 function decayNeeds(npc: NPC, state: WorldState): void {
-  const foodAvailable = state.macro.food > 15
+  const foodLevel      = state.macro.food   // 0–100
   const violenceActive = state.active_events.some(e => e.type === 'epidemic' || e.type === 'external_threat')
+  const isWinter       = getSeason(state.day) === 'winter'
 
-  npc.hunger     += 0.5
-  npc.exhaustion += npc.sick ? 0.6 : 0.3   // sick NPCs tire faster
+  // Winter: cold + scarcity raises baseline hunger faster
+  const hungerBase = isWinter ? 0.8 : 0.5
+
+  // Graduated scarcity penalty: food shortage accelerates hunger
+  // food < 30 → mild penalty; food < 10 → famine conditions
+  const scarcityPenalty = foodLevel < 30 ? (30 - foodLevel) / 100 * 0.9 : 0
+  npc.hunger     += hungerBase + scarcityPenalty
+  npc.exhaustion += npc.sick ? 0.6 : 0.3
   npc.isolation  += 0.2
   npc.fear       += violenceActive ? 2.0 : -0.3
 
-  if (npc.action_state === 'working' && foodAvailable) npc.hunger -= 2.0
-  if (npc.action_state === 'resting')                  npc.exhaustion -= 3.0
+  // Graduated food recovery when working: more food → better hunger reduction
+  // food > 60: full recovery; food 30–60: reduced; food < 10: none
+  const hungerRecovery = foodLevel > 60 ? 2.0
+    : foodLevel > 30 ? 1.4
+    : foodLevel > 10 ? 0.7
+    : 0
+  if (npc.action_state === 'working' && hungerRecovery > 0) npc.hunger -= hungerRecovery
+  if (npc.action_state === 'resting')                       npc.exhaustion -= 3.0
   if (npc.action_state === 'socializing') {
     npc.isolation -= 2.5
     if (npc.strong_ties.length < 3) npc.isolation += 1.0
+  }
+
+  // Social ostracism: neighbors gradually distance themselves from known criminals
+  if (npc.criminal_record) npc.isolation += 0.3
+
+  // Community group: belonging reduces isolation even when not actively socializing
+  if (npc.community_group !== null) {
+    npc.isolation -= 0.4
+    // In winter, community provides mutual support against cold/fear
+    if (isWinter) npc.fear = clamp(npc.fear - 0.5, 0, 100)
   }
 
   npc.hunger     = clamp(npc.hunger,     0, 100)
@@ -284,15 +375,15 @@ function computeHappiness(npc: NPC, state: WorldState): number {
 
 // ── Action Selection ───────────────────────────────────────────────────────
 
-function normalRoutine(npc: NPC): ActionState {
-  const hour = (npc.id + Date.now()) % 24   // cheap deterministic hour simulation
+function normalRoutine(_npc: NPC, state: WorldState): ActionState {
+  const hour = state.tick % 24   // sim hour (0–23); 0 = midnight
   if (hour >= 22 || hour < 6) return 'resting'
   if (hour >= 18) return 'socializing'
   return 'working'
 }
 
 function selectAction(npc: NPC, state: WorldState): ActionState {
-  if (npc.stress < npc.stress_threshold) return normalRoutine(npc)
+  if (npc.stress < npc.stress_threshold) return normalRoutine(npc, state)
 
   const govTrust = (npc.trust_in.government.competence + npc.trust_in.government.intention) / 2
   const guardInst = state.institutions.find(i => i.id === 'guard')
@@ -308,6 +399,42 @@ function selectAction(npc: NPC, state: WorldState): ActionState {
     confront:    Math.max(0, w.risk_tolerance * (1 - govTrust) * perceivedRisk * (npc.stress / 100)),
   }
 
+  // value_priority biases: societal values shape how stressed NPCs respond.
+  // pm(val) → 1.24 when val is top priority (rank 0), 1.00 when rank 3.
+  const vp = state.constitution.value_priority
+  const pm = (val: typeof vp[number]) => 1 + (3 - vp.indexOf(val)) * 0.08
+  // security → comply/flee preferred; organizing/confront discouraged
+  weights.complying  *= pm('security')
+  weights.fleeing    *= pm('security')
+  weights.organizing *= (2 - pm('security'))
+  weights.confront   *= (2 - pm('security'))
+  // freedom → confront/organize amplified; comply discouraged
+  weights.confront   *= pm('freedom')
+  weights.organizing *= pm('freedom')
+  weights.complying  *= (2 - pm('freedom'))
+  // equality → collective action amplified (shared cause against inequality)
+  weights.organizing *= pm('equality')
+  weights.confront   *= pm('equality')
+  // growth → individual coping; less collective action
+  weights.resting    *= pm('growth')
+  weights.organizing *= (2 - pm('growth'))
+  // Clamp all weights to non-negative
+  for (const k of Object.keys(weights)) weights[k] = Math.max(0, weights[k])
+
+  // Community group amplifies collective action: seeing group-mates organize
+  // lowers the activation threshold (social proof / safety in numbers)
+  if (npc.community_group !== null) {
+    const groupOrganizing = npc.strong_ties.some(id => {
+      const t = state.npcs[id]
+      return t?.community_group === npc.community_group &&
+        (t.action_state === 'organizing' || t.action_state === 'confront')
+    })
+    if (groupOrganizing) {
+      weights.organizing = (weights.organizing ?? 0) * 1.8
+      weights.confront   = (weights.confront   ?? 0) * 1.4
+    }
+  }
+
   return weightedRandom(weights) as ActionState
 }
 
@@ -318,8 +445,11 @@ function updateGrievance(npc: NPC, state: WorldState): void {
 
   if (npc.hunger > 60) delta += (npc.hunger - 60) * 0.08
 
-  const neighborAvg = avgWealth(npc.weak_ties, state.npcs)
-  if (npc.wealth < neighborAvg) delta += (neighborAvg - npc.wealth) / 200
+  const neighborAvg  = avgWealth(npc.weak_ties, state.npcs)
+  // Equality-prioritizing societies feel wealth gaps more acutely (political culture effect)
+  const equalityRank = state.constitution.value_priority.indexOf('equality')
+  const equalityMult = 1 + (3 - equalityRank) * 0.30   // 1.90 rank-0 → 1.00 rank-3
+  if (npc.wealth < neighborAvg) delta += (neighborAvg - npc.wealth) / 200 * equalityMult
 
   const recentBetrayal = npc.memory.find(m => m.type === 'trust_broken' && state.tick - m.tick < 720)
   if (recentBetrayal) delta += Math.abs(recentBetrayal.emotional_weight) * 0.05
@@ -330,6 +460,14 @@ function updateGrievance(npc: NPC, state: WorldState): void {
   delta -= (npc.strong_ties.length / 15) * 1.5
 
   if (npc.happiness > 65) delta -= 0.8
+
+  // Resource depletion: craftsmen and farmers feel it directly (can't work, income drops)
+  if ((npc.role === 'craftsman' || npc.role === 'farmer') && state.macro.natural_resources < 20) {
+    delta += (20 - state.macro.natural_resources) / 20 * 0.6
+  }
+
+  // Community group membership buffers grievance — sense of collective agency
+  if (npc.community_group !== null) delta -= 0.4
 
   npc.grievance = clamp(npc.grievance + delta, 0, 100)
 }
@@ -400,58 +538,127 @@ function updateWorldview(npc: NPC, state: WorldState): void {
 
 // ── Wealth tick ────────────────────────────────────────────────────────────
 
-export function computeProductivity(npc: NPC, _state: WorldState): number {
-  const motivation     = 0.5 + (npc.happiness / 100) * 0.5
-  const expected       = ROLE_WEALTH_EXPECTATION[npc.role]
-  const fairness       = clamp(npc.wealth / expected, 0, 1.5)
-  const fairnessBonus  = (fairness - 1.0) * 0.2
-  const stressPenalty  = npc.stress / 200
-  const sickPenalty    = npc.sick ? 0.5 : 0   // sick → half productivity
-  return Math.max(0, npc.base_skill * motivation * (1 + fairnessBonus) * (1 - stressPenalty) * (1 - sickPenalty))
+export function computeProductivity(npc: NPC, state: WorldState): number {
+  const motivation    = 0.5 + (npc.happiness / 100) * 0.5
+  const expected      = ROLE_WEALTH_EXPECTATION[npc.role]
+  const fairness      = clamp(npc.wealth / Math.max(expected, 1), 0, 2.0)
+  // Below expectation → penalty (under-resourced, unmotivated); above → no bonus (incentive satisfied)
+  const fairnessPenalty = fairness < 1.0 ? (1.0 - fairness) * 0.18 : 0
+  const stressPenalty   = npc.stress / 120   // was /200; stress 100 → 0.83 penalty
+  const sickPenalty     = npc.sick ? 0.5 : 0
+  const ageFactor       = ageProductivityFactor(npc.age)
+  // Craftsmen can't work without raw materials
+  const resourcePenalty = (npc.role === 'craftsman' && state.macro.natural_resources < 20)
+    ? (20 - state.macro.natural_resources) / 20 * 0.50
+    : 0
+  return Math.max(0,
+    npc.base_skill * motivation * ageFactor
+    * (1 - fairnessPenalty)
+    * (1 - stressPenalty)
+    * (1 - sickPenalty)
+    * (1 - resourcePenalty),
+  )
 }
 
 // ── Wealth tick ────────────────────────────────────────────────────────────
-// Each NPC earns from labor (productivity-based) and small peer-to-peer trades
-// via direct connections (strong_ties). Information-network ties (info_ties)
-// spread economic opportunity awareness but do not directly transfer wealth.
+// Labor income + 3 trade modes:
+//   Merchant-as-seller: earns markup (profit) on each transaction
+//   Non-merchant P2P:   wealth flows from richer to poorer (barter/gifts)
+//   Merchant lending:   offers loans to poor neighbors at 30% interest
 
-// Fraction of a direct trade that the recipient keeps (rest is friction/overhead).
-const TRADE_EFFICIENCY = 0.8
+const TRADE_EFFICIENCY = 0.80   // non-merchant P2P friction
+const MERCHANT_MARKUP  = 0.22   // merchant profit margin per transaction
 
 function wealthTick(npc: NPC, state: WorldState): void {
-  // Children and fleeing/confronting NPCs do not earn income
   if (npc.role === 'child') return
   if (npc.action_state === 'fleeing' || npc.action_state === 'confront') return
 
   const productivity = computeProductivity(npc, state)
-  const laborIncome = (productivity - 0.5) * 0.1
-  npc.wealth = clamp(npc.wealth + laborIncome, 0, 5000)
-
-  // Exponential moving average of daily income.
-  // Decay: 0.99 per tick × 24 ticks/day gives ~a 100-tick (4-day) half-life.
-  // Multiplier: ×24 converts per-tick earnings to a per-day rate estimate.
+  const laborIncome  = (productivity - 0.5) * 0.1
+  npc.wealth     = clamp(npc.wealth + laborIncome, 0, 50000)
   npc.daily_income = npc.daily_income * 0.99 + Math.max(0, laborIncome) * 24
 
-  // Peer-to-peer economic exchange via direct connections (strong_ties).
-  // Checked every 12 ticks (≈ twice a sim-day), staggered by NPC id so that
-  // not all 500 NPCs trigger trade on the same tick (distributes CPU load).
+  // ── P2P trade (every 12 ticks, staggered by id) ────────────────────────
   if (npc.action_state === 'socializing' && state.tick % 12 === npc.id % 12) {
-    const marketFreedom = state.constitution.market_freedom
+    const mf = state.constitution.market_freedom
     for (const tid of npc.strong_ties.slice(0, 3)) {
       const partner = state.npcs[tid]
       if (!partner?.lifecycle.is_alive) continue
 
-      // Merchants facilitate larger trades; others do small exchanges (food, goods)
-      const isMerchantTrade = npc.role === 'merchant' || partner.role === 'merchant'
-      const baseTransfer = isMerchantTrade ? 0.8 : 0.2
-
-      // Wealth flows from richer to poorer through direct trade.
-      // Market freedom scales how actively wealth circulates.
-      if (npc.wealth > partner.wealth + 10) {
-        const transfer = baseTransfer * marketFreedom * Math.min(1, (npc.wealth - partner.wealth) / 200)
-        npc.wealth     = clamp(npc.wealth     - transfer, 0, 5000)
-        partner.wealth = clamp(partner.wealth + transfer * TRADE_EFFICIENCY, 0, 5000)
+      if (npc.role === 'merchant') {
+        // Planned economies suppress private trade — merchants can't earn markup
+        if (mf < 0.15) continue
+        const price = 0.5 * mf
+        if (partner.wealth >= price * 3) {
+          partner.wealth = clamp(partner.wealth - price, 0, 50000)
+          npc.wealth     = clamp(npc.wealth + price * (1 + MERCHANT_MARKUP), 0, 50000)
+        }
+      } else if (partner.role === 'merchant') {
+        if (mf < 0.15) continue
+        const price = 0.5 * mf
+        if (npc.wealth >= price * 3) {
+          npc.wealth     = clamp(npc.wealth - price, 0, 50000)
+          partner.wealth = clamp(partner.wealth + price * (1 + MERCHANT_MARKUP), 0, 50000)
+        }
+      } else {
+        // Non-merchant barter: richer gives to poorer
+        if (npc.wealth > partner.wealth + 10) {
+          const transfer = 0.2 * mf * Math.min(1, (npc.wealth - partner.wealth) / 500)
+          npc.wealth     = clamp(npc.wealth     - transfer, 0, 50000)
+          partner.wealth = clamp(partner.wealth + transfer * TRADE_EFFICIENCY, 0, 50000)
+        }
       }
+    }
+  }
+
+  // ── Merchant lending (once per day, staggered) ─────────────────────────
+  // Planned economies (mf < 0.20) don't allow private lending — state credit only.
+  if (npc.role === 'merchant' && npc.wealth > 1000
+      && state.constitution.market_freedom >= 0.20
+      && npc.action_state === 'socializing'
+      && state.tick % 24 === npc.id % 24) {
+    for (const tid of npc.strong_ties.slice(0, 3)) {
+      const borrower = state.npcs[tid]
+      if (!borrower?.lifecycle.is_alive || borrower.role === 'child') continue
+      if (borrower.debt > 0 || borrower.wealth > 300) continue   // already in debt or not poor
+      if (Math.random() > 0.05) continue                          // 5% chance per eligible neighbor/day
+
+      const loan = clamp(npc.wealth * 0.08, 50, 300)
+      npc.wealth      = clamp(npc.wealth - loan, 0, 50000)
+      borrower.wealth  = clamp(borrower.wealth + loan, 0, 50000)
+      borrower.debt    = loan * 1.30   // 30% total interest
+      borrower.debt_to = npc.id
+      borrower.memory.push({
+        event_id: 'loan_' + state.tick,
+        type: 'helped',
+        emotional_weight: 20,
+        tick: state.tick,
+      })
+      if (borrower.memory.length > 10) borrower.memory.shift()
+      break   // one loan per merchant per day
+    }
+  }
+
+  // ── Debt repayment / default (once per day, staggered) ────────────────
+  if (npc.debt > 0 && npc.debt_to !== null && state.tick % 24 === npc.id % 24) {
+    const creditor = state.npcs[npc.debt_to]
+    if (!creditor?.lifecycle.is_alive) {
+      // Creditor dead — debt forgiven
+      npc.debt = 0; npc.debt_to = null
+    } else if (npc.wealth < 5) {
+      // Default: too poor to repay → creditor loses 50%, NPC gets fear/grievance
+      creditor.wealth = clamp(creditor.wealth - npc.debt * 0.50, 0, 50000)
+      creditor.trust_in.community.intention = clamp(creditor.trust_in.community.intention - 0.04, 0, 1)
+      npc.fear      = clamp(npc.fear      + 20, 0, 100)
+      npc.grievance  = clamp(npc.grievance  + 15, 0, 100)
+      npc.debt = 0; npc.debt_to = null
+    } else {
+      // Normal repayment: 5% of current wealth per day
+      const repayment = Math.min(npc.debt, npc.wealth * 0.05)
+      npc.wealth      = clamp(npc.wealth      - repayment, 0, 50000)
+      creditor.wealth  = clamp(creditor.wealth + repayment, 0, 50000)
+      npc.debt -= repayment
+      if (npc.debt < 0.01) { npc.debt = 0; npc.debt_to = null }
     }
   }
 }
@@ -475,7 +682,7 @@ function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[])
   // Death by starvation
   if (npc.hunger >= 99 && Math.random() < 0.001) {
     npc.lifecycle.is_alive   = false
-    npc.lifecycle.death_cause = 'disease'
+    npc.lifecycle.death_cause = 'starvation'
     npc.lifecycle.death_tick  = state.tick
     return
   }
@@ -498,9 +705,10 @@ function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[])
     }
   }
 
-  // ★ Random illness onset (~0.02% per tick in normal conditions)
+  // ★ Random illness onset — elderly get sick more often
   if (!npc.sick) {
     const sicknessP = 0.0002
+      * ageIllnessMult(npc.age)
       * (1 + npc.exhaustion / 80)
       * (1 + npc.hunger / 80)
       * (1 + (state.active_events.some(e => e.type === 'epidemic') ? 4 : 0))
@@ -536,7 +744,7 @@ function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[])
     }
   }
 
-  // ★ Crime: high grievance + low trust in government + low wealth → crime attempt
+  // ★ Crime: first offense — grievance + poverty + low trust in government
   if (!npc.criminal_record && state.tick % 6 === npc.id % 6) {
     const govTrust = (npc.trust_in.government.competence + npc.trust_in.government.intention) / 2
     const crimeP = 0.00004
@@ -545,14 +753,12 @@ function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[])
       * (npc.wealth < 30 ? 2 : 1)
     if (Math.random() < crimeP) {
       npc.criminal_record = true
-      // Reward: wealth gain; risk: trust penalty from community/government
       npc.wealth = clamp(npc.wealth + 15 + Math.random() * 20, 0, 5000)
       npc.trust_in.government.intention = clamp(npc.trust_in.government.intention - 0.10, 0, 1)
       npc.trust_in.community.intention  = clamp(npc.trust_in.community.intention  - 0.08, 0, 1)
-      npc.grievance = clamp(npc.grievance - 15, 0, 100)   // crime relieves frustration temporarily
+      npc.grievance = clamp(npc.grievance - 15, 0, 100)
       npc.memory.push({ event_id: 'crime_' + state.tick, type: 'crime', emotional_weight: -20, tick: state.tick })
       if (npc.memory.length > 10) npc.memory.shift()
-      // Nearby NPCs lose trust if they witness it
       for (const tid of npc.strong_ties.slice(0, 3)) {
         const witness = state.npcs[tid]
         if (witness?.lifecycle.is_alive) {
@@ -561,6 +767,51 @@ function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[])
         }
       }
       events?.push({ type: 'crime', npc })
+    }
+  }
+
+  // ★ Recidivism: repeat offenders reoffend at higher rate, lower threshold
+  if (npc.criminal_record && state.tick % 6 === npc.id % 6) {
+    const govTrust = (npc.trust_in.government.competence + npc.trust_in.government.intention) / 2
+    const recidivismP = 0.00008
+      * Math.max(0, npc.grievance - 30) / 70
+      * (1 - govTrust)
+      * (npc.wealth < 50 ? 2 : 1)
+    if (Math.random() < recidivismP) {
+      npc.wealth = clamp(npc.wealth + 25 + Math.random() * 35, 0, 5000)
+      npc.grievance = clamp(npc.grievance - 10, 0, 100)
+      // Witnesses react more strongly to known repeat offenders
+      for (const tid of npc.strong_ties.slice(0, 3)) {
+        const witness = state.npcs[tid]
+        if (witness?.lifecycle.is_alive) {
+          witness.trust_in.community.intention = clamp(witness.trust_in.community.intention - 0.06, 0, 1)
+          witness.fear     = clamp(witness.fear     + 5, 0, 100)
+          witness.grievance = clamp(witness.grievance + 8, 0, 100)
+        }
+      }
+      events?.push({ type: 'crime', npc })
+    }
+  }
+
+  // ★ Guard detection: scaled by guard power AND individual_rights_floor
+  // High rights → due process makes arbitrary arrest harder
+  // Low rights  → suspects can be arrested on little evidence
+  if (npc.criminal_record && state.tick % 24 === npc.id % 24) {
+    const guardInst = state.institutions.find(i => i.id === 'guard')
+    const rights     = state.constitution.individual_rights_floor
+    // High rights = harder to catch (legal protections); low rights = arbitrary enforcement
+    const detectionP = (guardInst?.power ?? 0.3) * 0.02 * (1 - rights * 0.55)
+    if (Math.random() < detectionP) {
+      // Low rights = brutal punishment; high rights = lighter fine + due process
+      const fearDelta  = Math.round(15 + (1 - rights) * 25)   // 15–40
+      const fineFrac   = 0.15 + (1 - rights) * 0.20           // 15–35% of wealth
+      const trustLoss  = 0.04 + (1 - rights) * 0.06           // 0.04–0.10
+      npc.fear      = clamp(npc.fear      + fearDelta,          0, 100)
+      npc.wealth    = clamp(npc.wealth    - npc.wealth * fineFrac, 0, 50000)
+      npc.isolation = clamp(npc.isolation + 25,                 0, 100)
+      npc.trust_in.government.intention = clamp(npc.trust_in.government.intention - trustLoss, 0, 1)
+      npc.memory.push({ event_id: 'arrested_' + state.tick, type: 'harmed', emotional_weight: -60, tick: state.tick })
+      if (npc.memory.length > 10) npc.memory.shift()
     }
   }
 
@@ -633,6 +884,12 @@ function transitionToAdultCareer(npc: NPC, state: WorldState): void {
     }
   }
 
+  // In planned economies, merchant role is absorbed into craftsman
+  if (state.constitution.market_freedom < 0.10) {
+    weights.craftsman = (weights.craftsman ?? 0) + (weights.merchant ?? 0)
+    weights.merchant  = 0.001
+  }
+
   // Suppress the 'leader' role for society-born NPCs (leaders emerge from adult selection,
   // not from hereditary birth — unless it's a feudal/high-inequality society)
   const isFeudal = state.constitution.gini_start > 0.60 && state.constitution.state_power > 0.50
@@ -678,8 +935,9 @@ export function updateTrust(
   t.competence = clamp(t.competence + d.competence * magnitude, 0, 1)
   t.intention  = clamp(t.intention  + d.intention  * magnitude, 0, 1)
 
-  // Intention once broken: caps recovery at 0.35
+  // Intention once badly broken: recovery is slow and capped at 0.65
+  // (trust is rebuilt through sustained good governance, not instantly)
   if (t.intention < 0.1 && d.intention > 0) {
-    t.intention = Math.min(t.intention + d.intention * magnitude, 0.35)
+    t.intention = Math.min(t.intention + d.intention * magnitude, 0.65)
   }
 }

@@ -1,6 +1,6 @@
 import './css/main.css'
 import type { AIConfig, AIProvider, Constitution, WorldState } from './types'
-import { setupGreeting, setupChat, applyPreset, handlePlayerChat, resetInGameHistory, predictConsequences } from './ai/god-agent'
+import { setupGreeting, setupChat, applyPreset, handlePlayerChat, resetInGameHistory, predictConsequences, generateConstitutionText } from './ai/god-agent'
 import { listAvailableModels, PROVIDER_MODELS, getAIUsage } from './ai/provider'
 import { addFeedRaw, addFeedThinking, setFeedFilter, setChronicleFilter } from './ui/feed'
 import { showConfirm, showInfo } from './ui/modal'
@@ -279,15 +279,15 @@ function replaceLastMsg(text: string) {
 async function startGame(constitution: Constitution) {
   resetInGameHistory()
   lastGovernmentPeriod = -1  // reset government cycle tracker for new game
+
+  // Show the game screen immediately so the user sees the UI rather than a frozen setup screen
+  showScreen('screen-game')
   addFeedRaw(t('topbar.init') as string, 'info', 1, 1)
 
-  // Defer initWorld so the feed message renders first
-  await new Promise<void>(resolve => setTimeout(resolve, 50))
-
-  world = initWorld(constitution)
+  // initWorld is now async — it yields every 50 NPCs so the UI stays responsive
+  world = await initWorld(constitution)
   peakPopulation = world.npcs.filter(n => n.lifecycle.is_alive).length
 
-  showScreen('screen-game')
   updateTopbar()
 
   // Initialize the canvas map
@@ -316,6 +316,21 @@ async function startGame(constitution: Constitution) {
     chatInput.disabled = true
     chatInput.placeholder = t('chat.disabled') as string
     btnChatSend.setAttribute('disabled', 'true')
+  }
+
+  // ── AI-generated founding proclamation ────────────────────────────────────
+  // After the world is running, ask the AI to draft a founding document.
+  // Uses addFeedThinking pattern: shows a spinner, replaces it with the result.
+  if (aiConfig) {
+    const removeSpinner = addFeedThinking('📜 Drafting founding proclamation...')
+    try {
+      const proclamation = await generateConstitutionText(constitution, aiConfig)
+      removeSpinner()
+      addFeedRaw(`📜 ${proclamation}`, 'info', 1, 1)
+    } catch {
+      removeSpinner()
+      // Silently skip — proclamation is a narrative flourish, not critical
+    }
   }
 }
 
@@ -438,8 +453,8 @@ const btnPause = document.getElementById('btn-pause')!
 // Tracks which 15-day period has already been processed to avoid double-firing at high speeds.
 let lastGovernmentPeriod = -1
 
-// 1 tick = 1 sim-hour; 42ms interval ≈ 24 ticks/second at 1×
-const BASE_TICK_MS = 42
+// 1 tick = 1 sim-hour; 1000ms interval = 1 tick/second at 1× → 1 real second = 1 sim-hour
+const BASE_TICK_MS = 1000
 
 function setPaused(value: boolean) {
   paused = value

@@ -340,6 +340,35 @@ export function applyPreset(
   }
 }
 
+// ── Constitution Proclamation ──────────────────────────────────────────────
+// Generates a vivid founding proclamation text for the society's constitution.
+// Called once at game start; result is shown in the feed as a narrative flourish.
+
+export async function generateConstitutionText(
+  constitution: Constitution,
+  config: AIConfig,
+): Promise<string> {
+  const params = [
+    `Inequality (Gini): ${constitution.gini_start.toFixed(2)}`,
+    `Market freedom: ${Math.round(constitution.market_freedom * 100)}%`,
+    `State power: ${Math.round(constitution.state_power * 100)}%`,
+    `Safety net: ${Math.round(constitution.safety_net * 100)}%`,
+    `Individual rights floor: ${Math.round(constitution.individual_rights_floor * 100)}%`,
+    `Social trust: ${Math.round(constitution.base_trust * 100)}%`,
+    `Core values: ${constitution.value_priority.join(' > ')}`,
+  ].join('\n')
+
+  const lang = getLang()
+  const system = lang === 'vi'
+    ? 'Bạn là người chép sử của một xã hội mới thành lập. Hãy viết tuyên bố thành lập ngắn gọn, súc tích, giàu cảm xúc.'
+    : 'You are the founding scribe of a newly established society. Write a short, vivid, emotionally resonant founding proclamation.'
+  const prompt = lang === 'vi'
+    ? `Với các thông số xã hội sau:\n${params}\nHãy viết 2-3 câu tuyên bố thành lập mang văn phong hào hùng của văn kiện lịch sử. Chỉ trả lời bằng đoạn văn, không thêm tiêu đề hay giải thích.`
+    : `Given these society parameters:\n${params}\nWrite 2-3 sentences in the solemn register of a historical founding document. Return only the proclamation text, no title or explanation.`
+
+  return callAI(config, system, prompt)
+}
+
 // ── In-game chat ───────────────────────────────────────────────────────────
 
 export async function handlePlayerChat(

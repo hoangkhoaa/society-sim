@@ -32,6 +32,53 @@ export function weightedRandom<K extends string>(weights: Record<K, number>): K 
   return Object.keys(weights)[0] as K
 }
 
+// ── Season ─────────────────────────────────────────────────────────────────
+// 360-day year split into 4 seasons of 90 days each.
+// Factor drives food production multiplier and winter hunger effects.
+
+export type Season = 'spring' | 'summer' | 'autumn' | 'winter'
+
+export function getSeason(day: number): Season {
+  const d = ((day - 1) % 360) + 1
+  if (d <= 90)  return 'spring'
+  if (d <= 180) return 'summer'
+  if (d <= 270) return 'autumn'
+  return 'winter'
+}
+
+// Food production multiplier per season:
+//   spring 0.8 – fields still being planted
+//   summer 1.0 – crops growing normally
+//   autumn 1.4 – harvest peak
+//   winter 0.3 – dormant, minimal output
+export function getSeasonFactor(day: number): number {
+  const s = getSeason(day)
+  if (s === 'spring') return 0.8
+  if (s === 'summer') return 1.0
+  if (s === 'autumn') return 1.4
+  return 0.3
+}
+
+// ── Zone adjacency (shared by engine & npc) ────────────────────────────────
+export const ZONE_ADJACENCY: Record<string, string[]> = {
+  north_farm:        ['south_farm', 'residential_west'],
+  south_farm:        ['north_farm', 'market_square'],
+  workshop_district: ['market_square', 'residential_east'],
+  market_square:     ['south_farm', 'workshop_district', 'plaza'],
+  scholar_quarter:   ['plaza', 'residential_east'],
+  residential_east:  ['residential_west', 'workshop_district', 'scholar_quarter'],
+  residential_west:  ['residential_east', 'north_farm', 'guard_post'],
+  guard_post:        ['residential_west', 'plaza'],
+  plaza:             ['market_square', 'guard_post', 'scholar_quarter'],
+}
+
+export const SEASON_LABELS: Record<Season, string> = {
+  spring: '🌱 Spring',
+  summer: '☀️ Summer',
+  autumn: '🍂 Autumn',
+  winter: '❄️ Winter',
+}
+
 // ── Institution Init ────────────────────────────────────────────────────────
 
 export function initInstitutions(c: Constitution): Institution[] {

@@ -2,25 +2,37 @@ import type { WorldState, Constitution, NPC, SimEvent, NarrativeEntry, NPCInterv
 import { createNPC, tickNPC, computeProductivity, RESIDENTIAL_ZONES } from './npc'
 import type { IndividualEvent } from './npc'
 import { buildNetwork } from './network'
-import { initInstitutions, clamp } from './constitution'
+import { initInstitutions, clamp, getSeason, getSeasonFactor, SEASON_LABELS, ZONE_ADJACENCY } from './constitution'
 import { addFeedRaw, addChronicle } from '../ui/feed'
 import { t, tf } from '../i18n'
 
 // ── Event death accumulator ────────────────────────────────────────────────
 let eventDeathsThisDay = 0
 
+// ── Season tracking ────────────────────────────────────────────────────────
+let lastSeason = 'spring'
+
+// ── Community collective action cooldown ──────────────────────────────────
+// Maps community_group id → last tick a collective action event was emitted.
+// Prevents spam: at most one event per group per 10 sim-days (240 ticks).
+const groupCollectiveActionTick = new Map<number, number>()
+
 // ── World Initialization ────────────────────────────────────────────────────
 
 const POPULATION = 500          // Phase 2 starting size; bump to 10k after testing
 const MAX_NPC_MEMORIES = 10     // Circular memory buffer size per NPC
 
-export function initWorld(constitution: Constitution): WorldState {
+export async function initWorld(constitution: Constitution): Promise<WorldState> {
   const npcs: NPC[] = []
   for (let i = 0; i < POPULATION; i++) {
     npcs.push(createNPC(i, POPULATION, constitution))
+    // Yield to the browser event loop every 50 NPCs to keep the UI responsive
+    if (i % 50 === 49) await new Promise<void>(resolve => setTimeout(resolve, 0))
   }
 
   const { strong, weak, info, clusters } = buildNetwork(npcs, constitution)
+  // One more yield after the (heavier) network build
+  await new Promise<void>(resolve => setTimeout(resolve, 0))
 
   // Write ties back onto NPCs
   for (const [id, ties] of strong) {
@@ -44,7 +56,32 @@ export function initWorld(constitution: Constitution): WorldState {
   // Natural resource pool: starts at 100k × (1 - scarcity)
   const naturalResourcesInit = clamp(100000 * (1 - constitution.resource_scarcity), 10000, 100000)
 
-  const macro = computeMacroStats({ npcs, institutions, active_events: [], food_stock: POPULATION * 30, natural_resources: naturalResourcesInit, constitution } as unknown as WorldState)
+  // computeMacroStats calls computeProductivity, which reads state.macro.natural_resources
+  const macroStub = {
+    food: 50,
+    stability: 50,
+    trust: 50,
+    gini: constitution.gini_start,
+    political_pressure: 0,
+    natural_resources: clamp(naturalResourcesInit / 1000, 0, 100),
+    energy: 50,
+    literacy: 50,
+  }
+  const macro = computeMacroStats({
+    tick: 0,
+    day: 1,
+    year: 1,
+    constitution,
+    npcs,
+    institutions,
+    active_events: [],
+    food_stock: POPULATION * 30,
+    natural_resources: naturalResourcesInit,
+    macro: macroStub,
+    narrative_log: [],
+    drift_score: 0,
+    crisis_pending: false,
+  } as unknown as WorldState)
 
   return {
     tick: 0,
@@ -123,6 +160,16 @@ export function tick(state: WorldState): void {
   if (state.tick % 24 === 0) {
     checkLifecycleEvents(state)
     checkCommunityGroups(state)
+    checkSeasonTransition(state)
+    checkOrganizingOutcome(state)
+    checkTrustRecovery(state)
+    applyWelfare(state)
+    applyStateRationing(state)
+    applyFeudalTribute(state)
+    processInheritance(state)
+    checkRegimeEvents(state)
+    applyTheocracyEffect(state)
+    applyCommuneEffect(state)
   }
 }
 
@@ -133,19 +180,7 @@ const ALL_ZONES = [
   'north_farm', 'south_farm', 'workshop_district', 'market_square',
   'scholar_quarter', 'residential_east', 'residential_west', 'guard_post', 'plaza',
 ]
-
-// Adjacent zones for contagion spread
-const ZONE_ADJACENCY: Record<string, string[]> = {
-  north_farm:        ['south_farm', 'residential_west'],
-  south_farm:        ['north_farm', 'market_square'],
-  workshop_district: ['market_square', 'residential_east'],
-  market_square:     ['south_farm', 'workshop_district', 'plaza'],
-  scholar_quarter:   ['plaza', 'residential_east'],
-  residential_east:  ['residential_west', 'workshop_district', 'scholar_quarter'],
-  residential_west:  ['residential_east', 'north_farm', 'guard_post'],
-  guard_post:        ['residential_west', 'plaza'],
-  plaza:             ['market_square', 'guard_post', 'scholar_quarter'],
-}
+// ZONE_ADJACENCY is imported from constitution.ts
 
 function tickEvents(state: WorldState): void {
   for (const ev of state.active_events) {
@@ -334,9 +369,11 @@ export function computeMacroStats(state: WorldState): WorldState['macro'] {
   if (npcs.length === 0) return state.macro
 
   // Food production — each farmer at average productivity feeds ~3-4 people
+  // Multiplied by seasonal factor: autumn harvest peaks, winter drops sharply
   const farmers = npcs.filter(n => n.role === 'farmer')
   const scarcityFactor = 1 - state.constitution.resource_scarcity * 0.5
-  const dailyProduction = farmers.reduce((s, n) => s + computeProductivity(n, state), 0) * 4 * scarcityFactor
+  const seasonFactor = getSeasonFactor(state.day)
+  const dailyProduction = farmers.reduce((s, n) => s + computeProductivity(n, state), 0) * 4 * scarcityFactor * seasonFactor
   const dailyConsumption = npcs.length * 0.5
   state.food_stock = clamp((state.food_stock ?? 0) + dailyProduction - dailyConsumption, 0, 999999)
   const food = clamp(state.food_stock / (npcs.length * 30) * 100, 0, 100)
@@ -354,11 +391,19 @@ export function computeMacroStats(state: WorldState): WorldState['macro'] {
   )
   const natural_resources = clamp(state.natural_resources / 1000, 0, 100)
 
-  // Energy index — productive output of the whole society, normalized 0–100
+  // Literacy — scholar output normalized to their role share of population
+  const scholars = npcs.filter(n => n.role === 'scholar')
+  const scholarOutput = scholars.reduce((s, n) => s + computeProductivity(n, state), 0)
+  const maxScholarOutput = npcs.length * Math.max(state.constitution.role_ratios.scholar, 0.01)
+  const literacy = clamp(scholarOutput / maxScholarOutput * 100, 0, 100)
+
+  // Energy index — productive output of the whole society, with literacy bonus
+  // High literacy boosts economy up to +12% (knowledge economy effect)
   const workingNPCs = npcs.filter(n => n.action_state === 'working' || n.action_state === 'socializing')
   const totalProductivity = workingNPCs.reduce((s, n) => s + computeProductivity(n, state), 0)
-  const maxPossibleProductivity = npcs.length * 1.0   // 1.0 is max base_skill
-  const energy = clamp(totalProductivity / Math.max(maxPossibleProductivity, 1) * 100, 0, 100)
+  const maxPossibleProductivity = npcs.length * 1.0
+  const literacyBonus = 1 + (literacy / 100) * 0.12
+  const energy = clamp(totalProductivity / Math.max(maxPossibleProductivity, 1) * 100 * literacyBonus, 0, 100)
 
   // Gini
   const wealths = npcs.map(n => n.wealth).sort((a, b) => a - b)
@@ -388,7 +433,7 @@ export function computeMacroStats(state: WorldState): WorldState['macro'] {
     0, 100,
   )
 
-  return { food, gini, political_pressure: politicalPressure, trust, stability, natural_resources, energy }
+  return { food, gini, political_pressure: politicalPressure, trust, stability, natural_resources, energy, literacy }
 }
 
 function computeGini(sorted: number[]): number {
@@ -613,39 +658,93 @@ function spawnBirth(state: WorldState, parent: NPC): void {
   addChronicle(tf('engine.birth', { parent: parent.name }) as string, state.year, state.day, 'minor')
 }
 
+// ── Season Transition ────────────────────────────────────────────────────────
+
+function checkSeasonTransition(state: WorldState): void {
+  const current = getSeason(state.day)
+  if (current === lastSeason) return
+  lastSeason = current
+
+  const label = SEASON_LABELS[current]
+  const descriptions: Record<string, string> = {
+    spring: `${label} — farmers return to the fields. Food stores running low.`,
+    summer: `${label} — crops are growing. The society settles into its rhythm.`,
+    autumn: `${label} — harvest season. Food production at its peak.`,
+    winter: `${label} — cold sets in. Food production drops sharply; hunger rises.`,
+  }
+  const text = descriptions[current]
+  addChronicle(text, state.year, state.day, 'minor')
+  addFeedRaw(text, 'info', state.year, state.day)
+}
+
 // ── Community Groups ─────────────────────────────────────────────────────────
 
 let nextGroupId = 1
 
 function checkCommunityGroups(state: WorldState): void {
-  // Formation: 3+ socializing NPCs with mutual strong ties who have no group yet
-  // Only run occasionally (every 24 ticks = daily) and with low probability per check
-  if (Math.random() > 0.05) return  // ~5% chance per day a new group forms
-
-  const candidates = state.npcs.filter(n =>
-    n.lifecycle.is_alive &&
-    n.community_group === null &&
-    n.action_state === 'socializing',
-  )
-
-  for (const npc of candidates) {
-    if (npc.community_group !== null) continue
-    // Find at least 2 strong-tie socializing neighbours also without a group
-    const coMembers = npc.strong_ties
-      .map(id => state.npcs[id])
-      .filter(n => n?.lifecycle.is_alive && n.community_group === null && n.action_state === 'socializing')
-    if (coMembers.length < 2) continue
-
-    const groupId = nextGroupId++
-    npc.community_group = groupId
-    for (const m of coMembers.slice(0, 4)) {   // cap at 5 members (npc + 4)
-      m.community_group = groupId
-    }
-    addChronicle(tf('engine.community_formed', {}) as string, state.year, state.day, 'major')
-    break  // only one new group per daily check
+  // ── Collective action outcome ──────────────────────────────────────────────
+  // If a group has 3+ members organizing, they cross the threshold into collective
+  // action: emit a chronicle event and push members toward confront (once per 10 days).
+  const organizingByGroup = new Map<number, typeof state.npcs>()
+  for (const npc of state.npcs) {
+    if (!npc.lifecycle.is_alive || npc.community_group === null) continue
+    if (npc.action_state !== 'organizing') continue
+    const g = npc.community_group
+    if (!organizingByGroup.has(g)) organizingByGroup.set(g, [])
+    organizingByGroup.get(g)!.push(npc)
   }
 
-  // Dissolution: groups where fewer than 2 members are alive
+  for (const [groupId, members] of organizingByGroup) {
+    if (members.length < 3) continue
+    const lastTick = groupCollectiveActionTick.get(groupId) ?? -9999
+    if (state.tick - lastTick < 240) continue   // 10-day cooldown
+
+    groupCollectiveActionTick.set(groupId, state.tick)
+    const zone = members[0].zone
+    const text = `A community group in the ${zone.replace(/_/g, ' ')} has mobilized — ${members.length} members marching together.`
+    addChronicle(text, state.year, state.day, 'major')
+    addFeedRaw(text, 'warning', state.year, state.day)
+
+    // Escalate: push members' dissonance and grievance — makes confront more likely next tick
+    for (const m of members) {
+      m.dissonance_acc = clamp(m.dissonance_acc + 15, 0, 100)
+      m.grievance      = clamp(m.grievance      + 10, 0, 100)
+      // Solidarity: brief trust boost with community institution
+      m.trust_in.community.intention  = clamp(m.trust_in.community.intention  + 0.05, 0, 1)
+      m.trust_in.community.competence = clamp(m.trust_in.community.competence + 0.03, 0, 1)
+    }
+  }
+
+  // ── Formation ─────────────────────────────────────────────────────────────
+  // 3+ socializing NPCs with mutual strong ties who have no group yet
+  if (Math.random() > 0.05) {
+    // Skip formation this day (~95% of days); still do dissolution below
+  } else {
+    const candidates = state.npcs.filter(n =>
+      n.lifecycle.is_alive &&
+      n.community_group === null &&
+      n.action_state === 'socializing',
+    )
+
+    for (const npc of candidates) {
+      if (npc.community_group !== null) continue
+      const coMembers = npc.strong_ties
+        .map(id => state.npcs[id])
+        .filter(n => n?.lifecycle.is_alive && n.community_group === null && n.action_state === 'socializing')
+      if (coMembers.length < 2) continue
+
+      const groupId = nextGroupId++
+      npc.community_group = groupId
+      for (const m of coMembers.slice(0, 4)) {
+        m.community_group = groupId
+      }
+      addChronicle(tf('engine.community_formed', {}) as string, state.year, state.day, 'major')
+      break
+    }
+  }
+
+  // ── Dissolution ───────────────────────────────────────────────────────────
+  // Groups where fewer than 2 members are still alive
   const groupCounts = new Map<number, number>()
   for (const npc of state.npcs) {
     if (npc.community_group !== null && npc.lifecycle.is_alive) {
@@ -657,5 +756,472 @@ function checkCommunityGroups(state: WorldState): void {
       const count = groupCounts.get(npc.community_group) ?? 0
       if (count < 2) npc.community_group = null
     }
+  }
+}
+
+// ── Organizing Outcome ───────────────────────────────────────────────────────
+// When unrest exceeds 12% of population, the government must respond:
+//   - Suppression (strong guard + state power)
+//   - Negotiation (weak guard or moderate trust)
+//   - Standoff   (too weak to suppress, too distrusted to negotiate)
+// 15-day cooldown prevents spam.
+
+let lastOutcomeTick = -9999
+
+function checkOrganizingOutcome(state: WorldState): void {
+  if (state.tick - lastOutcomeTick < 15 * 24) return
+
+  const living = state.npcs.filter(n => n.lifecycle.is_alive)
+  if (living.length === 0) return
+
+  const unrestNPCs = living.filter(n => n.action_state === 'organizing' || n.action_state === 'confront')
+  const unrestRate = unrestNPCs.length / living.length
+  if (unrestRate < 0.12) return
+
+  const guardInst  = state.institutions.find(i => i.id === 'guard')
+  const govInst    = state.institutions.find(i => i.id === 'government')
+  const guardPower = guardInst?.power ?? 0.3
+  const govTrust   = state.macro.trust / 100
+  const pct        = Math.round(unrestRate * 100)
+
+  lastOutcomeTick = state.tick
+
+  if (guardPower > 0.5 && state.constitution.state_power > 0.55) {
+    const rights = state.constitution.individual_rights_floor
+
+    // High rights (>0.75) block violent suppression — legal protections hold
+    if (rights > 0.75) {
+      const text = `Suppression attempted but legal protections hold — government forced to negotiate (rights floor: ${Math.round(rights * 100)}%).`
+      addChronicle(text, state.year, state.day, 'major')
+      addFeedRaw(text, 'political', state.year, state.day)
+      // Fall through to negotiation below
+    } else {
+      // Suppression: brutality scales inversely with individual rights
+      // Low rights → high fear, brutal dispersal; high rights → softer response
+      const fearDelta      = Math.round(12 + (1 - rights) * 28)   // 12–40
+      const grievanceDelta = Math.round(8  + (1 - rights) * 18)   // 8–26
+      const trustLoss      = 0.05 + (1 - rights) * 0.07           // 0.05–0.12
+
+      const text = `Authorities suppress unrest — ${pct}% mobilizing. Rights floor: ${Math.round(rights * 100)}%.`
+      addChronicle(text, state.year, state.day, 'critical')
+      addFeedRaw(text, 'critical', state.year, state.day)
+
+      const target = unrestNPCs.slice(0, Math.ceil(unrestNPCs.length * 0.65))
+      for (const npc of target) {
+        npc.fear       = clamp(npc.fear       + fearDelta,      0, 100)
+        npc.grievance   = clamp(npc.grievance   + grievanceDelta, 0, 100)
+        npc.action_state = Math.random() < 0.45 ? 'fleeing' : 'complying'
+        npc.trust_in.government.intention = clamp(npc.trust_in.government.intention - trustLoss, 0, 1)
+      }
+      if (guardInst) guardInst.legitimacy = clamp(guardInst.legitimacy - 0.03 - (1 - rights) * 0.04, 0, 1)
+      return
+    }
+  }
+
+  if (govTrust > 0.35 || state.constitution.state_power < 0.45) {
+    // Negotiation: government opens dialogue
+    const text = `Government opens dialogue — ${pct}% of population organizing.`
+    addChronicle(text, state.year, state.day, 'major')
+    addFeedRaw(text, 'political', state.year, state.day)
+
+    for (const npc of unrestNPCs) {
+      npc.grievance = clamp(npc.grievance - 12, 0, 100)
+      npc.stress    = clamp(npc.stress    -  8, 0, 100)
+      npc.trust_in.government.intention = clamp(npc.trust_in.government.intention + 0.04, 0, 1)
+    }
+    if (govInst) govInst.legitimacy = clamp(govInst.legitimacy + 0.02, 0, 1)
+    return
+  }
+
+  // Standoff: government can neither suppress nor negotiate
+  const text = `Standoff: ${pct}% of citizens in open dissent — government cannot suppress or negotiate.`
+  addChronicle(text, state.year, state.day, 'critical')
+  addFeedRaw(text, 'critical', state.year, state.day)
+  state.drift_score = clamp(state.drift_score + 0.10, 0, 1)
+}
+
+// ── Trust Recovery ───────────────────────────────────────────────────────────
+// When the government maintains sustained stability (>60) and trust is still
+// below base, a slow passive recovery trickles trust back toward the founding
+// level — representing rebuilt credibility through consistent governance.
+// Recovery stops at 0.65 to model the lasting scar of past betrayals.
+
+function checkTrustRecovery(state: WorldState): void {
+  if (state.macro.stability < 60) return
+  if (state.macro.trust > 65)     return   // already healthy
+
+  const recoveryRate = 0.0003   // per NPC per day — slow rebuild
+  const cap = Math.min(state.constitution.base_trust * 0.9, 0.65)
+
+  for (const npc of state.npcs) {
+    if (!npc.lifecycle.is_alive) continue
+    if (npc.trust_in.government.intention >= cap) continue
+    npc.trust_in.government.intention = clamp(
+      npc.trust_in.government.intention + recoveryRate,
+      0, cap,
+    )
+  }
+}
+
+// ── Welfare Redistribution ───────────────────────────────────────────────────
+// `safety_net` (0–1) drives daily wealth transfer from the top 20% to the
+// bottom 30%. At safety_net = 1.0 the top earners lose ~0.5% of wealth per day.
+// Recipients get a small trust boost — they feel helped by the system.
+
+function applyWelfare(state: WorldState): void {
+  // High state_power societies use direct state rationing instead (applyStateRationing)
+  if (state.constitution.state_power > 0.70) return
+  const safetyNet = state.constitution.safety_net
+  if (safetyNet < 0.05) return
+
+  const living = state.npcs.filter(n => n.lifecycle.is_alive && n.role !== 'child')
+  if (living.length < 10) return
+
+  const sorted = [...living].sort((a, b) => a.wealth - b.wealth)
+  const n = sorted.length
+  const topStart    = Math.floor(n * 0.80)   // top 20% pay
+  const bottomEnd   = Math.floor(n * 0.30)   // bottom 30% receive
+
+  // Collect tax from wealthy
+  let pool = 0
+  for (const npc of sorted.slice(topStart)) {
+    const tax = npc.wealth * safetyNet * 0.005   // 0–0.5%/day based on safety_net
+    npc.wealth = clamp(npc.wealth - tax, 0, 50000)
+    pool += tax
+  }
+  if (pool <= 0) return
+
+  // Distribute to poor
+  const recipients = sorted.slice(0, bottomEnd)
+  if (recipients.length === 0) return
+  const share = pool / recipients.length
+  for (const npc of recipients) {
+    npc.wealth = clamp(npc.wealth + share, 0, 50000)
+    // Small trust boost: social contract works
+    if (share > 1) {
+      npc.trust_in.government.intention = clamp(npc.trust_in.government.intention + 0.001, 0, 1)
+    }
+  }
+}
+
+// ── State Rationing (high state_power societies) ──────────────────────────────
+// Replaces market-based welfare when state_power > 0.70.
+// The government directly draws from food_stock to feed hungry citizens,
+// and enforces equality through aggressive wealth leveling (top 30% → bottom 40%).
+
+function applyStateRationing(state: WorldState): void {
+  const { state_power, safety_net } = state.constitution
+  if (state_power <= 0.70 || safety_net < 0.10) return
+
+  const living = state.npcs.filter(n => n.lifecycle.is_alive && n.role !== 'child')
+  if (living.length < 10) return
+
+  // Food rationing: state draws from food_stock to relieve hunger
+  const hungry    = living.filter(n => n.hunger > 45)
+  const totalCost = hungry.length * safety_net * 0.5
+  if (state.food_stock > totalCost && hungry.length > 0) {
+    state.food_stock = clamp(state.food_stock - totalCost, 0, 999999)
+    for (const npc of hungry) {
+      npc.hunger = clamp(npc.hunger - 8 * safety_net, 0, 100)
+      // Citizens feel helped — small trust boost for active state care
+      npc.trust_in.government.intention = clamp(
+        npc.trust_in.government.intention + 0.002 * state_power, 0, 1,
+      )
+    }
+  }
+
+  // Wealth leveling: state levy on top 30%, distributed to bottom 40%
+  const sorted    = [...living].sort((a, b) => a.wealth - b.wealth)
+  const n         = sorted.length
+  const topStart  = Math.floor(n * 0.70)
+  const bottomEnd = Math.floor(n * 0.40)
+
+  let pool = 0
+  for (const npc of sorted.slice(topStart)) {
+    const levy = npc.wealth * state_power * safety_net * 0.008
+    npc.wealth  = clamp(npc.wealth - levy, 0, 50000)
+    pool += levy
+  }
+  if (pool > 0 && bottomEnd > 0) {
+    const share = pool / bottomEnd
+    for (const npc of sorted.slice(0, bottomEnd)) {
+      npc.wealth = clamp(npc.wealth + share, 0, 50000)
+    }
+  }
+}
+
+// ── Feudal Tribute ────────────────────────────────────────────────────────────
+// In high-inequality + high-state-power societies (Feudal, Warlord, Authoritarian),
+// farmers and craftsmen pay a daily wealth tribute to leaders and guards.
+// Generates grievance and trust erosion among tribute payers.
+// Rate = (gini - 0.40) × state_power × 0.005 per day (zero for egalitarian societies).
+
+function applyFeudalTribute(state: WorldState): void {
+  const { gini_start, state_power } = state.constitution
+  const tributeRate = Math.max(0, (gini_start - 0.40) * state_power * 0.005)
+  if (tributeRate < 0.0001) return
+
+  const living     = state.npcs.filter(n => n.lifecycle.is_alive)
+  const payers     = living.filter(n => n.role === 'farmer'  || n.role === 'craftsman')
+  const collectors = living.filter(n => n.role === 'leader'  || n.role === 'guard')
+  if (collectors.length === 0 || payers.length === 0) return
+
+  let pool = 0
+  for (const npc of payers) {
+    const tribute = npc.wealth * tributeRate
+    if (tribute < 0.01) continue
+    npc.wealth    = clamp(npc.wealth - tribute, 0, 50000)
+    pool         += tribute
+    // Tribute generates grievance and erodes trust in government
+    npc.grievance = clamp(npc.grievance + tributeRate * 300, 0, 100)
+    npc.trust_in.government.intention = clamp(
+      npc.trust_in.government.intention - tributeRate * 0.3, 0, 1,
+    )
+  }
+  if (pool <= 0) return
+
+  const share = pool / collectors.length
+  for (const npc of collectors) {
+    npc.wealth = clamp(npc.wealth + share, 0, 50000)
+  }
+}
+
+// ── Inheritance ──────────────────────────────────────────────────────────────
+// When an NPC dies, 60% of their wealth passes to living children equally.
+// The remaining 40% dissipates (estate costs, decomposition of assets).
+// The wealth field is reset to 0 to prevent double-distribution.
+
+function processInheritance(state: WorldState): void {
+  for (const npc of state.npcs) {
+    if (npc.lifecycle.is_alive || npc.wealth < 1) continue
+
+    const livingChildren = npc.lifecycle.children_ids
+      .map(id => state.npcs[id])
+      .filter((c): c is typeof npc => !!c && c.lifecycle.is_alive)
+
+    if (livingChildren.length === 0) {
+      npc.wealth = 0   // no heirs — wealth lost
+      continue
+    }
+
+    const share = (npc.wealth * 0.60) / livingChildren.length
+    for (const child of livingChildren) {
+      child.wealth = clamp(child.wealth + share, 0, 50000)
+      // Memory: windfall from inheritance (emotional weight scales with amount)
+      const emotionalWeight = clamp(share / 20, 2, 40)
+      child.memory.push({
+        event_id: 'inheritance_' + state.tick,
+        type: 'windfall',
+        emotional_weight: emotionalWeight,
+        tick: state.tick,
+      })
+      if (child.memory.length > 10) child.memory.shift()
+    }
+    npc.wealth = 0   // mark as distributed
+  }
+}
+
+// ── Regime-specific spontaneous events ────────────────────────────────────────
+// Three regime archetypes generate periodic events when their structural
+// conditions are met — making each model feel mechanically distinct over time.
+//   Capitalist: market crash when high gini + high market_freedom
+//   Feudal:     peasant revolt when farmer grievance crosses threshold
+//   Socialist:  emergency rationing attempt (succeeds or fails) when food < 35
+
+let lastCapitalistCrashTick = -9999
+let lastPeasantRevoltTick   = -9999
+let lastRationingCrisisTick = -9999
+
+function checkRegimeEvents(state: WorldState): void {
+  const c = state.constitution
+
+  // ── Capitalist market crash ──────────────────────────────────────────────
+  // High market freedom + entrenched inequality → speculative bubble bursts periodically.
+  if (c.market_freedom > 0.65 && state.macro.gini > 0.50
+      && state.tick - lastCapitalistCrashTick > 90 * 24
+      && Math.random() < 0.003) {
+    lastCapitalistCrashTick = state.tick
+
+    const living = state.npcs.filter(n => n.lifecycle.is_alive && n.role !== 'child')
+    const sorted = [...living].sort((a, b) => a.wealth - b.wealth)
+    const n = sorted.length
+
+    // Top 20% lose 25–40% wealth; everyone's stress and grievance spike
+    for (const npc of sorted.slice(Math.floor(n * 0.80))) {
+      const loss = npc.wealth * (0.25 + Math.random() * 0.15)
+      npc.wealth    = clamp(npc.wealth    - loss, 0, 50000)
+      npc.grievance = clamp(npc.grievance + 20,   0, 100)
+      npc.stress    = clamp(npc.stress    + 15,   0, 100)
+    }
+    for (const npc of sorted.slice(0, Math.floor(n * 0.40))) {
+      npc.grievance = clamp(npc.grievance + 10, 0, 100)
+      npc.fear      = clamp(npc.fear      + 8,  0, 100)
+    }
+
+    const mInst = state.institutions.find(i => i.id === 'market')
+    if (mInst) mInst.legitimacy = clamp(mInst.legitimacy - 0.10, 0, 1)
+
+    const text = `Market crash — the speculative bubble has burst. Merchants and investors lose fortunes overnight.`
+    addChronicle(text, state.year, state.day, 'critical')
+    addFeedRaw(text, 'critical', state.year, state.day)
+  }
+
+  // ── Feudal peasant revolt ────────────────────────────────────────────────
+  // High gini + high state power + high farmer grievance → periodic levy revolts.
+  if (c.gini_start > 0.55 && c.state_power > 0.60
+      && state.tick - lastPeasantRevoltTick > 60 * 24
+      && Math.random() < 0.004) {
+    const farmers = state.npcs.filter(n => n.lifecycle.is_alive && n.role === 'farmer')
+    const avgGrievance = farmers.reduce((s, n) => s + n.grievance, 0) / Math.max(farmers.length, 1)
+
+    if (avgGrievance > 55) {
+      lastPeasantRevoltTick = state.tick
+
+      const revolters = farmers.filter(n => n.grievance > 45)
+      for (const npc of revolters) {
+        npc.action_state   = Math.random() < 0.6 ? 'organizing' : 'confront'
+        npc.dissonance_acc = clamp(npc.dissonance_acc + 20, 0, 100)
+      }
+
+      const govInst = state.institutions.find(i => i.id === 'government')
+      if (govInst) govInst.legitimacy = clamp(govInst.legitimacy - 0.07, 0, 1)
+
+      const pct  = Math.round(revolters.length / Math.max(farmers.length, 1) * 100)
+      const text = `Peasant levy revolt — ${pct}% of farmers refuse tribute and take to the streets.`
+      addChronicle(text, state.year, state.day, 'critical')
+      addFeedRaw(text, 'critical', state.year, state.day)
+    }
+  }
+
+  // ── Socialist rationing crisis ───────────────────────────────────────────
+  // High state power + food shortage → forced emergency rationing declaration.
+  // If reserves are sufficient: hunger relief + trust boost.
+  // If reserves are depleted:   legitimacy collapse.
+  if (c.state_power > 0.70 && state.macro.food < 35
+      && state.tick - lastRationingCrisisTick > 30 * 24
+      && Math.random() < 0.005) {
+    lastRationingCrisisTick = state.tick
+
+    const living = state.npcs.filter(n => n.lifecycle.is_alive && n.role !== 'child')
+    const hungry = living.filter(n => n.hunger > 40)
+    const cost   = hungry.length * c.safety_net * 1.5
+
+    if (state.food_stock > cost && hungry.length > 0) {
+      state.food_stock = clamp(state.food_stock - cost, 0, 999999)
+      for (const npc of hungry) {
+        npc.hunger = clamp(npc.hunger - 12, 0, 100)
+        npc.trust_in.government.intention = clamp(
+          npc.trust_in.government.intention + 0.015 * c.state_power, 0, 1,
+        )
+      }
+      const text = `Emergency rationing declared — the state draws on strategic reserves to feed ${hungry.length} hungry citizens.`
+      addChronicle(text, state.year, state.day, 'major')
+      addFeedRaw(text, 'warning', state.year, state.day)
+    } else {
+      // Rationing fails — state promise with no delivery
+      for (const npc of living) {
+        npc.grievance = clamp(npc.grievance + 12, 0, 100)
+        npc.trust_in.government.intention = clamp(npc.trust_in.government.intention - 0.03, 0, 1)
+        npc.trust_in.government.competence = clamp(npc.trust_in.government.competence - 0.02, 0, 1)
+      }
+      const govInst = state.institutions.find(i => i.id === 'government')
+      if (govInst) govInst.legitimacy = clamp(govInst.legitimacy - 0.12, 0, 1)
+
+      const text = `Rationing crisis — state reserves exhausted. Citizens receive nothing; government legitimacy collapses.`
+      addChronicle(text, state.year, state.day, 'critical')
+      addFeedRaw(text, 'critical', state.year, state.day)
+    }
+  }
+}
+
+// ── Theocracy: Scholar moral authority ────────────────────────────────────────
+// Theocracy indicator: individual_rights_floor < 0.30, base_trust > 0.60, security top priority.
+// Top scholars act as moral authorities — their worldview radiates through info-networks,
+// reinforcing authority_trust and dampening dissent society-wide.
+// This makes theocracies more cohesive but ideologically homogeneous.
+
+function applyTheocracyEffect(state: WorldState): void {
+  const c = state.constitution
+  if (c.individual_rights_floor > 0.30 || c.base_trust < 0.60) return
+  if (c.value_priority[0] !== 'security') return
+
+  const scholars = state.npcs
+    .filter(n => n.lifecycle.is_alive && n.role === 'scholar' && n.influence_score > 0.4)
+    .sort((a, b) => b.influence_score - a.influence_score)
+    .slice(0, Math.max(1, Math.ceil(state.npcs.filter(n => n.role === 'scholar').length * 0.30)))
+
+  for (const scholar of scholars) {
+    // Scholar prominence grows in theocracy (moral authority = social capital)
+    scholar.influence_score = clamp(scholar.influence_score + 0.001, 0, 1)
+
+    for (const tid of scholar.info_ties.slice(0, 8)) {
+      const follower = state.npcs[tid]
+      if (!follower?.lifecycle.is_alive) continue
+      // Followers absorb authority-trusting worldview (homogenization)
+      follower.worldview.authority_trust = clamp(
+        follower.worldview.authority_trust + 0.0008, 0, 1,
+      )
+      // Dissonance suppressed — dissent is socially discouraged
+      follower.dissonance_acc = clamp(follower.dissonance_acc - 0.5, 0, 100)
+      // Conditional trust boost: state and religion reinforce each other
+      follower.trust_in.government.intention = clamp(
+        follower.trust_in.government.intention + 0.0004, 0, 1,
+      )
+    }
+  }
+}
+
+// ── Commune: decentralized communal society ────────────────────────────────────
+// Commune indicator: market_freedom < 0.25 AND state_power < 0.35.
+// Community assembly grows stronger; market and guard institutions weaken.
+// High-collectivism NPCs pool resources voluntarily (soft wealth equalization).
+// Communal living reduces isolation for all collectivist members.
+
+function applyCommuneEffect(state: WorldState): void {
+  const c = state.constitution
+  if (c.market_freedom > 0.25 || c.state_power > 0.35) return
+
+  // Institutional power shift: community rises, market and guard decay
+  const communityInst = state.institutions.find(i => i.id === 'community')
+  const marketInst    = state.institutions.find(i => i.id === 'market')
+  const guardInst     = state.institutions.find(i => i.id === 'guard')
+
+  if (communityInst) {
+    communityInst.power      = clamp(communityInst.power      + 0.0002, 0, 1)
+    communityInst.legitimacy = clamp(communityInst.legitimacy + 0.0001, 0, 1)
+  }
+  if (marketInst) marketInst.power = clamp(marketInst.power - 0.0001, 0.01, 1)
+  if (guardInst)  guardInst.power  = clamp(guardInst.power  - 0.0001, 0.01, 1)
+
+  // Communal resource pooling: high-collectivism NPCs share wealth daily
+  const living = state.npcs.filter(n =>
+    n.lifecycle.is_alive && n.role !== 'child' && n.worldview.collectivism > 0.60,
+  )
+  if (living.length < 5) return
+
+  const sorted    = [...living].sort((a, b) => a.wealth - b.wealth)
+  const n         = sorted.length
+  const topStart  = Math.floor(n * 0.75)
+  const bottomEnd = Math.floor(n * 0.25)
+
+  // Top 25% contributors give 0.3%/day to bottom 25%
+  let pool = 0
+  for (const npc of sorted.slice(topStart)) {
+    const contribution = npc.wealth * 0.003
+    npc.wealth = clamp(npc.wealth - contribution, 0, 50000)
+    pool += contribution
+  }
+  if (pool > 0 && bottomEnd > 0) {
+    const share = pool / bottomEnd
+    for (const npc of sorted.slice(0, bottomEnd)) {
+      npc.wealth = clamp(npc.wealth + share, 0, 50000)
+      npc.isolation = clamp(npc.isolation - 1.0, 0, 100)
+      npc.trust_in.community.intention = clamp(npc.trust_in.community.intention + 0.002, 0, 1)
+    }
+  }
+
+  // All collectivist NPCs benefit from communal belonging (lower isolation)
+  for (const npc of living) {
+    npc.isolation = clamp(npc.isolation - 0.3, 0, 100)
   }
 }

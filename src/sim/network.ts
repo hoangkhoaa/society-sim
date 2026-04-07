@@ -164,14 +164,21 @@ export function buildNetwork(npcs: NPC[], constitution: Constitution): NetworkGr
   // Target info-tie count scales with network cohesion (10–40)
   const infoTarget = Math.round(10 + cohesion * 30)
 
+  // Pre-shuffle the full NPC list once; each NPC uses a different offset window
+  // to sample cross-role info-ties — avoids O(N²) per-NPC shuffles.
+  const shuffledAll = shuffle(npcs)
+
   for (const npc of npcs) {
     // Candidates: same role (primary echo chamber) + a uniformly random cross-role sample
     const sameRoleCandidates = (byRole[npc.role] ?? []).filter(c => c.id !== npc.id)
-    // Cross-role sample uses Fisher-Yates shuffle for uniform random selection,
-    // allowing ~50% of info slots to connect outside the primary role echo chamber.
-    const crossRoleSample = shuffle(
-      npcs.filter(c => c.id !== npc.id && c.role !== npc.role),
-    ).slice(0, Math.ceil(infoTarget * 0.5))
+    // Cross-role: walk the pre-shuffled array from a per-NPC offset instead of re-shuffling
+    const halfInfo = Math.ceil(infoTarget * 0.5)
+    const crossRoleSample: NPC[] = []
+    const offset = (npc.id * 7) % shuffledAll.length
+    for (let k = 0; crossRoleSample.length < halfInfo && k < shuffledAll.length; k++) {
+      const candidate = shuffledAll[(offset + k) % shuffledAll.length]
+      if (candidate.id !== npc.id && candidate.role !== npc.role) crossRoleSample.push(candidate)
+    }
 
     const infoCandidates = [...sameRoleCandidates, ...crossRoleSample]
       .filter(c => c.id !== npc.id)
