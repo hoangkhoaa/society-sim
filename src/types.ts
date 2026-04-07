@@ -135,6 +135,10 @@ export interface NPC {
   // Debt (merchant lending system)
   debt: number                  // total amount owed (0 = debt-free)
   debt_to: number | null        // creditor NPC id
+
+  // Faction & Legacy
+  faction_id: number | null     // political faction membership (null = independent)
+  legendary: boolean            // marked as a historical figure
 }
 
 // ── Constitution ───────────────────────────────────────────────────────────
@@ -200,6 +204,59 @@ export interface SimEvent {
   source: EventSource
   narrative_open: string
   triggers: EventTrigger[]
+}
+
+// ── Faction ────────────────────────────────────────────────────────────────
+
+export interface Faction {
+  id: number
+  name: string
+  dominant_value: ValuePriority
+  member_ids: number[]
+  power: number               // sum of member influence_scores
+  founded_tick: number
+  last_action_tick: number
+}
+
+// ── Tech Tree ──────────────────────────────────────────────────────────────
+
+export interface TechDiscovery {
+  id: string
+  name: string
+  discovered_tick: number
+  researcher_name: string
+}
+
+// ── Referendum ─────────────────────────────────────────────────────────────
+
+export interface Referendum {
+  proposal_text: string
+  field: 'safety_net' | 'individual_rights_floor' | 'market_freedom' | 'state_power'
+  current_value: number
+  proposed_value: number
+  expires_tick: number        // auto-resolves after 7 days
+}
+
+// ── Rumor ──────────────────────────────────────────────────────────────────
+
+export interface Rumor {
+  id: string
+  content: string
+  subject: 'government' | 'guard' | 'market' | 'community' | number  // number = NPC id
+  effect: 'trust_down' | 'trust_up' | 'fear_up' | 'grievance_up'
+  reach: number               // how many NPCs have been exposed
+  born_tick: number
+  expires_tick: number
+}
+
+// ── History Milestone ──────────────────────────────────────────────────────
+
+export interface HistoryMilestone {
+  tick: number
+  year: number
+  day: number
+  text: string
+  icon: string
 }
 
 // ── Institution ────────────────────────────────────────────────────────────
@@ -320,6 +377,17 @@ export interface WorldState {
 
   drift_score: number
   crisis_pending: boolean
+
+  // Extended systems
+  factions: Faction[]
+  research_points: number
+  discoveries: TechDiscovery[]
+  referendum: Referendum | null
+  quarantine_zones: string[]    // zones locked by guard quarantine during epidemics
+
+  // History & rumor
+  rumors: Rumor[]
+  milestones: HistoryMilestone[]
 }
 
 // ── AI Types ───────────────────────────────────────────────────────────────

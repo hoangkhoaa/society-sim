@@ -5,6 +5,9 @@ import { buildNetwork } from './network'
 import { initInstitutions, clamp, getSeason, getSeasonFactor, SEASON_LABELS, ZONE_ADJACENCY } from './constitution'
 import { addFeedRaw, addChronicle } from '../ui/feed'
 import { t, tf } from '../i18n'
+import { checkFactions } from './factions'
+import { accumulateResearch, checkDiscoveries, getDiscoveryBonuses } from './tech'
+import { checkNarrativeEvents, checkRumors, checkMilestones } from './narratives'
 
 // ── Event death accumulator ────────────────────────────────────────────────
 let eventDeathsThisDay = 0
@@ -30,9 +33,8 @@ export async function initWorld(constitution: Constitution): Promise<WorldState>
     if (i % 50 === 49) await new Promise<void>(resolve => setTimeout(resolve, 0))
   }
 
-  const { strong, weak, info, clusters } = buildNetwork(npcs, constitution)
-  // One more yield after the (heavier) network build
-  await new Promise<void>(resolve => setTimeout(resolve, 0))
+  // buildNetwork is async — it yields internally so the UI stays responsive
+  const { strong, weak, info, clusters } = await buildNetwork(npcs, constitution)
 
   // Write ties back onto NPCs
   for (const [id, ties] of strong) {
@@ -98,6 +100,13 @@ export async function initWorld(constitution: Constitution): Promise<WorldState>
     narrative_log: [],
     drift_score: 0,
     crisis_pending: false,
+    factions: [],
+    research_points: 0,
+    discoveries: [],
+    referendum: null,
+    quarantine_zones: [],
+    rumors: [],
+    milestones: [],
   }
 }
 
@@ -170,6 +179,16 @@ export function tick(state: WorldState): void {
     checkRegimeEvents(state)
     applyTheocracyEffect(state)
     applyCommuneEffect(state)
+    checkLegendaryNPCs(state)
+    checkFactions(state)
+    accumulateResearch(state)
+    checkDiscoveries(state)
+    checkShadowEconomy(state)
+    checkReferendum(state)
+    checkEpidemicIntelligence(state)
+    checkNarrativeEvents(state)
+    checkRumors(state)
+    checkMilestones(state)
   }
 }
 
@@ -373,7 +392,8 @@ export function computeMacroStats(state: WorldState): WorldState['macro'] {
   const farmers = npcs.filter(n => n.role === 'farmer')
   const scarcityFactor = 1 - state.constitution.resource_scarcity * 0.5
   const seasonFactor = getSeasonFactor(state.day)
-  const dailyProduction = farmers.reduce((s, n) => s + computeProductivity(n, state), 0) * 4 * scarcityFactor * seasonFactor
+  const techBonuses = getDiscoveryBonuses(state.discoveries ?? [])
+  const dailyProduction = farmers.reduce((s, n) => s + computeProductivity(n, state), 0) * 4 * scarcityFactor * seasonFactor * techBonuses.foodMult
   const dailyConsumption = npcs.length * 0.5
   state.food_stock = clamp((state.food_stock ?? 0) + dailyProduction - dailyConsumption, 0, 999999)
   const food = clamp(state.food_stock / (npcs.length * 30) * 100, 0, 100)
@@ -395,14 +415,14 @@ export function computeMacroStats(state: WorldState): WorldState['macro'] {
   const scholars = npcs.filter(n => n.role === 'scholar')
   const scholarOutput = scholars.reduce((s, n) => s + computeProductivity(n, state), 0)
   const maxScholarOutput = npcs.length * Math.max(state.constitution.role_ratios.scholar, 0.01)
-  const literacy = clamp(scholarOutput / maxScholarOutput * 100, 0, 100)
+  const literacy = clamp(scholarOutput / maxScholarOutput * 100 + (techBonuses?.literacyBonus ?? 0), 0, 100)
 
   // Energy index — productive output of the whole society, with literacy bonus
   // High literacy boosts economy up to +12% (knowledge economy effect)
   const workingNPCs = npcs.filter(n => n.action_state === 'working' || n.action_state === 'socializing')
   const totalProductivity = workingNPCs.reduce((s, n) => s + computeProductivity(n, state), 0)
   const maxPossibleProductivity = npcs.length * 1.0
-  const literacyBonus = 1 + (literacy / 100) * 0.12
+  const literacyBonus = 1 + (Math.min(literacy + techBonuses.literacyBonus, 100) / 100) * 0.12
   const energy = clamp(totalProductivity / Math.max(maxPossibleProductivity, 1) * 100 * literacyBonus, 0, 100)
 
   // Gini
@@ -1223,5 +1243,285 @@ function applyCommuneEffect(state: WorldState): void {
   // All collectivist NPCs benefit from communal belonging (lower isolation)
   for (const npc of living) {
     npc.isolation = clamp(npc.isolation - 0.3, 0, 100)
+  }
+}
+
+// ── Legendary NPCs ────────────────────────────────────────────────────────────
+// NPCs who achieve notable milestones are marked legendary — an elder who lived
+// long through crises, a high-influence figure, or a great merchant.
+// On their death, a major chronicle entry mourns them and their strong-tie
+// contacts receive a grief memory.
+
+function checkLegendaryNPCs(state: WorldState): void {
+  for (const npc of state.npcs) {
+    if (!npc.lifecycle.is_alive) {
+      // Detect legendary death within the past day
+      if (npc.legendary && npc.lifecycle.death_tick !== null
+          && state.tick - npc.lifecycle.death_tick < 24) {
+        const cause = npc.lifecycle.death_cause ?? 'unknown causes'
+        const text = `⭐ ${npc.name} (${npc.occupation}, age ${npc.age}) — a legendary figure — has died of ${cause}. Their legacy endures.`
+        addChronicle(text, state.year, state.day, 'critical')
+        addFeedRaw(text, 'warning', state.year, state.day)
+        // Grief ripples through their network
+        for (const tid of npc.strong_ties.slice(0, 8)) {
+          const contact = state.npcs[tid]
+          if (!contact?.lifecycle.is_alive) continue
+          contact.grievance = clamp(contact.grievance + 12, 0, 100)
+          contact.memory.push({
+            event_id: `legendary_death_${npc.id}`,
+            type: 'loss',
+            emotional_weight: -35,
+            tick: state.tick,
+          })
+          if (contact.memory.length > 10) contact.memory.shift()
+        }
+      }
+      continue
+    }
+
+    if (npc.legendary) continue  // already marked
+
+    // Conditions for legendary status
+    const isLongLived    = npc.age >= 65 && npc.stress < 60
+    const isInfluential  = npc.influence_score > 0.75
+    const isWealthy      = npc.wealth > 8000
+    const isReformed     = npc.criminal_record && npc.grievance < 15 && npc.age >= 40
+    const isFactionElder = npc.faction_id !== null
+      && state.factions.some(f => f.id === npc.faction_id && state.tick - f.founded_tick > 1800)  // 75 days
+
+    if (isLongLived || isInfluential || isWealthy || isReformed || isFactionElder) {
+      npc.legendary = true
+      const reason = isInfluential ? 'a figure of great social influence'
+        : isWealthy    ? 'one of the wealthiest citizens'
+        : isReformed   ? 'a reformed criminal turned pillar of the community'
+        : isFactionElder ? 'a veteran faction leader'
+        : 'a venerable elder'
+      addChronicle(
+        `⭐ ${npc.name} (${npc.occupation}) is now recognized as a legendary figure — ${reason}.`,
+        state.year, state.day, 'major',
+      )
+    }
+  }
+}
+
+// ── Shadow Economy ────────────────────────────────────────────────────────────
+// In planned economies (market_freedom < 0.25) with a significant criminal
+// population (>3%), an underground market emerges. Criminals earn extra wealth
+// through illegal trade. Guards periodically raid and seize assets.
+
+let lastShadowRaidTick = -9999
+
+function checkShadowEconomy(state: WorldState): void {
+  if (state.constitution.market_freedom >= 0.25) return
+
+  const living    = state.npcs.filter(n => n.lifecycle.is_alive)
+  const criminals = living.filter(n => n.criminal_record)
+  if (criminals.length / Math.max(living.length, 1) < 0.03) return
+
+  // Guard raid: once per 5 days minimum
+  if (state.tick - lastShadowRaidTick > 120) {
+    const guardInst  = state.institutions.find(i => i.id === 'guard')
+    const raidChance = (guardInst?.power ?? 0.3) * 0.08  // 2-8% per criminal per check
+
+    let raidCount = 0
+    for (const npc of criminals) {
+      if (Math.random() < raidChance) {
+        const seized = npc.wealth * 0.40
+        npc.wealth    = clamp(npc.wealth - seized, 0, 50000)
+        npc.fear      = clamp(npc.fear      + 25,  0, 100)
+        npc.isolation = clamp(npc.isolation + 15,  0, 100)
+        raidCount++
+      }
+    }
+
+    if (raidCount > 0) {
+      lastShadowRaidTick = state.tick
+      const text = `Guard raids the underground market — ${raidCount} shadow traders apprehended, assets seized.`
+      addFeedRaw(text, 'warning', state.year, state.day)
+      addChronicle(text, state.year, state.day, 'major')
+    } else if (Math.random() < 0.04) {
+      // Ambient news: market thriving under the state's nose
+      const pct = Math.round(criminals.length / living.length * 100)
+      addFeedRaw(
+        `Shadow market thrives in the dark — ${pct}% of citizens trade outside state oversight.`,
+        'info', state.year, state.day,
+      )
+    }
+  }
+}
+
+// ── Constitutional Referendum ─────────────────────────────────────────────────
+// When political pressure is high and drift is significant, a referendum is
+// automatically proposed based on the most pressing crisis. NPCs "vote" based
+// on worldview alignment. After 7 days (168 ticks) it resolves — approved
+// referendums amend the constitution in real time.
+
+function checkReferendum(state: WorldState): void {
+  // Resolve pending referendum
+  if (state.referendum !== null) {
+    if (state.tick >= state.referendum.expires_tick) {
+      resolveReferendum(state)
+    }
+    return
+  }
+
+  // Trigger condition
+  if (state.macro.political_pressure < 65 || state.drift_score < 0.38) return
+  if (Math.random() > 0.02) return  // 2% daily chance once conditions met
+
+  const m = state.macro
+  const c = state.constitution
+
+  // Pick the most relevant proposal
+  let field: 'safety_net' | 'individual_rights_floor' | 'market_freedom' | 'state_power'
+  let proposed: number
+  let proposal_text: string
+
+  if (m.food < 28 && c.safety_net < 0.70) {
+    field    = 'safety_net'
+    proposed = clamp(c.safety_net + 0.20, 0, 1)
+    proposal_text = `Emergency food relief act — raise safety net from ${Math.round(c.safety_net * 100)}% to ${Math.round(proposed * 100)}%`
+  } else if (m.gini > 0.55 && c.safety_net < 0.65) {
+    field    = 'safety_net'
+    proposed = clamp(c.safety_net + 0.15, 0, 1)
+    proposal_text = `Wealth redistribution reform — safety net from ${Math.round(c.safety_net * 100)}% → ${Math.round(proposed * 100)}%`
+  } else if (m.trust < 28 && c.individual_rights_floor < 0.60) {
+    field    = 'individual_rights_floor'
+    proposed = clamp(c.individual_rights_floor + 0.20, 0, 1)
+    proposal_text = `Democratic rights reform — raise individual rights floor from ${Math.round(c.individual_rights_floor * 100)}% to ${Math.round(proposed * 100)}%`
+  } else if (m.political_pressure > 75 && c.market_freedom < 0.70) {
+    field    = 'market_freedom'
+    proposed = clamp(c.market_freedom + 0.15, 0, 1)
+    proposal_text = `Economic liberalization — market freedom from ${Math.round(c.market_freedom * 100)}% → ${Math.round(proposed * 100)}%`
+  } else {
+    return  // no clear crisis to propose on
+  }
+
+  state.referendum = {
+    proposal_text,
+    field,
+    current_value: c[field] as number,
+    proposed_value: proposed,
+    expires_tick: state.tick + 168,  // 7 days
+  }
+
+  const text = `🗳️ Referendum proposed: "${proposal_text}". Citizens will vote over the next 7 days.`
+  addChronicle(text, state.year, state.day, 'critical')
+  addFeedRaw(text, 'political', state.year, state.day)
+}
+
+function resolveReferendum(state: WorldState): void {
+  const ref = state.referendum!
+  const living = state.npcs.filter(n => n.lifecycle.is_alive)
+  if (living.length === 0) { state.referendum = null; return }
+
+  // NPCs vote based on worldview alignment with the proposal
+  let supportCount = 0
+  for (const npc of living) {
+    let supports = false
+    switch (ref.field) {
+      case 'safety_net':
+        supports = npc.worldview.collectivism > 0.50 || npc.hunger > 50
+        break
+      case 'individual_rights_floor':
+        supports = npc.worldview.authority_trust < 0.45 || npc.criminal_record
+        break
+      case 'market_freedom':
+        supports = npc.worldview.risk_tolerance > 0.55 || npc.role === 'merchant'
+        break
+      case 'state_power':
+        supports = npc.worldview.authority_trust > 0.60 || npc.role === 'guard' || npc.role === 'leader'
+        break
+    }
+    if (supports) supportCount++
+  }
+
+  const supportPct = Math.round(supportCount / living.length * 100)
+  const approved   = supportPct > 50
+
+  if (approved) {
+    // Amend the constitution
+    ;(state.constitution as unknown as Record<string, number>)[ref.field] = ref.proposed_value
+    const text = `✅ Referendum passed (${supportPct}% support): "${ref.proposal_text}" — constitution amended.`
+    addChronicle(text, state.year, state.day, 'critical')
+    addFeedRaw(text, 'political', state.year, state.day)
+    // Trust boost from successful democratic process
+    for (const npc of living) {
+      npc.trust_in.government.intention = clamp(npc.trust_in.government.intention + 0.03, 0, 1)
+    }
+  } else {
+    const text = `❌ Referendum rejected (${supportPct}% support): "${ref.proposal_text}" — no change.`
+    addChronicle(text, state.year, state.day, 'major')
+    addFeedRaw(text, 'political', state.year, state.day)
+    // Disappointment among supporters
+    for (const npc of living) {
+      if (npc.grievance > 40) npc.grievance = clamp(npc.grievance + 5, 0, 100)
+    }
+  }
+
+  state.referendum = null
+}
+
+// ── Epidemic Intelligence ─────────────────────────────────────────────────────
+// When an epidemic is active scholars work toward a cure (accumulating cure_progress).
+// Guards can quarantine epidemic zones (blocking NPC movement).
+// Cure breakthrough: epidemic intensity halved and quarantine lifted.
+
+const cureProgress = { value: 0, lastResetTick: -1 }
+
+function checkEpidemicIntelligence(state: WorldState): void {
+  const epidemic = state.active_events.find(e => e.type === 'epidemic')
+
+  if (!epidemic) {
+    // No epidemic: lift all quarantines and reset cure progress
+    if (state.quarantine_zones.length > 0) {
+      state.quarantine_zones = []
+    }
+    return
+  }
+
+  // Reset cure counter when a new epidemic starts
+  if (cureProgress.lastResetTick < 0 || state.tick - cureProgress.lastResetTick > epidemic.duration_ticks) {
+    cureProgress.value = 0
+    cureProgress.lastResetTick = state.tick
+  }
+
+  // Scholars in scholar_quarter accumulate cure progress each day
+  const scholars = state.npcs.filter(n =>
+    n.lifecycle.is_alive && n.role === 'scholar' && n.zone === 'scholar_quarter',
+  )
+  const dailyCureGain = scholars.reduce((s, n) => s + computeProductivity(n, state), 0) * 0.8
+  cureProgress.value += dailyCureGain
+
+  // Quarantine: guards enforce zone lockdown on epidemic zones after 3 days
+  const guardInst = state.institutions.find(i => i.id === 'guard')
+  if ((guardInst?.power ?? 0) > 0.40 && epidemic.elapsed_ticks > 72) {
+    const newQuarantines = epidemic.zones.filter(z => !state.quarantine_zones.includes(z))
+    if (newQuarantines.length > 0) {
+      state.quarantine_zones = [...state.quarantine_zones, ...newQuarantines]
+      const text = `🔒 Guard quarantines ${newQuarantines.join(', ')} — movement restricted to contain the epidemic.`
+      addChronicle(text, state.year, state.day, 'major')
+      addFeedRaw(text, 'warning', state.year, state.day)
+    }
+  }
+
+  // Cure breakthrough: when scholars have researched enough
+  const cureThreshold = 200 + epidemic.intensity * 300  // 200–500 research units
+  if (cureProgress.value >= cureThreshold) {
+    epidemic.intensity = clamp(epidemic.intensity * 0.50, 0.01, 1)
+    epidemic.effects_per_tick.stress_delta  *= 0.50
+    epidemic.effects_per_tick.displacement_chance *= 0.50
+    cureProgress.value = 0
+
+    const topScholar = scholars.sort((a, b) => b.influence_score - a.influence_score)[0]
+    const heroName   = topScholar?.name ?? 'the scholars'
+    const text = `💊 Cure breakthrough! ${heroName} has developed a treatment — epidemic intensity halved.`
+    addChronicle(text, state.year, state.day, 'critical')
+    addFeedRaw(text, 'info', state.year, state.day)
+
+    if (topScholar) topScholar.legendary = true
+
+    // Lift quarantines after cure
+    state.quarantine_zones = []
   }
 }

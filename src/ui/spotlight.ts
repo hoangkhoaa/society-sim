@@ -35,7 +35,50 @@ export async function openSpotlight(npc: NPC, state: WorldState, config: AIConfi
   }
 }
 
-function renderStatic(npc: NPC, _state: WorldState): string {
+function lifeStory(npc: NPC, state: WorldState): string {
+  if (npc.age < 20) return ''
+  const lines: string[] = []
+
+  if (npc.legendary) lines.push(`⭐ <em>${npc.name} is remembered as a legendary figure of this society.</em>`)
+  if (npc.faction_id !== null) {
+    const faction = state.factions.find(f => f.id === npc.faction_id)
+    if (faction) lines.push(`Aligned with the <strong>${faction.name}</strong> faction (${faction.dominant_value}).`)
+  }
+  if (npc.lifecycle.spouse_id !== null) {
+    const spouse = state.npcs.find(n => n.id === npc.lifecycle.spouse_id)
+    if (spouse) lines.push(`Married to ${spouse.name}, a ${spouse.occupation.toLowerCase()}.`)
+  }
+  if (npc.lifecycle.children_ids.length > 0) {
+    lines.push(`Parent of ${npc.lifecycle.children_ids.length} child${npc.lifecycle.children_ids.length > 1 ? 'ren' : ''}.`)
+  }
+  if (npc.criminal_record) lines.push(`Has a criminal record — trust runs thin in some circles.`)
+  if (npc.debt > 0) {
+    const creditor = state.npcs.find(n => n.id === npc.debt_to)
+    lines.push(`Carries a debt of ${npc.debt.toFixed(0)} coins${creditor ? ` owed to ${creditor.name}` : ''}.`)
+  }
+  // Notable memories
+  const heavy = npc.memory.filter(m => Math.abs(m.emotional_weight) > 30).slice(0, 2)
+  for (const mem of heavy) {
+    if (mem.type === 'loss') lines.push(`Suffered a significant loss that still weighs on them.`)
+    else if (mem.type === 'windfall') lines.push(`Once experienced an unexpected windfall that changed their fortunes.`)
+    else if (mem.type === 'helped') lines.push(`Was helped by someone in a moment of great need — they remember it well.`)
+    else if (mem.type === 'trust_broken') lines.push(`Their trust was betrayed in the past, leaving a lasting mark.`)
+    else if (mem.type === 'crisis') lines.push(`Survived a crisis that left them changed.`)
+  }
+  if (npc.wealth > 5000) lines.push(`Has accumulated considerable wealth (${npc.wealth.toFixed(0)} coins).`)
+  else if (npc.wealth < 50 && npc.age > 30) lines.push(`Lives in poverty, struggling to get by.`)
+
+  if (lines.length === 0) return ''
+  return `
+    <div class="sp-section">
+      <div class="sp-section-title">Life Story</div>
+      <div class="sp-description" style="line-height:1.6">
+        ${lines.map(l => `<div style="margin-bottom:4px">${l}</div>`).join('')}
+      </div>
+    </div>`
+}
+
+function renderStatic(npc: NPC, state: WorldState): string {
   const trustGov        = npc.trust_in.government
   const compositeTrust  = Math.round((trustGov.competence + trustGov.intention) / 2 * 100)
   const marital         = npc.lifecycle.spouse_id !== null
@@ -159,6 +202,8 @@ function renderStatic(npc: NPC, _state: WorldState): string {
       ${npc.sick ? `<div class="sp-row"><span class="sp-label" style="color:#ef9f27">🤒 ${t('sp.sick')}</span><span class="sp-value">${Math.ceil(npc.sick_ticks / 24)} ${t('sp.days_remaining')}</span></div>` : ''}
       ${npc.criminal_record ? `<div class="sp-row"><span class="sp-label" style="color:#e24b4b">⚠ ${t('sp.criminal_record')}</span></div>` : ''}
     </div>` : ''}
+
+    ${lifeStory(npc, state)}
 
     <!-- Daily thought (LLM, filled async above) -->
     <div class="sp-section">
