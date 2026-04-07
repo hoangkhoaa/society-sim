@@ -256,10 +256,10 @@ export function createNPC(idx: number, total: number, constitution: Constitution
 
 export function tickNPC(npc: NPC, state: WorldState, events?: IndividualEvent[]): void {
   if (!npc.lifecycle.is_alive) return
-  const wasBurnedOut = (npc.burnout_ticks ?? 0) < 480
+  const wasBelowBurnoutThreshold = (npc.burnout_ticks ?? 0) < 480
   decayNeeds(npc, state)
   // Emit burnout event once when crossing the threshold
-  if (wasBurnedOut && (npc.burnout_ticks ?? 0) >= 480) {
+  if (wasBelowBurnoutThreshold && (npc.burnout_ticks ?? 0) >= 480) {
     events?.push({ type: 'burnout', npc })
   }
   npc.stress    = computeStress(npc)
@@ -482,10 +482,10 @@ function decayNeeds(npc: NPC, state: WorldState): void {
     // Graduated recovery: deep fatigue (sleep debt) recovers slower.
     const baseRecovery = 1.2
     const recoveryMod  = ageRestModifier(npc.age)
-    const sleepDebtPenalty = npc.exhaustion > 70 ? 0.70
+    const recoveryEfficiency = npc.exhaustion > 70 ? 0.70
       : npc.exhaustion > 40 ? 0.85
       : 1.0
-    const netRest = baseMetabolic * ageMod * sickMod - baseRecovery * recoveryMod * sleepDebtPenalty
+    const netRest = baseMetabolic * ageMod * sickMod - baseRecovery * recoveryMod * recoveryEfficiency
     npc.exhaustion += netRest
   } else if (npc.action_state === 'working') {
     // Working: role-specific exhaustion rate on top of base metabolic
@@ -1007,8 +1007,8 @@ function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[])
   // ★ Overwork collapse — working at extreme exhaustion risks sudden illness
   // Simulates physical collapse from chronic fatigue. Higher chance when very exhausted.
   if (!npc.sick && npc.exhaustion > 85 && npc.action_state === 'working') {
-    const collapseP = (npc.exhaustion - 85) / 15 * 0.003 * ageExhaustionModifier(npc.age)
-    if (Math.random() < collapseP) {
+    const collapseProbability = (npc.exhaustion - 85) / 15 * 0.003 * ageExhaustionModifier(npc.age)
+    if (Math.random() < collapseProbability) {
       npc.sick = true
       npc.sick_ticks = (3 + Math.random() * 7 | 0) * 24   // 3–10 sim-days
       npc.exhaustion = 100
