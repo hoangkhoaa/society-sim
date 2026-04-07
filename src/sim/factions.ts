@@ -10,10 +10,14 @@ import { addChronicle, addFeedRaw } from '../ui/feed'
 let nextFactionId = 1
 
 const FACTION_NAMES: Record<ValuePriority, string[]> = {
-  security:  ['Iron Order', 'Shield Compact', 'Aegis League', 'Stalwart Alliance', 'Guardian Front'],
-  equality:  ["People's Front", 'Equal Rights Circle', 'Common Cause', 'Fair Share Movement', 'Solidarity Bloc'],
-  freedom:   ['Liberty Society', 'Free Thought Collective', 'Open Roads Guild', 'Autonomy League', 'Dissent Circle'],
-  growth:    ['Progress Union', "Builder's Compact", 'Frontier Alliance', 'Growth Coalition', 'Venture Guild'],
+  security:  ['Iron Order', 'Shield Compact', 'Aegis League', 'Stalwart Alliance', 'Guardian Front',
+              'Bulwark Society', 'Citadel Pact', 'Vanguard Order', 'Ironclad Council', 'Sentinel Union'],
+  equality:  ["People's Front", 'Equal Rights Circle', 'Common Cause', 'Fair Share Movement', 'Solidarity Bloc',
+              'Commons Alliance', 'Balanced Scale Union', 'Equity Assembly', 'United Voices', "Levelers' League"],
+  freedom:   ['Liberty Society', 'Free Thought Collective', 'Open Roads Guild', 'Autonomy League', 'Dissent Circle',
+              'Free Minds Compact', 'Unbounded Guild', 'Open Horizon Society', 'Sovereign Path League', 'Unchained Assembly'],
+  growth:    ['Progress Union', "Builder's Compact", 'Frontier Alliance', 'Growth Coalition', 'Venture Guild',
+              'Rising Tide Compact', 'Prosperity Council', 'Harvest League', 'Bold Horizon Society', 'Innovation Front'],
 }
 
 // Infer dominant value from worldview dimensions

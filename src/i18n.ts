@@ -214,12 +214,18 @@ const translations = {
     'inst.guard':      'Guard Corps',
 
     // Role occupations (expanded for social model variety)
-    'occ.farmer':    ['Rice Farmer', 'Vegetable Grower', 'Livestock Keeper', 'Gardener', 'Fisherman', 'Orchard Keeper'],
-    'occ.craftsman': ['Blacksmith', 'Carpenter', 'Weaver', 'Potter', 'Mason', 'Tailor', 'Tanner', 'Jeweler', 'Engineer', 'Mechanic'],
-    'occ.merchant':  ['Trader', 'Innkeeper', 'Money Changer', 'Peddler', 'Banker', 'Broker', 'Shopkeeper'],
-    'occ.scholar':   ['Teacher', 'Physician', 'Scholar', 'Philosopher', 'Scribe', 'Scientist', 'Lawyer', 'Archivist', 'Theologian', 'Programmer'],
-    'occ.guard':     ['Sentry', 'Militia', 'Patrol Officer', 'Squad Leader', 'Sheriff', 'Soldier', 'Prison Warden'],
-    'occ.leader':    ['Council Member', 'District Chief', 'Elder', 'Official', 'Mayor', 'Commissioner', 'Party Secretary'],
+    'occ.farmer':    ['Rice Farmer', 'Vegetable Grower', 'Livestock Keeper', 'Gardener', 'Fisherman', 'Orchard Keeper',
+                      'Shepherd', 'Miller', 'Beekeeper', 'Herbalist', 'Vineyard Keeper', 'Drover'],
+    'occ.craftsman': ['Blacksmith', 'Carpenter', 'Weaver', 'Potter', 'Mason', 'Tailor', 'Tanner', 'Jeweler', 'Engineer', 'Mechanic',
+                      'Glassblower', 'Cooper', 'Wheelwright', 'Dyer', 'Bookbinder', 'Stonemason', 'Tilemaker'],
+    'occ.merchant':  ['Trader', 'Innkeeper', 'Money Changer', 'Peddler', 'Banker', 'Broker', 'Shopkeeper',
+                      'Auctioneer', 'Wholesaler', 'Caravan Master', 'Apothecary', 'Moneylender'],
+    'occ.scholar':   ['Teacher', 'Physician', 'Scholar', 'Philosopher', 'Scribe', 'Scientist', 'Lawyer', 'Archivist', 'Theologian', 'Programmer',
+                      'Cartographer', 'Astronomer', 'Historian', 'Judge', 'Curator', 'Surveyor'],
+    'occ.guard':     ['Sentry', 'Militia', 'Patrol Officer', 'Squad Leader', 'Sheriff', 'Soldier', 'Prison Warden',
+                      'Bailiff', 'Night Watch', 'Harbor Guard', 'Gate Keeper', 'Constable'],
+    'occ.leader':    ['Council Member', 'District Chief', 'Elder', 'Official', 'Mayor', 'Commissioner', 'Party Secretary',
+                      'Magistrate', 'Alderman', 'Tribune', 'Steward', 'Prefect'],
     'occ.child':     ['Child'],
 
     // Preset descriptions
@@ -460,12 +466,18 @@ const translations = {
     'inst.guard':      'Lực lượng bảo vệ',
 
     // Role occupations (expanded for social model variety)
-    'occ.farmer':    ['Nông dân trồng lúa', 'Người trồng rau', 'Người nuôi gia súc', 'Người làm vườn', 'Ngư dân', 'Người trồng cây ăn quả'],
-    'occ.craftsman': ['Thợ rèn', 'Thợ mộc', 'Thợ dệt', 'Thợ gốm', 'Thợ xây', 'Thợ may', 'Thợ thuộc da', 'Thợ kim hoàn', 'Kỹ sư', 'Thợ cơ khí'],
-    'occ.merchant':  ['Thương nhân', 'Chủ quán trọ', 'Người đổi tiền', 'Lái buôn', 'Chủ ngân hàng', 'Môi giới', 'Chủ tiệm'],
-    'occ.scholar':   ['Giáo viên', 'Thầy thuốc', 'Học giả', 'Triết gia', 'Thư ký', 'Nhà khoa học', 'Luật sư', 'Lưu trữ viên', 'Thần học gia', 'Lập trình viên'],
-    'occ.guard':     ['Lính canh', 'Dân quân', 'Tuần tra', 'Chỉ huy đội', 'Cảnh sát trưởng', 'Binh sĩ', 'Quản ngục'],
-    'occ.leader':    ['Thành viên hội đồng', 'Trưởng khu', 'Trưởng lão', 'Quan chức', 'Thị trưởng', 'Ủy viên', 'Bí thư đảng'],
+    'occ.farmer':    ['Nông dân trồng lúa', 'Người trồng rau', 'Người nuôi gia súc', 'Người làm vườn', 'Ngư dân', 'Người trồng cây ăn quả',
+                      'Người chăn cừu', 'Thợ xay lúa', 'Người nuôi ong', 'Thầy thuốc thảo mộc', 'Người trồng nho', 'Người chăn trâu'],
+    'occ.craftsman': ['Thợ rèn', 'Thợ mộc', 'Thợ dệt', 'Thợ gốm', 'Thợ xây', 'Thợ may', 'Thợ thuộc da', 'Thợ kim hoàn', 'Kỹ sư', 'Thợ cơ khí',
+                      'Thợ thổi thủy tinh', 'Thợ đóng thùng', 'Thợ làm bánh xe', 'Thợ nhuộm', 'Thợ đóng sách', 'Thợ đá', 'Thợ làm ngói'],
+    'occ.merchant':  ['Thương nhân', 'Chủ quán trọ', 'Người đổi tiền', 'Lái buôn', 'Chủ ngân hàng', 'Môi giới', 'Chủ tiệm',
+                      'Người bán đấu giá', 'Người bán sỉ', 'Trưởng đoàn thương', 'Dược sĩ', 'Người cho vay'],
+    'occ.scholar':   ['Giáo viên', 'Thầy thuốc', 'Học giả', 'Triết gia', 'Thư ký', 'Nhà khoa học', 'Luật sư', 'Lưu trữ viên', 'Thần học gia', 'Lập trình viên',
+                      'Người vẽ bản đồ', 'Nhà thiên văn học', 'Nhà sử học', 'Thẩm phán', 'Thủ thư', 'Trắc đạc viên'],
+    'occ.guard':     ['Lính canh', 'Dân quân', 'Tuần tra', 'Chỉ huy đội', 'Cảnh sát trưởng', 'Binh sĩ', 'Quản ngục',
+                      'Lính tuần đinh', 'Lính canh đêm', 'Lính canh bến cảng', 'Lính giữ cổng', 'Cảnh sát'],
+    'occ.leader':    ['Thành viên hội đồng', 'Trưởng khu', 'Trưởng lão', 'Quan chức', 'Thị trưởng', 'Ủy viên', 'Bí thư đảng',
+                      'Quan tòa địa phương', 'Thị nghị viên', 'Đại biểu dân', 'Quản lý', 'Tri huyện'],
     'occ.child':     ['Trẻ em'],
 
     // Preset descriptions
