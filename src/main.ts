@@ -8,6 +8,7 @@ import { initWorld, tick, spawnEvent, applyInterventions } from './sim/engine'
 import { setLang, t, tf } from './i18n'
 import { initMap, setMapPaused } from './ui/map'
 import type { Lang } from './i18n'
+import { runGovernmentCycle } from './sim/government'
 
 // ── App state ──────────────────────────────────────────────────────────────
 
@@ -277,6 +278,7 @@ function replaceLastMsg(text: string) {
 
 async function startGame(constitution: Constitution) {
   resetInGameHistory()
+  lastGovernmentPeriod = -1  // reset government cycle tracker for new game
   addFeedRaw(t('topbar.init') as string, 'info', 1, 1)
 
   // Defer initWorld so the feed message renders first
@@ -432,6 +434,10 @@ let simInterval: ReturnType<typeof setInterval> | null = null
 let peakPopulation = 0
 const btnPause = document.getElementById('btn-pause')!
 
+// Government cycle: runs once every 15 sim-days.
+// Tracks which 15-day period has already been processed to avoid double-firing at high speeds.
+let lastGovernmentPeriod = -1
+
 // 1 tick = 1 sim-hour; 42ms interval ≈ 24 ticks/second at 1×
 const BASE_TICK_MS = 42
 
@@ -452,6 +458,12 @@ function startSimLoop() {
     if (world.tick % 24 === 0) {
       updateDemographics()
       flushConsequences()
+    }
+    // Government cycle: every 15 sim-days (period changes at day 15, 30, 45, …)
+    const govPeriod = Math.floor(world.day / 15)
+    if (govPeriod !== lastGovernmentPeriod && world.day >= 15) {
+      lastGovernmentPeriod = govPeriod
+      void runGovernmentCycle(world, aiConfig)
     }
     if (living === 0) triggerGameOver()
   }, BASE_TICK_MS)
