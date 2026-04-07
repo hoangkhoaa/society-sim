@@ -287,7 +287,7 @@ const translations = {
     'setup.preset_technocracy': '🧠 Chuyên gia trị',
     'setup.preset_warlord':     '🗡 Quân phiệt',
     'setup.preset_commune':     '🌿 Công xã',
-    'setup.preset_marxist':     '🟥 Chủ nghĩa Xã hội',
+    'setup.preset_marxist':     '🟥 Mác-xít',
     'setup.input_ph':      'Ví dụ: "Kiểu Bắc Âu nhưng tài nguyên khan hiếm hơn"',
     'setup.preset_msg':    'Chọn preset:',
     'setup.preset_init':   'Đang khởi tạo xã hội theo preset',
@@ -364,21 +364,21 @@ const translations = {
     'sp.single':      'Độc thân',
 
     // Spotlight — status bars
-    'sp.stress':      'Stress',
+    'sp.stress':      'Căng thẳng',
     'sp.happiness':   'Hạnh phúc',
     'sp.grievance':   'Bất mãn',
     'sp.hunger':      'Đói',
-    'sp.exhaustion':  'Mệt',
+    'sp.exhaustion':  'Kiệt sức',
     'sp.isolation':   'Cô đơn',
 
     // Spotlight — worldview bars
     'sp.collectivism':    'Tập thể',
-    'sp.auth_trust':      'Tin chính quyền',
+    'sp.auth_trust':      'Tin tưởng chính quyền',
     'sp.risk_tolerance':  'Chấp nhận rủi ro',
 
     // Spotlight — trust
     'sp.competence':  'Năng lực',
-    'sp.intention':   'Lương tâm',
+    'sp.intention':   'Liêm chính',
     'sp.composite':   'Tổng hợp',
 
     // Spotlight — network
@@ -437,18 +437,18 @@ const translations = {
     // Game over screen
     'gameover.title':       'Diệt vong',
     'gameover.summary':     'Mọi linh hồn trong thế giới này đã ra đi. Xã hội bạn xây dựng đã sụp đổ sau {d} ngày và {y} năm.',
-    'gameover.stats_pop':   'Dân số đỉnh cao: {n}',
+    'gameover.stats_pop':   'Dân số đỉnh điểm: {n}',
     'gameover.stats_day':   'Tồn tại: {d} ngày, Năm {y}',
     'gameover.btn_restart': 'Bắt đầu xã hội mới',
 
     // Zone labels
-    'zone.north_farm':        'Cánh đồng bắc',
-    'zone.south_farm':        'Cánh đồng nam',
+    'zone.north_farm':        'Cánh đồng phía Bắc',
+    'zone.south_farm':        'Cánh đồng phía Nam',
     'zone.workshop_district': 'Khu xưởng',
     'zone.market_square':     'Chợ trung tâm',
     'zone.scholar_quarter':   'Khu học giả',
-    'zone.residential_east':  'Khu dân cư đông',
-    'zone.residential_west':  'Khu dân cư tây',
+    'zone.residential_east':  'Khu dân cư phía Đông',
+    'zone.residential_west':  'Khu dân cư phía Tây',
     'zone.guard_post':        'Đồn canh',
     'zone.plaza':             'Quảng trường',
 
@@ -472,11 +472,11 @@ const translations = {
     'preset.nordic_desc': 'Dân chủ xã hội Bắc Âu — bình đẳng cao, nhà nước mạnh, tin tưởng cao.',
     'preset.cap_desc':    'Tư bản tự do — thị trường tự quyết, bất bình đẳng cao, nhà nước tối thiểu.',
     'preset.soc_desc':    'XHCN tập trung — nhà nước kiểm soát toàn bộ, bình đẳng cao nhưng tự do thấp.',
-    'preset.feudal_desc':      'Vương quốc phong kiến — bất bình đẳng cực đoan, tầng lớp quý tộc cầm quyền, nông dân không có quyền.',
+    'preset.feudal_desc':      'Vương quốc phong kiến — bất bình đẳng cực đoan, tầng lớp quý tộc cầm quyền, nông dân gần như không có quyền lợi gì.',
     'preset.theocracy_desc':   'Nhà nước thần quyền — giáo lý chiếm lĩnh tất cả, gắn kết cao, học giả dẫn đầu, phản đối bị đàn áp.',
-    'preset.technocracy_desc': 'Pương thức chuyên gia trị — chuyên gia và dữ liệu lãnh đạo, tài nguyên dồi dào, ưu tiên đổi mới.',
+    'preset.technocracy_desc': 'Chuyên gia trị — được dẫn dắt bởi chuyên gia và dữ liệu, tài nguyên dồi dào, ưu tiên đổi mới.',
     'preset.warlord_desc':     'Nhà nước quân phiệt — quyền lực phân mảnh, quân sự hóa, tài nguyên khan hiếm, niềm tin rất thấp.',
-    'preset.commune_desc':     'Công xã ư việt — bình đẳng toàn diện, không thị trường, tự quản triệt để, gắn kết cộng đồng rất mạnh.',
+    'preset.commune_desc':     'Công xã không tưởng — bình đẳng toàn diện, không thị trường, tự quản triệt để, gắn kết cộng đồng rất mạnh.',
     'preset.marxist_desc':     'Nhà nước XHCN — kinh tế kế hoạch tập trung, bất bình đẳng gần như không, nhà nước kiểm soát cao, thị trường bị kiểm soát, sở hữu tập thể.',
     'const.label_gini':     'Hệ số Gini',
     'const.label_market':   'Tự do thị trường',
@@ -487,10 +487,10 @@ const translations = {
     'const.label_cohesion': 'Gắn kết xã hội',
     'const.label_scarcity': 'Khan hiếm tài nguyên',
     'const.label_values':   'Ưu tiên giá trị',
-    'const.hint_gini':      'Bất bình đẳng tài sản lúc lập quốc (0 = bình đẳng, 1 = crực đoan)',
+    'const.hint_gini':      'Bất bình đẳng tài sản lúc lập quốc (0 = bình đẳng, 1 = cực đoan)',
     'const.hint_market':    'Tự điều tiết của thị trường so với kế hoạch hóa nhà nước',
     'const.hint_state':     'Tầm ảnh hưởng chính trị và quân sự của chính phủ',
-    'const.hint_safety':    'Mức độ phuc lợi xã hội và trợ cấp công cộng',
+    'const.hint_safety':    'Mức độ phúc lợi xã hội và trợ cấp công cộng',
     'const.hint_rights':    'Sàn quyền cá nhân được nhà nước bảo vệ',
     'const.hint_trust':     'Niềm tin xã hội ban đầu vào các thể chế',
     'const.hint_cohesion':  'Mức độ gắn kết trong mạng lưới cộng đồng',

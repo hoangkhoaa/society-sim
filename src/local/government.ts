@@ -54,7 +54,7 @@ const ROUTINE_MESSAGES: Record<RegimeType, Localized<string[]>> = {
     vi: [
       'Ủy ban Phúc lợi phê duyệt bản 5.2 của Khung Chính sách Nghỉ phép Cha/Mẹ (Sửa đổi).',
       'Hội đồng thông qua đề xuất: đặt hàng một nghiên cứu toàn diện về hiệu quả của… việc đặt hàng nghiên cứu toàn diện.',
-      'Tăng 0.3% cho Quỹ Cộng đồng được duyệt. Màn ăn mừng được đo lường một cách thận trọng.',
+      'Tăng 0.3% cho Quỹ Cộng đồng được phê duyệt. Lễ ăn mừng được tổ chức hết sức dè dặt.',
       'Lệnh kiểm toán khả năng tiếp cận của mọi ghế công cộng đã ban hành. Kết quả dự kiến trong 2–4 quý tới.',
       'Tiểu ban Sức khỏe nộp 87 trang khuyến nghị. Ba trang sẽ được xem. Một mục có thể được triển khai.',
     ],
@@ -84,7 +84,7 @@ const ROUTINE_MESSAGES: Record<RegimeType, Localized<string[]>> = {
       'A citizen inquiry about secular governance was forwarded to the Department of Doctrinal Correction for appropriate counseling.',
     ],
     vi: [
-      'Hội đồng Trưởng lão заверш (hoàn tất) buổi cầu nguyện hai tuần/lần. Điềm báo được tuyên là tốt lành. Kẻ bất đồng sẽ cầu nguyện… nhiều hơn.',
+      'Hội đồng Trưởng lão hoàn tất buổi cầu nguyện định kỳ hai tuần một lần. Điềm báo được tuyên là tốt lành. Kẻ bất đồng sẽ cầu nguyện… chăm chỉ hơn.',
       'Văn phòng Kinh sách cập nhật luật lệ dân sự. Sửa đổi được “mặc khải” nên không có kháng cáo.',
       'Hội đồng xác nhận: rung chấn tháng trước là điềm tán thành, không phải phản đối. Đồng thuận thần học tuyệt đối.',
       'Lễ hội Tuân phục thường niên sắp đến. Tham dự là tự nguyện. Thánh ý đang quan sát.',
