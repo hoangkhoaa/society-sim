@@ -67,7 +67,7 @@ export const NT = {
   massExodus: (lang: Lang, zone: string, count: number) =>
     pick(lang, {
       en: `The ${zoneText(zone)} has emptied — ${count} terrified citizens have abandoned their homes and fled into the streets.`,
-      vi: `${zoneText(zone)} đã gần như trống rỗng — ${count} cư dân hoảng loạn bỏ nhà và tháo chạy ra đường.`,
+      vi: `${zoneText(zone)} đã gần như trống rỗng — ${count} cư dân hoảng loạn bỏ nhà bỏ cửa tháo chạy ra đường.`,
     }),
   goodTimes: (lang: Lang, zone: string) =>
     pick(lang, {
@@ -113,7 +113,7 @@ export const NT = {
     richHoarding: (lang: Lang) =>
       pick(lang, {
         en: 'They say the wealthy have built hidden cellars full of hoarded gold while the poor go hungry in plain sight.',
-        vi: 'Người ta đồn rằng giới giàu có xây hầm bí mật chứa vàng tích trữ trong khi người nghèo đói ngay trước mắt mọi người.',
+        vi: 'Người ta đồn rằng giới giàu có xây hầm bí mật để tích trữ vàng, trong khi người nghèo đói ngay giữa chốn đông người.',
       }),
     epidemicHidden: (lang: Lang) =>
       pick(lang, {
@@ -123,7 +123,7 @@ export const NT = {
     blackMarket: (lang: Lang) =>
       pick(lang, {
         en: 'There is talk of a hidden market where goods change hands without the state\'s knowledge — some call it salvation, others call it treason.',
-        vi: 'Có lời đồn về một chợ ngầm nơi hàng hóa trao tay ngoài tầm mắt nhà nước — người gọi đó là cứu cánh, kẻ gọi là phản loạn.',
+        vi: 'Có lời đồn về một chợ ngầm nơi hàng hóa trao tay ngoài tầm mắt nhà nước — người gọi đó là cứu tinh, kẻ gọi là phản loạn.',
       }),
     factionPlot: (lang: Lang, name: string) =>
       pick(lang, {
@@ -136,9 +136,9 @@ export const NT = {
     pop700: (lang: Lang) => pick(lang, { en: 'Population surged past 700 citizens.', vi: 'Dân số đã tăng vọt qua mốc 700 công dân.' }),
     pop800: (lang: Lang) => pick(lang, { en: 'A prosperous society of 800 citizens.', vi: 'Một xã hội thịnh vượng với 800 công dân.' }),
     firstFaction: (lang: Lang, name: string) => pick(lang, { en: `First political faction formed: "${name}".`, vi: `Phe phái chính trị đầu tiên được thành lập: "${name}".` }),
-    firstDiscovery: (lang: Lang, name: string, researcher: string) => pick(lang, { en: `First discovery: ${name} — by ${researcher}.`, vi: `Khám phá đầu tiên: ${name} — bởi ${researcher}.` }),
+    firstDiscovery: (lang: Lang, name: string, researcher: string) => pick(lang, { en: `First discovery: ${name} — by ${researcher}.`, vi: `Khám phá đầu tiên: ${name} — do ${researcher} thực hiện.` }),
     firstLegend: (lang: Lang, name: string) => pick(lang, { en: `${name} became the first legendary figure.`, vi: `${name} trở thành nhân vật huyền thoại đầu tiên.` }),
-    firstReferendum: (lang: Lang) => pick(lang, { en: 'The first constitutional referendum was called.', vi: 'Cuộc trưng cầu hiến pháp đầu tiên đã được triệu tập.' }),
+    firstReferendum: (lang: Lang) => pick(lang, { en: 'The first constitutional referendum was called.', vi: 'Cuộc trưng cầu dân ý hiến pháp đầu tiên đã được tiến hành.' }),
     famine: (lang: Lang, year: number) => pick(lang, { en: `Year ${year}: The Great Famine — food stores almost completely exhausted.`, vi: `Năm ${year}: Đại nạn đói — kho lương thực gần như cạn kiệt hoàn toàn.` }),
     inequality: (lang: Lang, year: number, gini: number) => pick(lang, { en: `Year ${year}: Inequality peaked at Gini ${gini.toFixed(2)} — the worst divide in this society's history.`, vi: `Năm ${year}: Bất bình đẳng đạt đỉnh Gini ${gini.toFixed(2)} — chia rẽ sâu sắc nhất trong lịch sử xã hội này.` }),
     trustCollapse: (lang: Lang, year: number, trust: number) => pick(lang, { en: `Year ${year}: Trust in government collapsed to ${Math.round(trust)}% — a moment of profound crisis.`, vi: `Năm ${year}: Niềm tin vào chính quyền sụp xuống ${Math.round(trust)}% — một thời khắc khủng hoảng sâu sắc.` }),

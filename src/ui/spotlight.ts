@@ -1,6 +1,6 @@
 import type { NPC, WorldState, AIConfig } from '../types'
 import { generateNPCThought } from '../ai/god-agent'
-import { t } from '../i18n'
+import { t, getLang } from '../i18n'
 
 const panel   = document.getElementById('spotlight')!
 const spName  = document.getElementById('sp-name')!
@@ -43,41 +43,72 @@ export async function openSpotlight(npc: NPC, state: WorldState, config: AIConfi
 
 function lifeStory(npc: NPC, state: WorldState): string {
   if (npc.age < 20) return ''
+  const vi = getLang() === 'vi'
   const lines: string[] = []
 
-  if (npc.legendary) lines.push(`⭐ <em>${npc.name} is remembered as a legendary figure of this society.</em>`)
+  if (npc.legendary) {
+    lines.push(vi
+      ? `⭐ <em>${npc.name} được ghi nhớ như một nhân vật huyền thoại của xã hội này.</em>`
+      : `⭐ <em>${npc.name} is remembered as a legendary figure of this society.</em>`)
+  }
   if (npc.faction_id !== null) {
     const faction = state.factions.find(f => f.id === npc.faction_id)
-    if (faction) lines.push(`Aligned with the <strong>${faction.name}</strong> faction (${faction.dominant_value}).`)
+    if (faction) lines.push(vi
+      ? `Thuộc phe <strong>${faction.name}</strong> (${faction.dominant_value}).`
+      : `Aligned with the <strong>${faction.name}</strong> faction (${faction.dominant_value}).`)
   }
   if (npc.lifecycle.spouse_id !== null) {
     const spouse = state.npcs.find(n => n.id === npc.lifecycle.spouse_id)
-    if (spouse) lines.push(`Married to ${spouse.name}, a ${spouse.occupation.toLowerCase()}.`)
+    if (spouse) lines.push(vi
+      ? `Đã kết hôn với ${spouse.name}, làm nghề ${spouse.occupation.toLowerCase()}.`
+      : `Married to ${spouse.name}, a ${spouse.occupation.toLowerCase()}.`)
   }
   if (npc.lifecycle.children_ids.length > 0) {
-    lines.push(`Parent of ${npc.lifecycle.children_ids.length} child${npc.lifecycle.children_ids.length > 1 ? 'ren' : ''}.`)
+    const n = npc.lifecycle.children_ids.length
+    lines.push(vi
+      ? `Có ${n} người con.`
+      : `Parent of ${n} child${n > 1 ? 'ren' : ''}.`)
   }
-  if (npc.criminal_record) lines.push(`Has a criminal record — trust runs thin in some circles.`)
+  if (npc.criminal_record) lines.push(vi
+    ? `Có tiền án — không được tin tưởng ở một số giới.`
+    : `Has a criminal record — trust runs thin in some circles.`)
   if (npc.debt > 0) {
     const creditor = state.npcs.find(n => n.id === npc.debt_to)
-    lines.push(`Carries a debt of ${npc.debt.toFixed(0)} coins${creditor ? ` owed to ${creditor.name}` : ''}.`)
+    lines.push(vi
+      ? `Đang mang khoản nợ ${npc.debt.toFixed(0)} đồng${creditor ? ` với ${creditor.name}` : ''}.`
+      : `Carries a debt of ${npc.debt.toFixed(0)} coins${creditor ? ` owed to ${creditor.name}` : ''}.`)
   }
   // Notable memories
   const heavy = npc.memory.filter(m => Math.abs(m.emotional_weight) > 30).slice(0, 2)
   for (const mem of heavy) {
-    if (mem.type === 'loss') lines.push(`Suffered a significant loss that still weighs on them.`)
-    else if (mem.type === 'windfall') lines.push(`Once experienced an unexpected windfall that changed their fortunes.`)
-    else if (mem.type === 'helped') lines.push(`Was helped by someone in a moment of great need — they remember it well.`)
-    else if (mem.type === 'trust_broken') lines.push(`Their trust was betrayed in the past, leaving a lasting mark.`)
-    else if (mem.type === 'crisis') lines.push(`Survived a crisis that left them changed.`)
+    if (mem.type === 'loss') lines.push(vi
+      ? `Từng chịu mất mát lớn, vết thương vẫn chưa lành.`
+      : `Suffered a significant loss that still weighs on them.`)
+    else if (mem.type === 'windfall') lines.push(vi
+      ? `Từng gặp may mắn bất ngờ đổi thay vận số.`
+      : `Once experienced an unexpected windfall that changed their fortunes.`)
+    else if (mem.type === 'helped') lines.push(vi
+      ? `Từng được giúp đỡ trong lúc khốn khó — điều đó vẫn còn in đậm trong tâm trí.`
+      : `Was helped by someone in a moment of great need — they remember it well.`)
+    else if (mem.type === 'trust_broken') lines.push(vi
+      ? `Từng bị phản bội, để lại vết thương lòng khó xóa.`
+      : `Their trust was betrayed in the past, leaving a lasting mark.`)
+    else if (mem.type === 'crisis') lines.push(vi
+      ? `Đã sống sót qua một cuộc khủng hoảng và không còn như xưa nữa.`
+      : `Survived a crisis that left them changed.`)
   }
-  if (npc.wealth > 5000) lines.push(`Has accumulated considerable wealth (${npc.wealth.toFixed(0)} coins).`)
-  else if (npc.wealth < 50 && npc.age > 30) lines.push(`Lives in poverty, struggling to get by.`)
+  if (npc.wealth > 5000) lines.push(vi
+    ? `Đã tích lũy khối tài sản đáng kể (${npc.wealth.toFixed(0)} đồng tiền).`
+    : `Has accumulated considerable wealth (${npc.wealth.toFixed(0)} coins).`)
+  else if (npc.wealth < 50 && npc.age > 30) lines.push(vi
+    ? `Sống trong nghèo khó, vật lộn từng ngày.`
+    : `Lives in poverty, struggling to get by.`)
 
   if (lines.length === 0) return ''
+  const title = vi ? 'Tiểu sử' : 'Life Story'
   return `
     <div class="sp-section">
-      <div class="sp-section-title">Life Story</div>
+      <div class="sp-section-title">${title}</div>
       <div class="sp-description" style="line-height:1.6">
         ${lines.map(l => `<div style="margin-bottom:4px">${l}</div>`).join('')}
       </div>

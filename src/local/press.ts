@@ -57,7 +57,7 @@ export const PRESS_TEMPLATES: PressTemplate[] = [
   h(s => s.food < 20,               '🍞 Food shortages worsen. Families skip meals to feed children first.',       '🍞 Thiếu lương thực trầm trọng. Gia đình nhịn ăn nhường phần cho trẻ em.', 'critical'),
   h(s => s.food < 30,               '🍞 Bread lines grow longer. Residents worry about next week\'s supply.',      '🍞 Hàng xếp mua bánh mì ngày càng dài. Người dân lo lắng cho tuần tới.', 'warning'),
   h(s => s.food < 40 && s.isWinter, '🍞 Winter rations dwindling — farmers warn harvest stores are nearly empty.', '🍞 Khẩu phần mùa đông cạn kiệt — nông dân cảnh báo kho lúa gần hết.', 'warning'),
-  h(s => s.avgHunger > 60,          '🍞 Hunger spreads across neighborhoods; theft of food stocks reported.',       '🍞 Cái đói lan rộng; xuất hiện tình trạng trộm cắp lương thực.', 'warning'),
+  h(s => s.avgHunger > 60,          '🍞 Hunger spreads across neighborhoods; theft of food stocks reported.',       '🍞 Nạn đói lan rộng khắp nơi; xuất hiện tình trạng trộm cắp lương thực.', 'warning'),
   h(s => s.food > 85,               '🌾 Abundant harvests this season — granaries overflowing, prices drop.',       '🌾 Mùa bội thu — kho thóc tràn đầy, giá lương thực giảm.', 'info'),
   h(s => s.food > 70 && s.isWinter, '🌾 Despite the cold, food reserves remain strong. Citizens are well-fed.',    '🌾 Dù trời lạnh, dự trữ lương thực vẫn dồi dào. Người dân no đủ.', 'info'),
 
@@ -82,7 +82,7 @@ export const PRESS_TEMPLATES: PressTemplate[] = [
   h(s => s.energy < 20,                        '📉 Economy in deep recession — workshops idle, trade stagnant.',                '📉 Kinh tế suy thoái nặng — xưởng đóng cửa, thương mại trì trệ.', 'critical'),
   h(s => s.energy < 35,                        '📉 Economic slowdown: productivity falling, merchants report poor sales.',       '📉 Kinh tế chững lại: năng suất giảm, thương nhân báo cáo doanh thu kém.', 'warning'),
   h(s => s.energy > 80,                        '📈 Economic boom! Markets bustling, artisans can\'t keep up with demand.',       '📈 Kinh tế bùng nổ! Chợ nhộn nhịp, thợ thủ công không kịp đáp ứng nhu cầu.', 'info'),
-  h(s => s.energy > 65 && s.gini < 0.40,       '📈 Broad-based prosperity: growth is lifting all boats.',                       '📈 Thịnh vượng toàn diện: tăng trưởng nâng đỡ mọi tầng lớp.', 'info'),
+  h(s => s.energy > 65 && s.gini < 0.40,       '📈 Broad-based prosperity: growth is lifting all boats.',                       '📈 Thịnh vượng toàn diện: tăng trưởng kéo theo sự đi lên của mọi tầng lớp.', 'info'),
 
   // ── Political Pressure / Protest ──
   h(s => s.pressure > 80,      s => `✊ Mass uprising — ${Math.round(s.organizingPct + s.confrontPct)}% of citizens in open revolt.`,  s => `✊ Nổi dậy hàng loạt — ${Math.round(s.organizingPct + s.confrontPct)}% dân chúng công khai nổi loạn.`, 'critical'),
