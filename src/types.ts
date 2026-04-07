@@ -132,6 +132,9 @@ export interface NPC {
   criminal_record: boolean      // has a crime record — reduces trust, social ties
   community_group: number | null // id of community group they belong to (-1 = none)
 
+  // Burnout tracking
+  burnout_ticks: number         // consecutive ticks with stress>70 AND exhaustion>70; burnout triggers at 480 (20 days)
+
   // Debt (merchant lending system)
   debt: number                  // total amount owed (0 = debt-free)
   debt_to: number | null        // creditor NPC id
