@@ -73,6 +73,9 @@ const translations = {
     'demo.male':    '♂ Male',
     'demo.female':  '♀ Female',
     'demo.deaths':  'Deaths',
+    'demo.leaving': 'Leaving',
+    'demo.born':    'Born',
+    'demo.immigrants': 'Immigrants',
     'demo.age_0':   '0–17',
     'demo.age_1':   '18–34',
     'demo.age_2':   '35–49',
@@ -80,7 +83,7 @@ const translations = {
     'demo.age_4':   '70+',
 
     // Chat
-    'chat.ph': 'Talk to the world... ("create a storm", "why is the population unstable?")',
+    'chat.ph': 'Talk to the world... ("create a storm", "government corruption to the extreme,...")',
     'chat.disabled': 'AI chat disabled — running without API key',
 
     // Modal
@@ -173,6 +176,7 @@ const translations = {
     'death.accident': 'an accident',
     'death.disease':  'disease',
     'death.violence': 'violence',
+    'death.unknown':  'unknown causes',
 
     // Engine narrative
     'engine.crisis':            'A constitutional crisis is approaching — society has drifted too far from its founding compact.',
@@ -187,6 +191,19 @@ const translations = {
     'engine.intervention': '⚡ Intervention affected {n} NPC{s}.',
     'engine.event_deaths': '💀 {n} people died from natural disasters.',
     'engine.extinction': '💀 The last NPC has died. The society is extinct.',
+    'engine.legendary_death': '⭐ {name} ({occupation}, age {age}) — a legendary figure — has died of {cause}. Their legacy endures.',
+    'engine.legendary_recognized': '⭐ {name} ({occupation}) is now recognized as a legendary figure — {reason}.',
+    'engine.legendary_reason.influential': 'a figure of great social influence',
+    'engine.legendary_reason.wealthy': 'one of the wealthiest citizens',
+    'engine.legendary_reason.reformed': 'a reformed criminal turned pillar of the community',
+    'engine.legendary_reason.faction_elder': 'a veteran faction leader',
+    'engine.legendary_reason.elder': 'a venerable elder',
+    'engine.immigration_wave': '🚶‍♂️ {n} immigrants arrived and settled in the city.',
+    'gov.feed_title': '🏛 [Government Policy] {policy}',
+    'gov.feed_public_statement': '📢 "{statement}"',
+    'gov.feed_alerts': '📊 Alerts: {alerts}',
+    'gov.chronicle_enacted': '🏛 Government enacted: {policy}',
+    'gov.policy_delayed': '🏛 Government policy delayed — RPM budget exhausted. Resuming in ~{seconds}s.',
 
     // Game over screen
     'gameover.title':       'Extinction',
@@ -326,6 +343,9 @@ const translations = {
     'demo.male':    '♂ Nam',
     'demo.female':  '♀ Nữ',
     'demo.deaths':  'Đã mất',
+    'demo.leaving': 'Rời đi',
+    'demo.born':    'Sinh ra',
+    'demo.immigrants': 'Nhập cư',
     'demo.age_0':   '0–17',
     'demo.age_1':   '18–34',
     'demo.age_2':   '35–49',
@@ -333,7 +353,7 @@ const translations = {
     'demo.age_4':   '70+',
 
     // Chat
-    'chat.ph': 'Nói chuyện với thế giới... ("tạo cơn bão to", "tại sao dân bất ổn?")',
+    'chat.ph': 'Nói chuyện với thế giới... ("tạo cơn bão to, chính phủ tham nhũng cực độ,...")',
     'chat.disabled': 'Chat AI bị tắt — đang chạy không có API key',
 
     // Modal
@@ -425,6 +445,7 @@ const translations = {
     'death.accident': 'tai nạn',
     'death.disease':  'bệnh tật',
     'death.violence': 'bạo lực',
+    'death.unknown':  'không rõ nguyên nhân',
 
     // Engine narrative
     'engine.crisis':            'Cuộc khủng hoảng hiến pháp đang đến gần — xã hội đã lệch quá xa khỏi khế ước ban đầu.',
@@ -439,6 +460,19 @@ const translations = {
     'engine.intervention': '⚡ Can thiệp ảnh hưởng đến {n} NPC.',
     'engine.event_deaths': '💀 {n} người tử vong do thiên tai.',
     'engine.extinction': '💀 NPC cuối cùng đã chết. Xã hội đã diệt vong.',
+    'engine.legendary_death': '⭐ {name} ({occupation}, {age} tuổi) — một nhân vật huyền thoại — đã qua đời vì {cause}. Di sản của họ vẫn còn mãi.',
+    'engine.legendary_recognized': '⭐ {name} ({occupation}) giờ được công nhận là một nhân vật huyền thoại — {reason}.',
+    'engine.legendary_reason.influential': 'một nhân vật có ảnh hưởng xã hội rất lớn',
+    'engine.legendary_reason.wealthy': 'một trong những công dân giàu có nhất',
+    'engine.legendary_reason.reformed': 'một người từng phạm tội nhưng cải tà quy chính và trở thành trụ cột cộng đồng',
+    'engine.legendary_reason.faction_elder': 'một lãnh đạo kỳ cựu của phe phái',
+    'engine.legendary_reason.elder': 'một bậc trưởng lão đáng kính',
+    'engine.immigration_wave': '🚶‍♂️ Có {n} người nhập cư đến và định cư trong thành phố.',
+    'gov.feed_title': '🏛 [Chính sách Chính phủ] {policy}',
+    'gov.feed_public_statement': '📢 "{statement}"',
+    'gov.feed_alerts': '📊 Cảnh báo: {alerts}',
+    'gov.chronicle_enacted': '🏛 Chính phủ ban hành: {policy}',
+    'gov.policy_delayed': '🏛 Chính sách chính phủ bị hoãn — đã dùng hết ngân sách RPM. Tiếp tục sau khoảng ~{seconds}s.',
 
     // Game over screen
     'gameover.title':       'Diệt vong',

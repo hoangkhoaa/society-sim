@@ -433,11 +433,15 @@ function updateDemographics() {
   const living = world.npcs.filter(n => n.lifecycle.is_alive)
   const dead   = world.npcs.length - living.length
   const males  = living.filter(n => n.gender === 'male').length
+  const leaving = living.filter(n => n.action_state === 'fleeing').length
 
   document.getElementById('d-pop')!.textContent    = `${living.length}`
   document.getElementById('d-male')!.textContent   = `${males}`
   document.getElementById('d-female')!.textContent = `${living.length - males}`
   document.getElementById('d-deaths')!.textContent = `${dead}`
+  document.getElementById('d-leaving')!.textContent = `${leaving}`
+  document.getElementById('d-born')!.textContent = `${world.births_total ?? 0}`
+  document.getElementById('d-immigrants')!.textContent = `${world.immigration_total ?? 0}`
 
   const container = document.getElementById('d-ages')!
   if (container.children.length === 0) {
@@ -589,7 +593,7 @@ function startSimLoop() {
       if (!govConfig && aiConfig) {
         const wait = getWaitSeconds(aiConfig.rpm_limit)
         addFeedRaw(
-          `🏛 Government policy delayed — RPM budget exhausted. Resuming in ~${Math.ceil(wait)}s.`,
+          tf('gov.policy_delayed', { seconds: Math.ceil(wait) }),
           'info', world.year, world.day,
         )
       }
@@ -899,5 +903,28 @@ document.getElementById('chronicle-filters')!.addEventListener('click', e => {
   document.querySelectorAll('#chronicle-filters .log-filter-btn').forEach(b => b.classList.remove('active'))
   btn.classList.add('active')
   setChronicleFilter(btn.dataset.filter as 'minor' | 'major' | 'critical')
+})
+
+const chroniclePanel = document.getElementById('chronicle-panel') as HTMLElement
+const chronicleResizer = document.getElementById('chronicle-resizer') as HTMLElement
+chronicleResizer.addEventListener('pointerdown', (e: PointerEvent) => {
+  e.preventDefault()
+  chronicleResizer.setPointerCapture(e.pointerId)
+  const startY = e.clientY
+  const startHeight = chroniclePanel.getBoundingClientRect().height
+  const minHeight = 120
+  const maxHeight = Math.max(260, window.innerHeight - 260)
+
+  const onMove = (ev: PointerEvent) => {
+    const delta = startY - ev.clientY
+    const next = Math.max(minHeight, Math.min(maxHeight, startHeight + delta))
+    chroniclePanel.style.height = `${Math.round(next)}px`
+  }
+  const onUp = () => {
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerup', onUp)
+  }
+  window.addEventListener('pointermove', onMove)
+  window.addEventListener('pointerup', onUp)
 })
 

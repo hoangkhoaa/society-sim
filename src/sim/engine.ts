@@ -107,6 +107,8 @@ export async function initWorld(constitution: Constitution): Promise<WorldState>
     quarantine_zones: [],
     rumors: [],
     milestones: [],
+    births_total: 0,
+    immigration_total: 0,
   }
 }
 
@@ -189,6 +191,7 @@ export function tick(state: WorldState): void {
     checkNarrativeEvents(state)
     checkRumors(state)
     checkMilestones(state)
+    checkImmigration(state)
   }
 }
 
@@ -419,9 +422,12 @@ export function computeMacroStats(state: WorldState): WorldState['macro'] {
 
   // Energy index — productive output of the whole society, with literacy bonus
   // High literacy boosts economy up to +12% (knowledge economy effect)
-  const workingNPCs = npcs.filter(n => n.action_state === 'working' || n.action_state === 'socializing')
-  const totalProductivity = workingNPCs.reduce((s, n) => s + computeProductivity(n, state), 0)
-  const maxPossibleProductivity = npcs.length * 1.0
+  const workforce = npcs.filter(n => n.role !== 'child' && n.action_state !== 'fleeing' && n.action_state !== 'confront')
+  const productiveWorkers = workforce.filter(
+    n => n.action_state === 'working' || n.action_state === 'socializing' || n.action_state === 'complying',
+  )
+  const totalProductivity = productiveWorkers.reduce((s, n) => s + computeProductivity(n, state), 0)
+  const maxPossibleProductivity = workforce.length * 1.0
   const literacyBonus = 1 + (Math.min(literacy + techBonuses.literacyBonus, 100) / 100) * 0.12
   const energy = clamp(totalProductivity / Math.max(maxPossibleProductivity, 1) * 100 * literacyBonus, 0, 100)
 
@@ -675,7 +681,73 @@ function spawnBirth(state: WorldState, parent: NPC): void {
   baby.info_ties   = []
 
   npcs.push(baby)
+  state.births_total += 1
   addChronicle(tf('engine.birth', { parent: parent.name }) as string, state.year, state.day, 'minor')
+}
+
+function spawnImmigrant(state: WorldState): void {
+  const { constitution, npcs } = state
+  const newId = npcs.length
+  const immigrant = createNPC(newId, npcs.length + 1, constitution)
+  immigrant.age = Math.max(18, Math.min(55, immigrant.age))
+  immigrant.lifecycle.spouse_id = null
+  immigrant.lifecycle.children_ids = []
+  immigrant.memory = []
+
+  const living = npcs.filter(n => n.lifecycle.is_alive)
+  const sameZone = living.filter(n => n.zone === immigrant.zone)
+  const tiePool = sameZone.length > 0 ? sameZone : living
+  const strongTargets = tiePool.sort(() => Math.random() - 0.5).slice(0, 2)
+  const weakTargets = tiePool.sort(() => Math.random() - 0.5).slice(0, 8)
+  const infoTargets = tiePool.sort(() => Math.random() - 0.5).slice(0, 5)
+
+  state.network.strong.set(newId, new Set(strongTargets.map(n => n.id)))
+  state.network.weak.set(newId, new Set(weakTargets.map(n => n.id)))
+  state.network.info.set(newId, new Set(infoTargets.map(n => n.id)))
+
+  immigrant.strong_ties = strongTargets.map(n => n.id)
+  immigrant.weak_ties = weakTargets.map(n => n.id)
+  immigrant.info_ties = infoTargets.map(n => n.id)
+
+  for (const target of strongTargets) {
+    state.network.strong.get(target.id)?.add(newId)
+    target.strong_ties = [...new Set([...target.strong_ties, newId])]
+  }
+  for (const target of weakTargets) {
+    state.network.weak.get(target.id)?.add(newId)
+    target.weak_ties = [...new Set([...target.weak_ties, newId])]
+  }
+  for (const target of infoTargets) {
+    state.network.info.get(target.id)?.add(newId)
+    target.info_ties = [...new Set([...target.info_ties, newId])]
+  }
+
+  npcs.push(immigrant)
+  state.immigration_total += 1
+}
+
+function checkImmigration(state: WorldState): void {
+  const living = state.npcs.filter(n => n.lifecycle.is_alive)
+  if (living.length >= 1200) return
+
+  const hasSevereCrisis = state.macro.food < 35 || state.macro.stability < 35 || state.macro.political_pressure > 70
+  if (hasSevereCrisis) return
+
+  const attractiveness =
+    state.macro.stability * 0.35 +
+    state.macro.trust * 0.30 +
+    state.macro.food * 0.25 +
+    (100 - state.macro.political_pressure) * 0.10
+
+  const chance = clamp((attractiveness - 55) / 120, 0, 0.35)
+  if (Math.random() >= chance) return
+
+  const arrivals = 1 + Math.floor(Math.random() * (attractiveness > 75 ? 4 : 2))
+  for (let i = 0; i < arrivals; i++) spawnImmigrant(state)
+
+  const text = tf('engine.immigration_wave', { n: arrivals })
+  addFeedRaw(text, 'info', state.year, state.day)
+  addChronicle(text, state.year, state.day, 'minor')
 }
 
 // ── Season Transition ────────────────────────────────────────────────────────
@@ -1258,10 +1330,14 @@ function checkLegendaryNPCs(state: WorldState): void {
       // Detect legendary death within the past day
       if (npc.legendary && npc.lifecycle.death_tick !== null
           && state.tick - npc.lifecycle.death_tick < 24) {
-        const cause = npc.lifecycle.death_cause ?? 'unknown causes'
-        const text = `⭐ ${npc.name} (${npc.occupation}, age ${npc.age}) — a legendary figure — has died of ${cause}. Their legacy endures.`
+        const cause = npc.lifecycle.death_cause ?? (t('death.unknown') as string)
+        const text = tf('engine.legendary_death', {
+          name: npc.name,
+          occupation: npc.occupation,
+          age: npc.age,
+          cause,
+        })
         addChronicle(text, state.year, state.day, 'critical')
-        addFeedRaw(text, 'warning', state.year, state.day)
         // Grief ripples through their network
         for (const tid of npc.strong_ties.slice(0, 8)) {
           const contact = state.npcs[tid]
@@ -1291,13 +1367,14 @@ function checkLegendaryNPCs(state: WorldState): void {
 
     if (isLongLived || isInfluential || isWealthy || isReformed || isFactionElder) {
       npc.legendary = true
-      const reason = isInfluential ? 'a figure of great social influence'
-        : isWealthy    ? 'one of the wealthiest citizens'
-        : isReformed   ? 'a reformed criminal turned pillar of the community'
-        : isFactionElder ? 'a veteran faction leader'
-        : 'a venerable elder'
+      const reasonKey = isInfluential ? 'engine.legendary_reason.influential'
+        : isWealthy    ? 'engine.legendary_reason.wealthy'
+        : isReformed   ? 'engine.legendary_reason.reformed'
+        : isFactionElder ? 'engine.legendary_reason.faction_elder'
+        : 'engine.legendary_reason.elder'
+      const reason = t(reasonKey) as string
       addChronicle(
-        `⭐ ${npc.name} (${npc.occupation}) is now recognized as a legendary figure — ${reason}.`,
+        tf('engine.legendary_recognized', { name: npc.name, occupation: npc.occupation, reason }),
         state.year, state.day, 'major',
       )
     }

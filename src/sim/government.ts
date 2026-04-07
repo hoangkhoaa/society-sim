@@ -8,7 +8,7 @@ import { callAI, extractJSON } from '../ai/provider'
 import { addFeedRaw, addChronicle } from '../ui/feed'
 import { applyInterventions } from './engine'
 import { clamp } from './constitution'
-import { getLang } from '../i18n'
+import { getLang, tf } from '../i18n'
 import { getLatestHeadlines } from './press'
 import { describeAlert, noAlertsSummaryLine, pickRoutineMessage } from '../local/government'
 
@@ -424,13 +424,13 @@ export async function runGovernmentCycle(
         const policy = generateFallbackPolicy(state, alerts)
         applyPolicy(state, policy)
         const msg = [
-          `🏛 [Government Policy] ${policy.policy_name}`,
+          tf('gov.feed_title', { policy: policy.policy_name }),
           policy.description,
-          `📢 "${policy.public_statement}"`,
-          `📊 Alerts: ${alertSummary}`,
+          tf('gov.feed_public_statement', { statement: policy.public_statement }),
+          tf('gov.feed_alerts', { alerts: alertSummary }),
         ].join('\n')
         addFeedRaw(msg, feedSeverity, state.year, state.day)
-        addChronicle(`🏛 Government enacted: ${policy.policy_name}`, state.year, state.day, hasCritical ? 'critical' : 'major')
+        addChronicle(tf('gov.chronicle_enacted', { policy: policy.policy_name }), state.year, state.day, hasCritical ? 'critical' : 'major')
       }
       return
     }
@@ -479,24 +479,24 @@ export async function runGovernmentCycle(
       const policy = JSON.parse(extractJSON(raw)) as GovernmentPolicyAI
       applyPolicy(state, policy)
       const msg = [
-        `🏛 [Government Policy] ${policy.policy_name}`,
+        tf('gov.feed_title', { policy: policy.policy_name }),
         policy.description,
-        `📢 "${policy.public_statement}"`,
+        tf('gov.feed_public_statement', { statement: policy.public_statement }),
       ].join('\n')
       addFeedRaw(msg, feedSeverity, state.year, state.day)
-      addChronicle(`🏛 Government enacted: ${policy.policy_name}`, state.year, state.day, hasCritical ? 'critical' : 'major')
+      addChronicle(tf('gov.chronicle_enacted', { policy: policy.policy_name }), state.year, state.day, hasCritical ? 'critical' : 'major')
     } catch {
       // AI call failed — use deterministic fallback or routine message
       if (alerts.length > 0) {
         const policy = generateFallbackPolicy(state, alerts)
         applyPolicy(state, policy)
         const msg = [
-          `🏛 [Government Policy] ${policy.policy_name}`,
+          tf('gov.feed_title', { policy: policy.policy_name }),
           policy.description,
-          `📢 "${policy.public_statement}"`,
+          tf('gov.feed_public_statement', { statement: policy.public_statement }),
         ].join('\n')
         addFeedRaw(msg, feedSeverity, state.year, state.day)
-        addChronicle(`🏛 Government enacted: ${policy.policy_name}`, state.year, state.day, hasCritical ? 'critical' : 'major')
+        addChronicle(tf('gov.chronicle_enacted', { policy: policy.policy_name }), state.year, state.day, hasCritical ? 'critical' : 'major')
       } else {
         const regime = detectRegime(state.constitution)
         addFeedRaw(`🏛 ${pickRoutineMessage(getLang(), regime)}`, 'political', state.year, state.day)

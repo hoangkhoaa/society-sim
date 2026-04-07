@@ -388,6 +388,8 @@ export interface WorldState {
   // History & rumor
   rumors: Rumor[]
   milestones: HistoryMilestone[]
+  births_total: number
+  immigration_total: number
 }
 
 // ── AI Types ───────────────────────────────────────────────────────────────

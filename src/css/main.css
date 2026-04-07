@@ -492,6 +492,15 @@ body[data-theme='light'] .age-bar-row .age-track { background: #ccd8e4; }
   background: #0a0a0a;
   flex-shrink: 0;
 }
+#chronicle-resizer {
+  height: 8px;
+  cursor: ns-resize;
+  background: #0d0d0d;
+  border-top: 1px solid #151515;
+  border-bottom: 1px solid #151515;
+  flex-shrink: 0;
+}
+#chronicle-resizer:hover { background: #121212; }
 #chronicle-header {
   padding: 5px 12px;
   font-size: 10px;
