@@ -13,23 +13,23 @@ import type { AIConfig } from '../types'
 // Farms are deliberately large (they're open land); civic zones are smaller
 // but centrally placed.  Adjacency in constitution.ts matches this geography.
 
-interface ZoneRect { x: number; y: number; w: number; h: number; color: string; label: string }
+interface ZoneRect { x: number; y: number; w: number; h: number; color: string; lightColor: string; label: string }
 
 const ZONE_LAYOUT: Record<string, ZoneRect> = {
   // Row 0  (y 0→0.30): northern outskirts
-  north_farm:        { x: 0.00, y: 0.00, w: 0.62, h: 0.30, color: '#0f2a0a', label: ZONE_LABELS['north_farm'] },
-  scholar_quarter:   { x: 0.62, y: 0.00, w: 0.38, h: 0.30, color: '#0d1433', label: ZONE_LABELS['scholar_quarter'] },
+  north_farm:        { x: 0.00, y: 0.00, w: 0.62, h: 0.30, color: '#0f2a0a', lightColor: '#4a8c28', label: ZONE_LABELS['north_farm'] },
+  scholar_quarter:   { x: 0.62, y: 0.00, w: 0.38, h: 0.30, color: '#0d1433', lightColor: '#3a5ab8', label: ZONE_LABELS['scholar_quarter'] },
 
   // Row 1  (y 0.30→0.60): city core
-  residential_west:  { x: 0.00, y: 0.30, w: 0.22, h: 0.30, color: '#17143a', label: ZONE_LABELS['residential_west'] },
-  plaza:             { x: 0.22, y: 0.30, w: 0.28, h: 0.30, color: '#1d2b1a', label: ZONE_LABELS['plaza'] },
-  market_square:     { x: 0.50, y: 0.30, w: 0.26, h: 0.30, color: '#2e2008', label: ZONE_LABELS['market_square'] },
-  guard_post:        { x: 0.76, y: 0.30, w: 0.24, h: 0.30, color: '#2a0e10', label: ZONE_LABELS['guard_post'] },
+  residential_west:  { x: 0.00, y: 0.30, w: 0.22, h: 0.30, color: '#17143a', lightColor: '#5a4aaa', label: ZONE_LABELS['residential_west'] },
+  plaza:             { x: 0.22, y: 0.30, w: 0.28, h: 0.30, color: '#1d2b1a', lightColor: '#3a7a28', label: ZONE_LABELS['plaza'] },
+  market_square:     { x: 0.50, y: 0.30, w: 0.26, h: 0.30, color: '#2e2008', lightColor: '#b87a1a', label: ZONE_LABELS['market_square'] },
+  guard_post:        { x: 0.76, y: 0.30, w: 0.24, h: 0.30, color: '#2a0e10', lightColor: '#a83040', label: ZONE_LABELS['guard_post'] },
 
   // Row 2  (y 0.60→1.00): southern outskirts
-  south_farm:        { x: 0.00, y: 0.60, w: 0.34, h: 0.40, color: '#122e0b', label: ZONE_LABELS['south_farm'] },
-  workshop_district: { x: 0.34, y: 0.60, w: 0.33, h: 0.40, color: '#2a1808', label: ZONE_LABELS['workshop_district'] },
-  residential_east:  { x: 0.67, y: 0.60, w: 0.33, h: 0.40, color: '#151240', label: ZONE_LABELS['residential_east'] },
+  south_farm:        { x: 0.00, y: 0.60, w: 0.34, h: 0.40, color: '#122e0b', lightColor: '#4a8c28', label: ZONE_LABELS['south_farm'] },
+  workshop_district: { x: 0.34, y: 0.60, w: 0.33, h: 0.40, color: '#2a1808', lightColor: '#8a4a10', label: ZONE_LABELS['workshop_district'] },
+  residential_east:  { x: 0.67, y: 0.60, w: 0.33, h: 0.40, color: '#151240', lightColor: '#4a3a9a', label: ZONE_LABELS['residential_east'] },
 }
 
 // ── Home zone: where NPCs rest (residential areas) ─────────────────────────
@@ -430,6 +430,7 @@ function drawZones(W: number, H: number) {
   const gutter = Math.max(2, Math.min(W, H) * 0.008)
   const cornerR = Math.min(14, Math.min(W, H) * 0.016)
   const c = ctx as CanvasRenderingContext2D & { roundRect?(x: number, y: number, w: number, h: number, r: number): void }
+  const light = isLightTheme()
 
   for (const [, zone] of Object.entries(ZONE_LAYOUT)) {
     const px = zone.x * W + gutter
@@ -438,10 +439,11 @@ function drawZones(W: number, H: number) {
     const ph = zone.h * H - 2 * gutter
     if (pw < 8 || ph < 8) continue
 
+    const baseColor = light ? zone.lightColor : zone.color
     const grd = ctx.createLinearGradient(px, py, px, py + ph)
-    grd.addColorStop(0, lightenHex(zone.color, 1.25))
-    grd.addColorStop(0.55, zone.color)
-    grd.addColorStop(1, lightenHex(zone.color, 0.85))
+    grd.addColorStop(0, lightenHex(baseColor, 1.25))
+    grd.addColorStop(0.55, baseColor)
+    grd.addColorStop(1, lightenHex(baseColor, 0.85))
 
     ctx.fillStyle = grd
     ctx.beginPath()
@@ -452,11 +454,11 @@ function drawZones(W: number, H: number) {
     ctx.beginPath()
     if (typeof c.roundRect === 'function') c.roundRect(px, py, pw, ph, cornerR)
     else ctx.rect(px, py, pw, ph)
-    ctx.strokeStyle = 'rgba(0,0,0,0.35)'
+    ctx.strokeStyle = light ? 'rgba(0,0,0,0.18)' : 'rgba(0,0,0,0.35)'
     ctx.lineWidth = 1.2
     ctx.stroke()
 
-    ctx.fillStyle = 'rgba(255,255,255,0.42)'
+    ctx.fillStyle = light ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.42)'
     ctx.font = '600 10px system-ui'
     ctx.textAlign = 'center'
     ctx.fillText(zone.label, px + pw / 2, py + 14)
