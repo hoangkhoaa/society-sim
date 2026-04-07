@@ -185,6 +185,7 @@ const translations = {
     'engine.crime':             '{name} committed a crime.',
     'engine.community_formed':  'A new community group has formed.',
     'engine.intervention': '⚡ Intervention affected {n} NPC{s}.',
+    'engine.event_deaths': '💀 {n} people died from natural disasters.',
     'engine.extinction': '💀 The last NPC has died. The society is extinct.',
 
     // Game over screen
@@ -430,6 +431,7 @@ const translations = {
     'engine.crime':             '{name} đã phạm tội.',
     'engine.community_formed':  'Một nhóm cộng đồng mới đã được thành lập.',
     'engine.intervention': '⚡ Can thiệp ảnh hưởng đến {n} NPC.',
+    'engine.event_deaths': '💀 {n} người tử vong do thiên tai.',
     'engine.extinction': '💀 NPC cuối cùng đã chết. Xã hội đã diệt vong.',
 
     // Game over screen

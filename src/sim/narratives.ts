@@ -9,6 +9,8 @@
 import type { WorldState, Rumor } from '../types'
 import { clamp, getSeason } from './constitution'
 import { addChronicle, addFeedRaw } from '../ui/feed'
+import { getLang } from '../i18n'
+import { NT } from '../local/narratives'
 
 // ── Cooldown tracking ────────────────────────────────────────────────────────
 
@@ -45,7 +47,7 @@ const STORIES: Story[] = [
           && state.tick - m.tick < 240),
       )
       if (!candidate) return null
-      return `${candidate.name}, once struggling to survive, has risen to comfort — wealth amassed through relentless ${candidate.occupation.toLowerCase()} work.`
+      return NT.ragsToRiches(getLang(), candidate.name, candidate.occupation)
     },
   },
 
@@ -59,7 +61,7 @@ const STORIES: Story[] = [
         && n.memory.some(m => m.type === 'loss' && m.emotional_weight < -30 && state.tick - m.tick < 360),
       )
       if (!candidate) return null
-      return `${candidate.name} (${candidate.occupation}) has fallen from prosperity into poverty — debts, misfortune, or both have claimed their fortune.`
+      return NT.fallFromGrace(getLang(), candidate.name, candidate.occupation)
     },
   },
 
@@ -78,7 +80,7 @@ const STORIES: Story[] = [
       })
       if (!candidate) return null
       const childCount = candidate.lifecycle.children_ids.filter(id => state.npcs[id]?.lifecycle.is_alive).length
-      return `${candidate.name} has lost their spouse and now raises ${childCount} ${childCount === 1 ? 'child' : 'children'} alone — grief and duty woven together.`
+      return NT.widowTragedy(getLang(), candidate.name, childCount)
     },
   },
 
@@ -97,7 +99,7 @@ const STORIES: Story[] = [
           const topic = a.worldview.authority_trust > b.worldview.authority_trust
             ? 'the necessity of authority'
             : 'the limits of state power'
-          return `${a.name} and ${b.name} engaged in a heated public debate in the ${a.zone.replace(/_/g, ' ')} on ${topic}.`
+          return NT.scholarDebate(getLang(), a.name, b.name, a.zone, topic)
         }
       }
       return null
@@ -115,7 +117,7 @@ const STORIES: Story[] = [
           .map(id => state.npcs[id])
           .find(n => n?.lifecycle.is_alive && n.criminal_record)
         if (criminal) {
-          return `${guard.name} (Guard) and ${criminal.name} (${criminal.occupation}) share a rare bond — an unlikely friendship that defies their circumstances.`
+          return NT.forbiddenFriendship(getLang(), guard.name, criminal.name, criminal.occupation)
         }
       }
       return null
@@ -130,7 +132,7 @@ const STORIES: Story[] = [
       const elders = state.npcs.filter(n => n.lifecycle.is_alive && n.age >= 72)
       if (elders.length !== 1) return null
       const e = elders[0]
-      return `${e.name}, now ${e.age} years old, is the last of the elders — a living memory of this society's earliest days.`
+      return NT.loneElder(getLang(), e.name, e.age)
     },
   },
 
@@ -149,7 +151,7 @@ const STORIES: Story[] = [
         && n.fear < 25 && n.influence_score > 0.45,
       )
       if (!hero) return null
-      return `${hero.name} (${hero.occupation}) stood firm while others fled — unafraid in the face of crisis, a rallying presence for those nearby.`
+      return NT.crisisHero(getLang(), hero.name, hero.occupation)
     },
   },
 
@@ -163,7 +165,7 @@ const STORIES: Story[] = [
       )
       if (!candidate) return null
       const shift = candidate.worldview.collectivism > 0.65 ? 'individualism' : 'collective solidarity'
-      return `${candidate.name} has been seen questioning long-held beliefs — quietly drifting toward ${shift} in the privacy of their thoughts.`
+      return NT.silentConversion(getLang(), candidate.name, shift)
     },
   },
 
@@ -178,7 +180,7 @@ const STORIES: Story[] = [
         n.lifecycle.is_alive && n.exhaustion > 87 && n.action_state === 'working',
       )
       if (!candidate) return null
-      return `${candidate.name} has not slept in days — visible exhaustion carved into their face — yet still they work through the dark hours.`
+      return NT.midnightLaborer(getLang(), candidate.name)
     },
   },
 
@@ -191,7 +193,7 @@ const STORIES: Story[] = [
         n.lifecycle.is_alive && n.criminal_record && n.grievance < 18 && n.happiness > 58 && n.age > 35,
       )
       if (!candidate) return null
-      return `${candidate.name}, once a criminal whose name was spoken with fear, now walks a different path — content, grounded, and quietly accepted by the community.`
+      return NT.reformedCriminal(getLang(), candidate.name)
     },
   },
 
@@ -204,7 +206,7 @@ const STORIES: Story[] = [
         n.lifecycle.is_alive && n.strong_ties.length === 0 && n.age > 30 && n.isolation > 75,
       )
       if (!candidate) return null
-      return `${candidate.name} (${candidate.occupation}, ${candidate.age}) moves through the ${candidate.zone.replace(/_/g, ' ')} unseen — no friends, no community, a ghost among the living.`
+      return NT.forgotten(getLang(), candidate.name, candidate.occupation, candidate.age, candidate.zone)
     },
   },
 
@@ -218,7 +220,7 @@ const STORIES: Story[] = [
       if (merchants.length === 0) return null
       const richest = merchants.reduce((a, b) => a.wealth > b.wealth ? a : b)
       if (richest.wealth < 2500) return null
-      return `${richest.name} has amassed a fortune of ${Math.round(richest.wealth).toLocaleString()} — the wealthiest merchant in living memory, whose shadow stretches across the ${richest.zone.replace(/_/g, ' ')}.`
+      return NT.merchantEmpire(getLang(), richest.name, richest.wealth, richest.zone)
     },
   },
 
@@ -236,7 +238,7 @@ const STORIES: Story[] = [
       }
       const [zone, count] = Object.entries(zoneCount).sort((a, b) => b[1] - a[1])[0] ?? []
       if (!zone || count < 12) return null
-      return `The ${zone.replace(/_/g, ' ')} has emptied — ${count} terrified citizens have abandoned their homes and fled into the streets.`
+      return NT.massExodus(getLang(), zone, count)
     },
   },
 
@@ -248,7 +250,7 @@ const STORIES: Story[] = [
       if (state.macro.stability < 75 || state.macro.food < 68) return null
       if (getSeason(state.day) !== 'summer') return null
       const zone = ['market_square', 'plaza'][Math.floor(Math.random() * 2)]
-      return `A rare peace has settled over the ${zone.replace(/_/g, ' ')} — food is plentiful, stability holds, and laughter can be heard in the streets.`
+      return NT.goodTimes(getLang(), zone)
     },
   },
 
@@ -260,7 +262,7 @@ const STORIES: Story[] = [
     check(state) {
       const large = state.factions.find(f => f.member_ids.length >= 15)
       if (!large) return null
-      return `"${large.name}" now counts ${large.member_ids.length} members — the largest political force this society has yet seen, united around ${large.dominant_value} values.`
+      return NT.factionPower(getLang(), large.name, large.member_ids.length, large.dominant_value)
     },
   },
 
@@ -272,7 +274,7 @@ const STORIES: Story[] = [
       const vets = state.npcs.filter(n => n.lifecycle.is_alive && n.role === 'guard' && n.age >= 52)
       if (vets.length === 0) return null
       const v = vets[0]
-      return `${v.name}, ${v.age} years old, still patrols the ${v.zone.replace(/_/g, ' ')} — a fixture of law and order that long predates the current troubles.`
+      return NT.veteranGuard(getLang(), v.name, v.age, v.zone)
     },
   },
 
@@ -287,7 +289,7 @@ const STORIES: Story[] = [
         .filter(n => n.lifecycle.is_alive && n.role === 'scholar')
         .sort((a, b) => b.influence_score - a.influence_score)[0]
       if (!topScholar) return null
-      return `${topScholar.name} and colleagues are on the verge of a breakthrough — their research journals increasingly filled with promising findings.`
+      return NT.techAnticipation(getLang(), topScholar.name)
     },
   },
 
@@ -299,11 +301,11 @@ const STORIES: Story[] = [
       const legends = state.npcs.filter(n => n.lifecycle.is_alive && n.legendary)
       if (legends.length === 0) return null
       const l = legends[Math.floor(Math.random() * legends.length)]
-      const reason = l.influence_score > 0.7 ? 'their unmatched social reach'
-        : l.wealth > 5000 ? 'their vast wealth'
-        : l.role === 'scholar' ? 'groundbreaking scholarship'
-        : 'a life of remarkable service'
-      return `⭐ ${l.name} (${l.occupation}, ${l.age}) remains a towering figure — revered for ${reason}.`
+      const reason = l.influence_score > 0.7 ? (getLang() === 'vi' ? 'tầm ảnh hưởng xã hội vượt trội' : 'their unmatched social reach')
+        : l.wealth > 5000 ? (getLang() === 'vi' ? 'khối tài sản đồ sộ' : 'their vast wealth')
+        : l.role === 'scholar' ? (getLang() === 'vi' ? 'đóng góp học thuật đột phá' : 'groundbreaking scholarship')
+        : (getLang() === 'vi' ? 'một đời cống hiến đáng kính' : 'a life of remarkable service')
+      return NT.legendaryAlive(getLang(), l.name, l.occupation, l.age, reason)
     },
   },
 
@@ -344,7 +346,7 @@ const RUMOR_TEMPLATES: Array<{
   {
     condition: _s => _s.macro.trust < 30,
     generate: _s => ({
-      content: `Whispers in the ${['market_square', 'plaza', 'residential_east'][Math.floor(Math.random() * 3)].replace(/_/g, ' ')}: officials are pocketing public funds while citizens starve.`,
+      content: NT.rumor.govCorruption(getLang(), ['market_square', 'plaza', 'residential_east'][Math.floor(Math.random() * 3)]),
       subject: 'government',
       effect: 'trust_down',
     }),
@@ -354,7 +356,7 @@ const RUMOR_TEMPLATES: Array<{
     generate: s => {
       const legend = s.npcs.find(n => n.lifecycle.is_alive && n.legendary)!
       return {
-        content: `Tales of ${legend.name}'s deeds grow grander with each retelling — some say they have never slept, never faltered.`,
+        content: NT.rumor.legendTale(getLang(), legend.name),
         subject: legend.id,
         effect: 'trust_up',
       }
@@ -363,7 +365,7 @@ const RUMOR_TEMPLATES: Array<{
   {
     condition: s => s.macro.food < 35,
     generate: () => ({
-      content: `Word spreads that the granaries hold far less than the leaders admit — a hidden famine behind closed doors.`,
+      content: NT.rumor.hiddenFamine(getLang()),
       subject: 'government',
       effect: 'fear_up',
     }),
@@ -371,7 +373,7 @@ const RUMOR_TEMPLATES: Array<{
   {
     condition: s => s.macro.gini > 0.55,
     generate: () => ({
-      content: `They say the wealthy have built hidden cellars full of hoarded gold while the poor go hungry in plain sight.`,
+      content: NT.rumor.richHoarding(getLang()),
       subject: 'market',
       effect: 'grievance_up',
     }),
@@ -379,7 +381,7 @@ const RUMOR_TEMPLATES: Array<{
   {
     condition: s => s.active_events.some(e => e.type === 'epidemic'),
     generate: () => ({
-      content: `Rumor has it the sick are far more numerous than reported — the true count hidden to prevent panic.`,
+      content: NT.rumor.epidemicHidden(getLang()),
       subject: 'guard',
       effect: 'fear_up',
     }),
@@ -388,7 +390,7 @@ const RUMOR_TEMPLATES: Array<{
     condition: s => s.constitution.market_freedom < 0.25
       && s.npcs.filter(n => n.lifecycle.is_alive && n.criminal_record).length > 10,
     generate: () => ({
-      content: `There is talk of a hidden market where goods change hands without the state's knowledge — some call it salvation, others call it treason.`,
+      content: NT.rumor.blackMarket(getLang()),
       subject: 'community',
       effect: 'trust_up',
     }),
@@ -398,7 +400,7 @@ const RUMOR_TEMPLATES: Array<{
     generate: s => {
       const f = s.factions[Math.floor(Math.random() * s.factions.length)]
       return {
-        content: `"${f.name}" is said to be planning something far more drastic than public organizing — the details remain carefully guarded.`,
+        content: NT.rumor.factionPlot(getLang(), f.name),
         subject: 'community',
         effect: 'fear_up',
       }
@@ -484,38 +486,38 @@ export function checkMilestones(state: WorldState): void {
   }
 
   // Population milestones
-  if (pop >= 600) record('pop_600', '👥', `Population reached 600 citizens.`)
-  if (pop >= 700) record('pop_700', '👥', `Population surged past 700 citizens.`)
-  if (pop >= 800) record('pop_800', '🏘️', `A prosperous society of 800 citizens.`)
+  if (pop >= 600) record('pop_600', '👥', NT.milestone.pop600(getLang()))
+  if (pop >= 700) record('pop_700', '👥', NT.milestone.pop700(getLang()))
+  if (pop >= 800) record('pop_800', '🏘️', NT.milestone.pop800(getLang()))
 
   // First faction
   if (state.factions.length > 0)
-    record('first_faction', '⚑', `First political faction formed: "${state.factions[0].name}".`)
+    record('first_faction', '⚑', NT.milestone.firstFaction(getLang(), state.factions[0].name))
 
   // First tech discovery
   if (state.discoveries.length > 0)
-    record('first_discovery', '📚', `First discovery: ${state.discoveries[0].name} — by ${state.discoveries[0].researcher_name}.`)
+    record('first_discovery', '📚', NT.milestone.firstDiscovery(getLang(), state.discoveries[0].name, state.discoveries[0].researcher_name))
 
   // First legendary NPC
   const firstLegend = state.npcs.find(n => n.legendary)
   if (firstLegend)
-    record('first_legendary', '⭐', `${firstLegend.name} became the first legendary figure.`)
+    record('first_legendary', '⭐', NT.milestone.firstLegend(getLang(), firstLegend.name))
 
   // First referendum
   if (state.referendum !== null || state.milestones.some(m => m.text.includes('Referendum')))
-    record('first_referendum', '🗳️', `The first constitutional referendum was called.`)
+    record('first_referendum', '🗳️', NT.milestone.firstReferendum(getLang()))
 
   // Crisis records
   if (state.macro.food < 10)
-    record('famine', '🌾', `Year ${state.year}: The Great Famine — food stores almost completely exhausted.`)
+    record('famine', '🌾', NT.milestone.famine(getLang(), state.year))
   if (state.macro.gini > 0.70)
-    record('peak_inequality', '⚖️', `Year ${state.year}: Inequality peaked at Gini ${state.macro.gini.toFixed(2)} — the worst divide in this society's history.`)
+    record('peak_inequality', '⚖️', NT.milestone.inequality(getLang(), state.year, state.macro.gini))
   if (state.macro.trust < 15)
-    record('trust_collapse', '💔', `Year ${state.year}: Trust in government collapsed to ${Math.round(state.macro.trust)}% — a moment of profound crisis.`)
+    record('trust_collapse', '💔', NT.milestone.trustCollapse(getLang(), state.year, state.macro.trust))
   if (state.macro.stability < 10)
-    record('near_collapse', '⚡', `Year ${state.year}: Society teetered on the edge of complete collapse.`)
+    record('near_collapse', '⚡', NT.milestone.nearCollapse(getLang(), state.year))
 
   // First cure breakthrough
   if (state.discoveries.length === 0 && state.research_points > 1200)
-    record('research_progress', '🔬', `Scholars have accumulated over 1,200 research points — a breakthrough looms.`)
+    record('research_progress', '🔬', NT.milestone.researchProgress(getLang()))
 }
