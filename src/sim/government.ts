@@ -10,7 +10,7 @@ import { applyInterventions } from './engine'
 import { clamp } from './constitution'
 import { getLang, tf } from '../i18n'
 import { getLatestHeadlines } from './press'
-import { describeAlert, noAlertsSummaryLine, pickRoutineMessage } from '../local/government'
+import { describeAlert, noAlertsSummaryLine, pickRoutineMessage, getFallbackPolicy } from '../local/government'
 
 // ── Alert thresholds ──────────────────────────────────────────────────────────
 
@@ -52,6 +52,10 @@ interface GovernmentPolicyAI {
   merchant_grievance_delta?: number
   farmer_stress_delta?: number
   farmer_hunger_delta?: number
+  // Labor relations
+  npc_solidarity_delta?: number    // applied to all workers (negative = pacify, positive = agitate)
+  worker_solidarity_delta?: number // targeted at a specific role
+  worker_role?: string             // which role to target with worker_solidarity_delta
 }
 
 // ── Regime detection ──────────────────────────────────────────────────────────
@@ -117,6 +121,12 @@ function detectAlerts(state: WorldState): Alert[] {
     alerts.push({ stat: 'natural_resources', value: m.natural_resources, level: 'warning', description: describeAlert(getLang(), 'resources', 'warning', m.natural_resources) })
   }
 
+  if ((m.labor_unrest ?? 0) >= 82) {
+    alerts.push({ stat: 'labor_unrest', value: m.labor_unrest, level: 'critical', description: describeAlert(getLang(), 'labor_unrest', 'critical', m.labor_unrest) })
+  } else if ((m.labor_unrest ?? 0) >= 65) {
+    alerts.push({ stat: 'labor_unrest', value: m.labor_unrest, level: 'warning', description: describeAlert(getLang(), 'labor_unrest', 'warning', m.labor_unrest) })
+  }
+
   return alerts
 }
 
@@ -173,11 +183,21 @@ Return JSON in EXACTLY this format (all numeric values are optional, omit if not
   "merchant_stress_delta": <integer, optional — extra effect on merchants only>,
   "merchant_grievance_delta": <integer, optional>,
   "farmer_stress_delta": <integer, optional>,
-  "farmer_hunger_delta": <integer, optional>
+  "farmer_hunger_delta": <integer, optional>,
+  "npc_solidarity_delta": <integer -30 to 10, optional — change ALL workers' class solidarity; negative = pacify unrest, positive = legitimize grievances>,
+  "worker_solidarity_delta": <integer -40 to 10, optional — targeted solidarity change for one role>,
+  "worker_role": <"farmer"|"craftsman"|"merchant"|"scholar", required if worker_solidarity_delta set>
 }
 
+LABOR RELATIONS: class_solidarity (0–100) drives labor_unrest. When solidarity > 72 + grievance > 58 + gini > 0.42, workers STRIKE — productivity drops to zero for that role (5–15 sim-days).
+- To suppress unrest: set npc_solidarity_delta negative (propaganda, repression, wage concessions)
+- Authoritarian regimes: large negative delta is acceptable but raises grievance
+- Welfare regimes: use npc_happiness_delta + npc_grievance_delta instead of direct suppression
+- Feudal: can suppress harshly (solidarity -30) at cost of legitimacy
+Active strikes: workers currently on strike produce NOTHING until solidarity drops below 45.
+
 SCALE GUIDE: food_delta adds to raw food stock (population ~500 consumes ~250 units/day; each citizen needs ~0.5/day). A food_delta of +1500 adds about 3 days of full supply. The macro "food%" reflects stock vs. (population × 30-day buffer). NPC deltas are additive to current stat values (clamped 0–100).
-SEVERITY: "critical" only when at least one stat is below 25% or unrest exceeds 72%; else "important".
+SEVERITY: "critical" only when at least one stat is below 25%, unrest exceeds 72%, or labor_unrest ≥ 82%; else "important".
 ${langNote}
 Only return JSON. No explanation outside JSON.`
 }
@@ -220,8 +240,26 @@ function applyPolicy(state: WorldState, policy: GovernmentPolicyAI): void {
     interventions.push(iv)
   }
 
+  // All-worker solidarity suppression / agitation
+  if (policy.npc_solidarity_delta !== undefined) {
+    const workerRoles = ['farmer', 'craftsman', 'merchant', 'scholar'] as const
+    for (const role of workerRoles) {
+      interventions.push({ target: 'role', roles: [role], solidarity_delta: policy.npc_solidarity_delta })
+    }
+  }
+
+  // Targeted solidarity change (single role)
+  if (policy.worker_solidarity_delta !== undefined && policy.worker_role) {
+    interventions.push({ target: 'role', roles: [policy.worker_role as never], solidarity_delta: policy.worker_solidarity_delta })
+  }
+
   if (interventions.length > 0) {
     applyInterventions(state, interventions)
+  }
+
+  // If solidarity suppression is happening, a grievance backlash follows (repression paradox)
+  if ((policy.npc_solidarity_delta ?? 0) < -15) {
+    applyInterventions(state, [{ target: 'all', grievance_delta: Math.abs(policy.npc_solidarity_delta!) * 0.4 }])
   }
 }
 
@@ -239,13 +277,13 @@ function generateFallbackPolicy(state: WorldState, alerts: Alert[]): GovernmentP
   const top = sorted[0]
   const isCritical = top.level === 'critical'
 
+  const lang = getLang()
+
   if (top.stat === 'food') {
     if (regime === 'authoritarian' || regime === 'feudal') {
       return {
-        policy_name: 'Emergency Food Requisition Order',
-        description: 'The Council ordered mandatory food requisitioning from all surplus households to replenish state reserves.',
+        ...getFallbackPolicy(lang, 'food_authoritarian'),
         severity: isCritical ? 'critical' : 'important',
-        public_statement: 'By decree of the High Council: all surplus grain is hereby state property until reserves stabilize.',
         food_delta: isCritical ? 2500 : 1500,
         npc_stress_delta: 12,
         npc_grievance_delta: 18,
@@ -254,10 +292,8 @@ function generateFallbackPolicy(state: WorldState, alerts: Alert[]): GovernmentP
     }
     if (regime === 'libertarian') {
       return {
-        policy_name: 'Emergency Trade Route Stimulus',
-        description: 'The Market Board announced zero-tariff zones and expedited trade licenses to attract external food suppliers.',
+        ...getFallbackPolicy(lang, 'food_libertarian'),
         severity: isCritical ? 'critical' : 'important',
-        public_statement: 'The Market is the solution. All barriers to food trade are hereby suspended.',
         food_delta: isCritical ? 2000 : 1200,
         npc_stress_delta: 5,
         merchant_grievance_delta: -15,
@@ -266,10 +302,8 @@ function generateFallbackPolicy(state: WorldState, alerts: Alert[]): GovernmentP
     }
     if (regime === 'theocratic') {
       return {
-        policy_name: 'Sacred Fast and Community Sharing Decree',
-        description: 'The High Council proclaimed a period of sacred communal sharing; temple storehouses opened to the people.',
+        ...getFallbackPolicy(lang, 'food_theocratic'),
         severity: isCritical ? 'critical' : 'important',
-        public_statement: 'The divine calls us to share. Temple granaries are open. Those who hoard shall answer to higher authority.',
         food_delta: isCritical ? 2200 : 1400,
         npc_stress_delta: -5,
         npc_grievance_delta: -8,
@@ -278,10 +312,8 @@ function generateFallbackPolicy(state: WorldState, alerts: Alert[]): GovernmentP
     }
     // welfare, technocratic, moderate
     return {
-      policy_name: 'Emergency Food Distribution Program',
-      description: 'The Council activated emergency reserves and organized distribution centers across all districts.',
+      ...getFallbackPolicy(lang, 'food_default'),
       severity: isCritical ? 'critical' : 'important',
-      public_statement: 'The Governing Council assures all citizens: no one will go hungry. Emergency rations are now available at distribution centers.',
       food_delta: isCritical ? 2000 : 1300,
       npc_hunger_delta: -15,
       npc_stress_delta: -8,
@@ -292,10 +324,8 @@ function generateFallbackPolicy(state: WorldState, alerts: Alert[]): GovernmentP
   if (top.stat === 'stability' || top.stat === 'political_pressure') {
     if (regime === 'authoritarian' || regime === 'feudal') {
       return {
-        policy_name: 'Order Restoration Decree',
-        description: 'The Council deployed guard forces and imposed curfews to suppress civil disturbances and restore order.',
+        ...getFallbackPolicy(lang, 'stability_authoritarian'),
         severity: isCritical ? 'critical' : 'important',
-        public_statement: 'Order will be maintained. Elements of disorder will be removed. Citizens are advised to return to their duties immediately.',
         npc_fear_delta: 22,
         npc_stress_delta: 8,
         npc_grievance_delta: -12,
@@ -303,10 +333,8 @@ function generateFallbackPolicy(state: WorldState, alerts: Alert[]): GovernmentP
     }
     if (regime === 'theocratic') {
       return {
-        policy_name: 'Spiritual Renewal and Reconciliation Edict',
-        description: 'The High Council declared a period of communal prayer and moral renewal to heal social rifts.',
+        ...getFallbackPolicy(lang, 'stability_theocratic'),
         severity: isCritical ? 'critical' : 'important',
-        public_statement: 'We are one people under divine guidance. Let us lay down discord and renew our sacred covenant.',
         npc_grievance_delta: -15,
         npc_fear_delta: -8,
         npc_happiness_delta: 8,
@@ -314,10 +342,8 @@ function generateFallbackPolicy(state: WorldState, alerts: Alert[]): GovernmentP
     }
     if (regime === 'welfare' || regime === 'moderate') {
       return {
-        policy_name: 'Social Stability and Dialogue Initiative',
-        description: 'The Council launched community dialogue programs and increased social support services to address underlying grievances.',
+        ...getFallbackPolicy(lang, 'stability_welfare'),
         severity: isCritical ? 'critical' : 'important',
-        public_statement: 'The Council listens. Community centers and conflict-resolution services are now open across all districts.',
         npc_grievance_delta: -18,
         npc_happiness_delta: 12,
         npc_stress_delta: -10,
@@ -325,20 +351,16 @@ function generateFallbackPolicy(state: WorldState, alerts: Alert[]): GovernmentP
     }
     if (regime === 'technocratic') {
       return {
-        policy_name: 'Algorithmic Grievance Optimization Protocol',
-        description: 'The Algorithm Advisory Board deployed predictive social management tools to preemptively resolve instability vectors.',
+        ...getFallbackPolicy(lang, 'stability_technocratic'),
         severity: isCritical ? 'critical' : 'important',
-        public_statement: 'Analysis complete. Social instability corrected to within acceptable parameters. Comply with recommended behavioral adjustments.',
         npc_grievance_delta: -12,
         npc_stress_delta: -8,
         npc_fear_delta: 5,
       }
     }
     return {
-      policy_name: 'Civil Reconciliation Measures',
-      description: 'The Council held emergency sessions to address grievances and announced a package of reform pledges.',
+      ...getFallbackPolicy(lang, 'stability_default'),
       severity: isCritical ? 'critical' : 'important',
-      public_statement: 'The Council hears the people\'s concerns and pledges meaningful reforms. Dialogue is open.',
       npc_grievance_delta: -10,
       npc_stress_delta: -5,
       npc_fear_delta: -5,
@@ -348,14 +370,8 @@ function generateFallbackPolicy(state: WorldState, alerts: Alert[]): GovernmentP
   if (top.stat === 'trust') {
     const isHighState = c.state_power >= 0.60
     return {
-      policy_name: isHighState ? 'Public Unity and Trust Decree' : 'Transparency and Accountability Initiative',
-      description: isHighState
-        ? 'The Council launched a mandatory civic unity campaign alongside increased public services to rebuild trust.'
-        : 'The Council announced transparency measures and public consultation forums to restore citizen confidence.',
+      ...getFallbackPolicy(lang, isHighState ? 'trust_high_state' : 'trust_low_state'),
       severity: isCritical ? 'critical' : 'important',
-      public_statement: isHighState
-        ? 'The Council reaffirms its commitment to the people. Unity is not optional — it is the foundation of our society.'
-        : 'The Governing Council opens its books and its doors. Citizens deserve honesty, and we deliver it.',
       npc_grievance_delta: -14,
       npc_happiness_delta: 8,
       npc_stress_delta: -6,
@@ -365,32 +381,56 @@ function generateFallbackPolicy(state: WorldState, alerts: Alert[]): GovernmentP
   if (top.stat === 'natural_resources') {
     if (regime === 'libertarian') {
       return {
-        policy_name: 'Resource Market Efficiency Act',
-        description: 'The Council introduced tradeable extraction quotas and market incentives for resource conservation.',
+        ...getFallbackPolicy(lang, 'resources_libertarian'),
         severity: isCritical ? 'critical' : 'important',
-        public_statement: 'Market-based conservation is the answer. Extraction quotas are now tradeable assets.',
         resource_delta: isCritical ? 6000 : 4000,
         npc_stress_delta: 5,
         merchant_grievance_delta: 10,
       }
     }
     return {
-      policy_name: 'Resource Conservation Mandate',
-      description: 'The Council mandated reduced extraction rates, banned non-essential resource use, and invested in regeneration programs.',
+      ...getFallbackPolicy(lang, 'resources_default'),
       severity: isCritical ? 'critical' : 'important',
-      public_statement: 'Sustainable use of natural resources is now mandatory. Extraction quotas have been set. The land must recover.',
       resource_delta: isCritical ? 7000 : 4500,
       npc_stress_delta: 6,
       npc_grievance_delta: 10,
     }
   }
 
+  if (top.stat === 'labor_unrest') {
+    if (regime === 'authoritarian' || regime === 'feudal') {
+      return {
+        ...getFallbackPolicy(lang, 'labor_authoritarian'),
+        severity: isCritical ? 'critical' : 'important',
+        npc_solidarity_delta: -22,
+        npc_fear_delta: 15,
+        npc_grievance_delta: 8,
+      }
+    }
+    if (regime === 'welfare' || regime === 'moderate') {
+      return {
+        ...getFallbackPolicy(lang, 'labor_welfare'),
+        severity: isCritical ? 'critical' : 'important',
+        npc_solidarity_delta: -12,
+        npc_grievance_delta: -18,
+        npc_happiness_delta: 8,
+        food_delta: 1000,
+      }
+    }
+    // libertarian / technocratic
+    return {
+      ...getFallbackPolicy(lang, 'labor_default'),
+      severity: isCritical ? 'critical' : 'important',
+      npc_solidarity_delta: -10,
+      npc_happiness_delta: 5,
+      merchant_stress_delta: -8,
+    }
+  }
+
   // Generic fallback
   return {
-    policy_name: 'Emergency Stabilization Measures',
-    description: 'The Council convened an emergency session and implemented a package of stabilization measures to address the current crisis.',
+    ...getFallbackPolicy(lang, 'generic'),
     severity: 'important',
-    public_statement: 'The Council is taking decisive action. Citizens should remain calm and trust that the situation is being managed.',
     npc_stress_delta: -5,
     npc_grievance_delta: -5,
   }
@@ -468,6 +508,8 @@ export async function runGovernmentCycle(
       `  Gini coefficient: ${state.macro.gini.toFixed(2)}`,
       `  Energy/productivity: ${Math.round(state.macro.energy)}%`,
       `  Literacy: ${Math.round(state.macro.literacy)}%`,
+      `  Labor unrest: ${Math.round(state.macro.labor_unrest ?? 0)}%`,
+      ...(state.active_strikes?.length ? [`  Active strikes: ${state.active_strikes.map(s => `${s.role} (demand: ${s.demand})`).join(', ')}`] : []),
       ...eventsBlock,
       ...pressBlock,
       '',

@@ -195,6 +195,226 @@ const ROUTINE_MESSAGES: Record<RegimeType, Localized<string[]>> = {
   },
 }
 
+// ── Fallback policy text (localized) ─────────────────────────────────────────
+
+export interface PolicyTemplate {
+  policy_name: string
+  description: string
+  public_statement: string
+}
+
+const FALLBACK_POLICIES: Record<string, Localized<PolicyTemplate>> = {
+  food_authoritarian: {
+    en: {
+      policy_name: 'Emergency Food Requisition Order',
+      description: 'The Council ordered mandatory food requisitioning from all surplus households to replenish state reserves.',
+      public_statement: 'By decree of the High Council: all surplus grain is hereby state property until reserves stabilize.',
+    },
+    vi: {
+      policy_name: 'Lệnh Trưng Thu Lương Thực Khẩn Cấp',
+      description: 'Hội đồng ban lệnh trưng thu lương thực bắt buộc từ tất cả hộ dân có dư thừa để bổ sung kho dự trữ nhà nước.',
+      public_statement: 'Theo sắc lệnh của Thượng Hội đồng: toàn bộ lương thực dư thừa nay là tài sản nhà nước cho đến khi kho dự trữ ổn định.',
+    },
+  },
+  food_libertarian: {
+    en: {
+      policy_name: 'Emergency Trade Route Stimulus',
+      description: 'The Market Board announced zero-tariff zones and expedited trade licenses to attract external food suppliers.',
+      public_statement: 'The Market is the solution. All barriers to food trade are hereby suspended.',
+    },
+    vi: {
+      policy_name: 'Kích Thích Tuyến Thương Mại Khẩn Cấp',
+      description: 'Hội đồng Thị trường công bố vùng miễn thuế và cấp phép thương mại nhanh để thu hút nhà cung cấp lương thực bên ngoài.',
+      public_statement: 'Thị trường là giải pháp. Mọi rào cản thương mại lương thực nay đã được bãi bỏ.',
+    },
+  },
+  food_theocratic: {
+    en: {
+      policy_name: 'Sacred Fast and Community Sharing Decree',
+      description: 'The High Council proclaimed a period of sacred communal sharing; temple storehouses opened to the people.',
+      public_statement: 'The divine calls us to share. Temple granaries are open. Those who hoard shall answer to higher authority.',
+    },
+    vi: {
+      policy_name: 'Sắc Lệnh Nhịn Ăn Thiêng Liêng và Chia Sẻ Cộng Đồng',
+      description: 'Thượng Hội đồng tuyên bố thời kỳ chia sẻ cộng đồng thiêng liêng; kho lương thực của đền thờ được mở cho dân chúng.',
+      public_statement: 'Thần thánh kêu gọi chúng ta chia sẻ. Kho thóc đền thờ đã mở cửa. Kẻ tích trữ sẽ phải trả lời trước quyền năng tối cao.',
+    },
+  },
+  food_default: {
+    en: {
+      policy_name: 'Emergency Food Distribution Program',
+      description: 'The Council activated emergency reserves and organized distribution centers across all districts.',
+      public_statement: 'The Governing Council assures all citizens: no one will go hungry. Emergency rations are now available at distribution centers.',
+    },
+    vi: {
+      policy_name: 'Chương Trình Phân Phối Lương Thực Khẩn Cấp',
+      description: 'Hội đồng kích hoạt kho dự trữ khẩn cấp và tổ chức các trung tâm phân phối trên toàn các quận.',
+      public_statement: 'Hội đồng Cai trị đảm bảo với toàn thể nhân dân: không ai bị đói. Khẩu phần khẩn cấp hiện có tại các trung tâm phân phối.',
+    },
+  },
+  stability_authoritarian: {
+    en: {
+      policy_name: 'Order Restoration Decree',
+      description: 'The Council deployed guard forces and imposed curfews to suppress civil disturbances and restore order.',
+      public_statement: 'Order will be maintained. Elements of disorder will be removed. Citizens are advised to return to their duties immediately.',
+    },
+    vi: {
+      policy_name: 'Sắc Lệnh Khôi Phục Trật Tự',
+      description: 'Hội đồng triển khai lực lượng canh giữ và ban bố lệnh giới nghiêm để trấn áp bạo loạn dân sự và khôi phục trật tự.',
+      public_statement: 'Trật tự sẽ được duy trì. Những phần tử gây rối sẽ bị loại bỏ. Người dân được khuyến cáo quay lại nhiệm vụ ngay lập tức.',
+    },
+  },
+  stability_theocratic: {
+    en: {
+      policy_name: 'Spiritual Renewal and Reconciliation Edict',
+      description: 'The High Council declared a period of communal prayer and moral renewal to heal social rifts.',
+      public_statement: 'We are one people under divine guidance. Let us lay down discord and renew our sacred covenant.',
+    },
+    vi: {
+      policy_name: 'Chiếu Chỉ Tái Sinh Tâm Linh và Hòa Giải',
+      description: 'Thượng Hội đồng tuyên bố thời kỳ cầu nguyện cộng đồng và tái sinh đạo đức để hàn gắn rạn nứt xã hội.',
+      public_statement: 'Chúng ta là một dân tộc dưới sự dẫn dắt của thần thánh. Hãy gác bỏ bất hòa và gia hạn giao ước thiêng liêng của chúng ta.',
+    },
+  },
+  stability_welfare: {
+    en: {
+      policy_name: 'Social Stability and Dialogue Initiative',
+      description: 'The Council launched community dialogue programs and increased social support services to address underlying grievances.',
+      public_statement: 'The Council listens. Community centers and conflict-resolution services are now open across all districts.',
+    },
+    vi: {
+      policy_name: 'Sáng Kiến Ổn Định Xã Hội và Đối Thoại',
+      description: 'Hội đồng triển khai chương trình đối thoại cộng đồng và tăng cường dịch vụ hỗ trợ xã hội để giải quyết các bất bình cơ bản.',
+      public_statement: 'Hội đồng lắng nghe. Các trung tâm cộng đồng và dịch vụ giải quyết xung đột nay đã mở cửa trên toàn quận.',
+    },
+  },
+  stability_technocratic: {
+    en: {
+      policy_name: 'Algorithmic Grievance Optimization Protocol',
+      description: 'The Algorithm Advisory Board deployed predictive social management tools to preemptively resolve instability vectors.',
+      public_statement: 'Analysis complete. Social instability corrected to within acceptable parameters. Comply with recommended behavioral adjustments.',
+    },
+    vi: {
+      policy_name: 'Giao Thức Tối Ưu Hóa Bất Bình bằng Thuật Toán',
+      description: 'Ban Cố vấn Thuật toán triển khai công cụ quản lý xã hội dự đoán để chủ động giải quyết các vectơ bất ổn.',
+      public_statement: 'Phân tích hoàn tất. Bất ổn xã hội đã được hiệu chỉnh trong phạm vi chấp nhận. Vui lòng tuân thủ các điều chỉnh hành vi được khuyến nghị.',
+    },
+  },
+  stability_default: {
+    en: {
+      policy_name: 'Civil Reconciliation Measures',
+      description: 'The Council held emergency sessions to address grievances and announced a package of reform pledges.',
+      public_statement: "The Council hears the people's concerns and pledges meaningful reforms. Dialogue is open.",
+    },
+    vi: {
+      policy_name: 'Biện Pháp Hòa Giải Dân Sự',
+      description: 'Hội đồng tổ chức phiên họp khẩn cấp để giải quyết bất bình và công bố gói cam kết cải cách.',
+      public_statement: 'Hội đồng lắng nghe mối quan tâm của nhân dân và cam kết cải cách thực chất. Đối thoại đang mở.',
+    },
+  },
+  trust_high_state: {
+    en: {
+      policy_name: 'Public Unity and Trust Decree',
+      description: 'The Council launched a mandatory civic unity campaign alongside increased public services to rebuild trust.',
+      public_statement: "The Council reaffirms its commitment to the people. Unity is not optional — it is the foundation of our society.",
+    },
+    vi: {
+      policy_name: 'Sắc Lệnh Đoàn Kết Công Cộng và Niềm Tin',
+      description: 'Hội đồng triển khai chiến dịch đoàn kết dân sự bắt buộc cùng tăng cường dịch vụ công để khôi phục niềm tin.',
+      public_statement: 'Hội đồng khẳng định lại cam kết với nhân dân. Đoàn kết không phải là tùy chọn — đó là nền tảng của xã hội chúng ta.',
+    },
+  },
+  trust_low_state: {
+    en: {
+      policy_name: 'Transparency and Accountability Initiative',
+      description: 'The Council announced transparency measures and public consultation forums to restore citizen confidence.',
+      public_statement: 'The Governing Council opens its books and its doors. Citizens deserve honesty, and we deliver it.',
+    },
+    vi: {
+      policy_name: 'Sáng Kiến Minh Bạch và Trách Nhiệm Giải Trình',
+      description: 'Hội đồng công bố các biện pháp minh bạch và diễn đàn tham vấn công cộng để khôi phục niềm tin của người dân.',
+      public_statement: 'Hội đồng Cai trị mở sổ sách và mở cửa. Người dân xứng đáng được biết sự thật, và chúng tôi thực hiện điều đó.',
+    },
+  },
+  resources_libertarian: {
+    en: {
+      policy_name: 'Resource Market Efficiency Act',
+      description: 'The Council introduced tradeable extraction quotas and market incentives for resource conservation.',
+      public_statement: 'Market-based conservation is the answer. Extraction quotas are now tradeable assets.',
+    },
+    vi: {
+      policy_name: 'Đạo Luật Hiệu Quả Thị Trường Tài Nguyên',
+      description: 'Hội đồng giới thiệu hạn ngạch khai thác có thể giao dịch và các khuyến khích thị trường cho bảo tồn tài nguyên.',
+      public_statement: 'Bảo tồn dựa trên thị trường là câu trả lời. Hạn ngạch khai thác nay là tài sản có thể giao dịch.',
+    },
+  },
+  resources_default: {
+    en: {
+      policy_name: 'Resource Conservation Mandate',
+      description: 'The Council mandated reduced extraction rates, banned non-essential resource use, and invested in regeneration programs.',
+      public_statement: 'Sustainable use of natural resources is now mandatory. Extraction quotas have been set. The land must recover.',
+    },
+    vi: {
+      policy_name: 'Lệnh Bảo Tồn Tài Nguyên',
+      description: 'Hội đồng bắt buộc giảm tốc độ khai thác, cấm sử dụng tài nguyên không thiết yếu, và đầu tư vào chương trình tái tạo.',
+      public_statement: 'Sử dụng tài nguyên thiên nhiên bền vững nay là bắt buộc. Hạn ngạch khai thác đã được thiết lập. Đất đai phải được phục hồi.',
+    },
+  },
+  labor_authoritarian: {
+    en: {
+      policy_name: 'Labor Discipline Decree',
+      description: 'The Council declared labor unrest a threat to public order and authorized enforcement action against strike organizers.',
+      public_statement: 'The Council will not tolerate economic sabotage. Workers who abandon their posts undermine society itself.',
+    },
+    vi: {
+      policy_name: 'Sắc Lệnh Kỷ Luật Lao Động',
+      description: 'Hội đồng tuyên bố bất ổn lao động là mối đe dọa trật tự công cộng và ủy quyền thực thi hành động đối với các thủ lĩnh đình công.',
+      public_statement: 'Hội đồng sẽ không dung thứ hành động phá hoại kinh tế. Công nhân bỏ vị trí làm suy yếu chính xã hội.',
+    },
+  },
+  labor_welfare: {
+    en: {
+      policy_name: 'Collective Bargaining Framework',
+      description: 'The Council opened negotiations with worker representatives, offering wage adjustments and improved working conditions.',
+      public_statement: "Workers' concerns are legitimate. The Council commits to fair negotiations and a better social compact.",
+    },
+    vi: {
+      policy_name: 'Khung Thương Lượng Tập Thể',
+      description: 'Hội đồng mở đàm phán với đại diện công nhân, đề nghị điều chỉnh lương và cải thiện điều kiện làm việc.',
+      public_statement: 'Mối quan tâm của công nhân là chính đáng. Hội đồng cam kết đàm phán công bằng và một khế ước xã hội tốt hơn.',
+    },
+  },
+  labor_default: {
+    en: {
+      policy_name: 'Labor Market Flexibility Initiative',
+      description: 'The Council introduced market-based incentives to resolve labor disputes, including productivity bonuses and deregulation of hiring.',
+      public_statement: 'Free markets resolve labor disputes better than mandates. We trust citizens to find their own equilibrium.',
+    },
+    vi: {
+      policy_name: 'Sáng Kiến Linh Hoạt Thị Trường Lao Động',
+      description: 'Hội đồng đưa ra các khuyến khích dựa trên thị trường để giải quyết tranh chấp lao động, bao gồm thưởng năng suất và bãi bỏ quy định tuyển dụng.',
+      public_statement: 'Thị trường tự do giải quyết tranh chấp lao động tốt hơn các mệnh lệnh. Chúng tôi tin tưởng người dân tìm ra cân bằng của riêng họ.',
+    },
+  },
+  generic: {
+    en: {
+      policy_name: 'Emergency Stabilization Measures',
+      description: 'The Council convened an emergency session and implemented a package of stabilization measures to address the current crisis.',
+      public_statement: 'The Council is taking decisive action. Citizens should remain calm and trust that the situation is being managed.',
+    },
+    vi: {
+      policy_name: 'Biện Pháp Ổn Định Khẩn Cấp',
+      description: 'Hội đồng triệu tập phiên họp khẩn cấp và thực hiện gói biện pháp ổn định để giải quyết cuộc khủng hoảng hiện tại.',
+      public_statement: 'Hội đồng đang hành động quyết đoán. Người dân hãy bình tĩnh và tin tưởng rằng tình hình đang được xử lý.',
+    },
+  },
+}
+
+export function getFallbackPolicy(lang: Lang, key: string): PolicyTemplate {
+  const entry = FALLBACK_POLICIES[key] ?? FALLBACK_POLICIES.generic
+  return pick(lang, entry)
+}
+
 export function pickRoutineMessage(lang: Lang, regime: RegimeType): string {
   const pool = pick(lang, ROUTINE_MESSAGES[regime])
   return pool[Math.floor(Math.random() * pool.length)]
@@ -206,19 +426,21 @@ export function noAlertsSummaryLine(lang: Lang): string {
     : '• No critical alerts — all indicators within acceptable range.'
 }
 
-export function describeAlert(lang: Lang, kind: 'food' | 'stability' | 'trust' | 'pressure' | 'resources', level: 'critical' | 'warning', pct: number): string {
+export function describeAlert(lang: Lang, kind: 'food' | 'stability' | 'trust' | 'pressure' | 'resources' | 'labor_unrest', level: 'critical' | 'warning', pct: number): string {
   const p = Math.round(pct)
   if (lang === 'vi') {
     if (kind === 'food') return level === 'critical' ? `lương thực cực kỳ thiếu (${p}%)` : `lương thực thấp (${p}%)`
     if (kind === 'stability') return level === 'critical' ? `ổn định xã hội ở mức nguy hiểm (${p}%)` : `ổn định đang suy giảm (${p}%)`
     if (kind === 'trust') return level === 'critical' ? `niềm tin vào chính quyền ở mức khủng hoảng (${p}%)` : `niềm tin vào chính quyền suy giảm (${p}%)`
     if (kind === 'pressure') return level === 'critical' ? `bất ổn dân sự ở mức báo động (${p}%)` : `áp lực chính trị gia tăng (${p}%)`
+    if (kind === 'labor_unrest') return level === 'critical' ? `bất ổn lao động ở mức nguy hiểm — nguy cơ đình công (${p}%)` : `ý thức giai cấp công nhân đang tăng (${p}%)`
     return level === 'critical' ? `tài nguyên thiên nhiên cạn kiệt nghiêm trọng (${p}%)` : `tài nguyên thiên nhiên suy giảm (${p}%)`
   }
   if (kind === 'food') return level === 'critical' ? `food supply critically low (${p}%)` : `food supply low (${p}%)`
   if (kind === 'stability') return level === 'critical' ? `societal stability dangerously low (${p}%)` : `stability declining (${p}%)`
   if (kind === 'trust') return level === 'critical' ? `trust in government at crisis level (${p}%)` : `government trust declining (${p}%)`
   if (kind === 'pressure') return level === 'critical' ? `civil unrest at critical level (${p}%)` : `political pressure rising (${p}%)`
+  if (kind === 'labor_unrest') return level === 'critical' ? `labor unrest at dangerous levels — strikes imminent (${p}%)` : `worker class consciousness rising (${p}%)`
   return level === 'critical' ? `natural resources critically depleted (${p}%)` : `natural resources depleting (${p}%)`
 }
 

@@ -4,7 +4,7 @@ import { setupGreeting, setupChat, applyPreset, handlePlayerChat, resetInGameHis
 import { listAvailableModels, PROVIDER_MODELS, getAIUsage, getRemainingRPM, getWaitSeconds } from './ai/provider'
 import { addFeedRaw, addFeedThinking, setFeedFilter, setChronicleFilter, refreshChronicleTimestamps } from './ui/feed'
 import { showConfirm, showInfo } from './ui/modal'
-import { initWorld, tick, spawnEvent, applyInterventions } from './sim/engine'
+import { initWorld, tick, spawnEvent, applyInterventions, applyInstantEventDeaths } from './sim/engine'
 import { setLang, t, tf } from './i18n'
 import { initMap, setMapPaused } from './ui/map'
 import type { Lang } from './i18n'
@@ -400,7 +400,8 @@ function updateTopbar() {
   if (activeEvs.length > 0) {
     const labels = activeEvs.map(ev => {
       const pct = Math.round((1 - ev.elapsed_ticks / ev.duration_ticks) * 100)
-      return `${ev.type} ${pct}%`
+      const label = t(`event.${ev.type}`) ?? ev.type
+      return `${label} ${pct}%`
     })
     evEl.textContent = `⚡ ${labels.join(' · ')}`
     evEl.classList.remove('hidden')
@@ -490,7 +491,7 @@ function flushConsequences() {
   for (const c of due) {
     const idx = consequenceQueue.indexOf(c)
     consequenceQueue.splice(idx, 1)
-    const affected = applyInterventions(world, [c.intervention])
+    const { affected } = applyInterventions(world, [c.intervention])
     addFeedRaw(
       `🌊 ${c.label} (${affected} affected)`,
       'warning', world.year, world.day,
@@ -770,7 +771,16 @@ function injectEvent(response: Awaited<ReturnType<typeof handlePlayerChat>>) {
   if (!world || !response.event) return
   const narrative = response.event.narrative_open ?? response.answer
   addFeedRaw(narrative, 'warning', world.year, world.day)
-  spawnEvent(world, response.event)
+  const spawned = spawnEvent(world, response.event)
+
+  // Apply instant deaths for catastrophic events (nuclear_explosion, bombing, tsunami, etc.)
+  const killed = applyInstantEventDeaths(world, spawned)
+  if (killed > 0) {
+    addFeedRaw(
+      tf('engine.instant_deaths', { n: killed }) as string,
+      'critical', world.year, world.day,
+    )
+  }
 
   // Async consequence prediction (non-blocking)
   void scheduleConsequences(response.event.type ?? 'event', narrative)
@@ -782,18 +792,36 @@ function executeIntervention(response: Awaited<ReturnType<typeof handlePlayerCha
   addFeedRaw(response.answer, 'warning', world.year, world.day)
 
   if (response.interventions?.length) {
-    const affected = applyInterventions(world, response.interventions)
-    addFeedRaw(
-      tf('engine.intervention', { n: affected, s: '' }) as string,
-      'critical', world.year, world.day,
-    )
+    const { affected, killed } = applyInterventions(world, response.interventions)
+    if (killed > 0) {
+      addFeedRaw(
+        tf('engine.instant_deaths', { n: killed }) as string,
+        'critical', world.year, world.day,
+      )
+    }
+    const survivors = affected - killed
+    if (survivors > 0) {
+      addFeedRaw(
+        tf('engine.intervention', { n: survivors, s: '' }) as string,
+        'warning', world.year, world.day,
+      )
+    }
   }
 
   // Companion event (e.g., radiation epidemic after nuclear bomb)
   if (response.event) {
     const narrative = response.event.narrative_open ?? ''
-    addFeedRaw(narrative, 'warning', world!.year, world!.day)
-    spawnEvent(world, response.event)
+    if (narrative) addFeedRaw(narrative, 'warning', world!.year, world!.day)
+    const spawned = spawnEvent(world, response.event)
+
+    // Companion events (e.g. tsunami after bombing) can also have instant kills
+    const companionKilled = applyInstantEventDeaths(world, spawned)
+    if (companionKilled > 0) {
+      addFeedRaw(
+        tf('engine.instant_deaths', { n: companionKilled }) as string,
+        'critical', world!.year, world!.day,
+      )
+    }
   }
 
   // Async consequence prediction (non-blocking)

@@ -350,6 +350,16 @@ export function createNPC(idx: number, total: number, constitution: Constitution
     legendary: false,
     work_motivation: inferMotivationType(role, constitution, idx),
     bio_clock_offset: clamp(Math.round(gaussian(0, 1.2)), -2, 3),
+
+    // Class solidarity: starts higher for laborers in unequal societies
+    class_solidarity: clamp(
+      (role === 'farmer' || role === 'craftsman' ? 20 : 10)
+      + constitution.gini_start * 30
+      + gaussian(0, 8),
+      0, 60,
+    ),
+    on_strike: false,
+    bridge_score: 0,
   }
 
   return {
@@ -999,6 +1009,8 @@ export function computeProductivity(npc: NPC, state: WorldState): number {
     : 0
   // Burnout penalty: chronic overwork severely reduces output
   const burnoutPenalty = (npc.burnout_ticks ?? 0) >= 480 ? 0.50 : 0
+  // Strike: participating workers produce nothing
+  if (npc.on_strike) return 0
   return Math.max(0,
     npc.base_skill * motivation * ageFactor
     * (1 - fairnessPenalty)

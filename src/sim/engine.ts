@@ -1,7 +1,7 @@
-import type { WorldState, Constitution, NPC, SimEvent, NarrativeEntry, NPCIntervention } from '../types'
+import type { WorldState, Constitution, NPC, SimEvent, NarrativeEntry, NPCIntervention, ActiveStrike } from '../types'
 import { createNPC, tickNPC, computeProductivity, RESIDENTIAL_ZONES } from './npc'
 import type { IndividualEvent } from './npc'
-import { buildNetwork } from './network'
+import { buildNetwork, MAX_STRONG_TIES, MAX_WEAK_TIES, MAX_INFO_TIES } from './network'
 import { initInstitutions, clamp, getSeason, getSeasonFactor, SEASON_LABELS, ZONE_ADJACENCY } from './constitution'
 import { addFeedRaw, addChronicle } from '../ui/feed'
 import { t, tf } from '../i18n'
@@ -68,6 +68,7 @@ export async function initWorld(constitution: Constitution): Promise<WorldState>
     natural_resources: clamp(naturalResourcesInit / 1000, 0, 100),
     energy: 50,
     literacy: 50,
+    labor_unrest: 0,
   }
   const macro = computeMacroStats({
     tick: 0,
@@ -109,6 +110,7 @@ export async function initWorld(constitution: Constitution): Promise<WorldState>
     milestones: [],
     births_total: 0,
     immigration_total: 0,
+    active_strikes: [],
   }
 }
 
@@ -198,6 +200,20 @@ export function tick(state: WorldState): void {
     checkRumors(state)
     checkMilestones(state)
     checkImmigration(state)
+
+    // Network maintenance: prune dead links daily, organic tie formation daily
+    maintainNetworkLinks(state)
+    formOrganicStrongTies(state)
+    computeBridgeScores(state)
+
+    // Info tie refresh: every 30 sim-days (720 ticks)
+    if (state.day % 30 === 0) {
+      refreshInfoTies(state)
+    }
+
+    // Class solidarity spreads daily; strikes checked daily
+    spreadSolidarity(state)
+    checkLaborStrikes(state)
   }
 }
 
@@ -273,7 +289,7 @@ function tickEvents(state: WorldState): void {
   state.active_events = state.active_events.filter(ev => ev.elapsed_ticks < ev.duration_ticks)
 }
 
-export function spawnEvent(state: WorldState, partial: Partial<SimEvent>): void {
+export function spawnEvent(state: WorldState, partial: Partial<SimEvent>): SimEvent {
   const ev: SimEvent = {
     id: crypto.randomUUID(),
     type: partial.type ?? 'storm',
@@ -287,38 +303,71 @@ export function spawnEvent(state: WorldState, partial: Partial<SimEvent>): void 
     triggers: partial.triggers ?? [],
   }
   state.active_events.push(ev)
+  return ev
+}
+
+/**
+ * Apply immediate zone-targeted deaths when a catastrophic event spawns.
+ * Uses the event's `instant_kill_rate` field. Returns the number of NPCs killed.
+ */
+export function applyInstantEventDeaths(state: WorldState, ev: SimEvent): number {
+  const rate = ev.effects_per_tick.instant_kill_rate ?? 0
+  if (rate <= 0) return 0
+
+  const cause = ev.effects_per_tick.instant_kill_cause ?? 'accident'
+  const affected = state.npcs.filter(
+    n => n.lifecycle.is_alive && (ev.zones.length === 0 || ev.zones.includes(n.zone)),
+  )
+
+  let killed = 0
+  for (const npc of affected) {
+    if (Math.random() < rate) {
+      npc.lifecycle.is_alive = false
+      npc.lifecycle.death_cause = cause
+      npc.lifecycle.death_tick = state.tick
+      killed++
+    }
+  }
+  return killed
 }
 
 function defaultEffects(type: string, intensity: number): SimEvent['effects_per_tick'] {
   const i = intensity
   // displacement_chance: per-tick mortality rate factor (applied in tickEvents as × 0.002)
+  // instant_kill_rate: fraction of zone NPCs killed immediately on event spawn
   const map: Record<string, SimEvent['effects_per_tick']> = {
-    storm:           { food_stock_delta: -i * 50,  stress_delta: i * 2,  trust_delta: -i * 3,  displacement_chance: i * 0.10 },
-    drought:         { food_stock_delta: -i * 80,  stress_delta: i * 1,  trust_delta: -i * 2,  displacement_chance: i * 0.05 },
-    flood:           { food_stock_delta: -i * 60,  stress_delta: i * 3,  trust_delta: -i * 4,  displacement_chance: i * 0.20 },
-    tsunami:         { food_stock_delta: -i * 200, stress_delta: i * 8,  trust_delta: -i * 6,  displacement_chance: i * 0.80 },
-    earthquake:      { food_stock_delta: -i * 100, stress_delta: i * 6,  trust_delta: -i * 5,  displacement_chance: i * 0.50 },
-    wildfire:        { food_stock_delta: -i * 70,  stress_delta: i * 4,  trust_delta: -i * 3,  displacement_chance: i * 0.25 },
-    epidemic:        { food_stock_delta: 0,         stress_delta: i * 4,  trust_delta: -i * 5,  displacement_chance: i * 0.40 },
-    resource_boom:   { food_stock_delta: +i * 100, stress_delta: -i * 2, trust_delta: +i * 3,  displacement_chance: 0 },
-    harsh_winter:    { food_stock_delta: -i * 70,  stress_delta: i * 2,  trust_delta: -i * 2,  displacement_chance: i * 0.08 },
-    trade_offer:     { food_stock_delta: +i * 60,  stress_delta: -i * 1, trust_delta: +i * 2,  displacement_chance: 0 },
-    refugee_wave:    { food_stock_delta: -i * 30,  stress_delta: i * 2,  trust_delta: -i * 1,  displacement_chance: 0 },
-    ideology_import: { food_stock_delta: 0,         stress_delta: i * 1,  trust_delta: -i * 4,  displacement_chance: 0 },
-    external_threat: { food_stock_delta: -i * 20,  stress_delta: i * 5,  trust_delta: -i * 3,  displacement_chance: i * 0.10 },
-    blockade:        { food_stock_delta: -i * 90,  stress_delta: i * 3,  trust_delta: -i * 5,  displacement_chance: i * 0.05 },
-    scandal_leak:    { food_stock_delta: 0,         stress_delta: i * 2,  trust_delta: -i * 10, displacement_chance: 0 },
-    charismatic_npc: { food_stock_delta: 0,         stress_delta: -i * 1, trust_delta: +i * 2,  displacement_chance: 0 },
-    martyr:          { food_stock_delta: 0,         stress_delta: i * 3,  trust_delta: -i * 8,  displacement_chance: 0 },
-    tech_shift:      { food_stock_delta: +i * 40,  stress_delta: i * 1,  trust_delta: +i * 1,  displacement_chance: 0 },
+    storm:            { food_stock_delta: -i * 50,  stress_delta: i * 2,  trust_delta: -i * 3,  displacement_chance: i * 0.10 },
+    drought:          { food_stock_delta: -i * 80,  stress_delta: i * 1,  trust_delta: -i * 2,  displacement_chance: i * 0.05 },
+    flood:            { food_stock_delta: -i * 60,  stress_delta: i * 3,  trust_delta: -i * 4,  displacement_chance: i * 0.20 },
+    tsunami:          { food_stock_delta: -i * 200, stress_delta: i * 8,  trust_delta: -i * 6,  displacement_chance: i * 0.60, instant_kill_rate: i * 0.35, instant_kill_cause: 'accident' },
+    earthquake:       { food_stock_delta: -i * 100, stress_delta: i * 6,  trust_delta: -i * 5,  displacement_chance: i * 0.40, instant_kill_rate: i * 0.15, instant_kill_cause: 'accident' },
+    wildfire:         { food_stock_delta: -i * 70,  stress_delta: i * 4,  trust_delta: -i * 3,  displacement_chance: i * 0.25 },
+    epidemic:         { food_stock_delta: 0,         stress_delta: i * 4,  trust_delta: -i * 5,  displacement_chance: i * 0.40 },
+    resource_boom:    { food_stock_delta: +i * 100, stress_delta: -i * 2, trust_delta: +i * 3,  displacement_chance: 0 },
+    harsh_winter:     { food_stock_delta: -i * 70,  stress_delta: i * 2,  trust_delta: -i * 2,  displacement_chance: i * 0.08 },
+    trade_offer:      { food_stock_delta: +i * 60,  stress_delta: -i * 1, trust_delta: +i * 2,  displacement_chance: 0 },
+    refugee_wave:     { food_stock_delta: -i * 30,  stress_delta: i * 2,  trust_delta: -i * 1,  displacement_chance: 0 },
+    ideology_import:  { food_stock_delta: 0,         stress_delta: i * 1,  trust_delta: -i * 4,  displacement_chance: 0 },
+    external_threat:  { food_stock_delta: -i * 20,  stress_delta: i * 5,  trust_delta: -i * 3,  displacement_chance: i * 0.10 },
+    blockade:         { food_stock_delta: -i * 90,  stress_delta: i * 3,  trust_delta: -i * 5,  displacement_chance: i * 0.05 },
+    scandal_leak:     { food_stock_delta: 0,         stress_delta: i * 2,  trust_delta: -i * 10, displacement_chance: 0 },
+    charismatic_npc:  { food_stock_delta: 0,         stress_delta: -i * 1, trust_delta: +i * 2,  displacement_chance: 0 },
+    martyr:           { food_stock_delta: 0,         stress_delta: i * 3,  trust_delta: -i * 8,  displacement_chance: 0 },
+    tech_shift:       { food_stock_delta: +i * 40,  stress_delta: i * 1,  trust_delta: +i * 1,  displacement_chance: 0 },
+    // ── Catastrophic man-made events ──────────────────────────────────────────
+    nuclear_explosion: { food_stock_delta: -i * 500, stress_delta: i * 20, trust_delta: -i * 20, displacement_chance: i * 1.0, instant_kill_rate: i * 0.55, instant_kill_cause: 'violence' },
+    bombing:           { food_stock_delta: -i * 150, stress_delta: i * 15, trust_delta: -i * 15, displacement_chance: i * 0.70, instant_kill_rate: i * 0.30, instant_kill_cause: 'violence' },
+    meteor_strike:     { food_stock_delta: -i * 400, stress_delta: i * 18, trust_delta: -i * 18, displacement_chance: i * 0.90, instant_kill_rate: i * 0.45, instant_kill_cause: 'accident' },
+    volcanic_eruption: { food_stock_delta: -i * 350, stress_delta: i * 16, trust_delta: -i * 16, displacement_chance: i * 0.80, instant_kill_rate: i * 0.40, instant_kill_cause: 'accident' },
   }
   return map[type] ?? { food_stock_delta: 0, stress_delta: 0, trust_delta: 0, displacement_chance: 0 }
 }
 
 // ── Direct NPC Interventions ─────────────────────────────────────────────────
 
-export function applyInterventions(state: WorldState, interventions: NPCIntervention[]): number {
+export function applyInterventions(state: WorldState, interventions: NPCIntervention[]): { affected: number; killed: number } {
   let totalAffected = 0
+  let totalKilled = 0
 
   for (const iv of interventions) {
     // Select candidate NPCs
@@ -346,10 +395,11 @@ export function applyInterventions(state: WorldState, interventions: NPCInterven
       applyInterventionToNPC(npc, iv, state)
     }
 
+    if (iv.kill) totalKilled += candidates.length
     totalAffected += candidates.length
   }
 
-  return totalAffected
+  return { affected: totalAffected, killed: totalKilled }
 }
 
 function applyInterventionToNPC(npc: NPC, iv: NPCIntervention, state: WorldState): void {
@@ -381,6 +431,13 @@ function applyInterventionToNPC(npc: NPC, iv: NPCIntervention, state: WorldState
     if (wd.authority_trust !== undefined) wv.authority_trust = clamp(wv.authority_trust + wd.authority_trust, 0, 1)
     if (wd.risk_tolerance  !== undefined) wv.risk_tolerance  = clamp(wv.risk_tolerance  + wd.risk_tolerance,  0, 1)
     if (wd.time_preference !== undefined) wv.time_preference = clamp(wv.time_preference + wd.time_preference, 0, 1)
+  }
+
+  // Solidarity delta
+  if (iv.solidarity_delta !== undefined) {
+    npc.class_solidarity = clamp(npc.class_solidarity + iv.solidarity_delta, 0, 100)
+    // End strike if solidarity drops below threshold
+    if (npc.class_solidarity < 45 && npc.on_strike) npc.on_strike = false
   }
 
   // Memory injection
@@ -475,7 +532,14 @@ export function computeMacroStats(state: WorldState): WorldState['macro'] {
     0, 100,
   )
 
-  return { food, gini, political_pressure: politicalPressure, trust, stability, natural_resources, energy, literacy }
+  // Labor unrest: avg class_solidarity of workers weighted by inequality
+  const workers = npcs.filter(n => n.role !== 'leader' && n.role !== 'guard' && n.role !== 'child')
+  const avgSolidarity = workers.length > 0
+    ? workers.reduce((s, n) => s + n.class_solidarity, 0) / workers.length
+    : 0
+  const labor_unrest = clamp(avgSolidarity * (0.4 + gini * 0.6), 0, 100)
+
+  return { food, gini, political_pressure: politicalPressure, trust, stability, natural_resources, energy, literacy, labor_unrest }
 }
 
 function computeGini(sorted: number[]): number {
@@ -781,8 +845,8 @@ function checkLifecycleEvents(state: WorldState): void {
     target.lifecycle.romance_target_id = null
     npc.lifecycle.romance_score    = 0
     target.lifecycle.romance_score = 0
-    npc.strong_ties    = [...new Set([...npc.strong_ties,    target.id])]
-    target.strong_ties = [...new Set([...target.strong_ties, npc.id])]
+    if (npc.strong_ties.length    < MAX_STRONG_TIES) npc.strong_ties    = [...new Set([...npc.strong_ties,    target.id])]
+    if (target.strong_ties.length < MAX_STRONG_TIES) target.strong_ties = [...new Set([...target.strong_ties, npc.id])]
     // Marriage happiness boost
     npc.happiness    = clamp(npc.happiness    + 12, 0, 100)
     target.happiness = clamp(target.happiness + 12, 0, 100)
@@ -889,16 +953,22 @@ function spawnImmigrant(state: WorldState): void {
   immigrant.info_ties = infoTargets.map(n => n.id)
 
   for (const target of strongTargets) {
-    state.network.strong.get(target.id)?.add(newId)
-    target.strong_ties = [...new Set([...target.strong_ties, newId])]
+    if (target.strong_ties.length < MAX_STRONG_TIES) {
+      state.network.strong.get(target.id)?.add(newId)
+      target.strong_ties = [...new Set([...target.strong_ties, newId])]
+    }
   }
   for (const target of weakTargets) {
-    state.network.weak.get(target.id)?.add(newId)
-    target.weak_ties = [...new Set([...target.weak_ties, newId])]
+    if (target.weak_ties.length < MAX_WEAK_TIES) {
+      state.network.weak.get(target.id)?.add(newId)
+      target.weak_ties = [...new Set([...target.weak_ties, newId])]
+    }
   }
   for (const target of infoTargets) {
-    state.network.info.get(target.id)?.add(newId)
-    target.info_ties = [...new Set([...target.info_ties, newId])]
+    if (target.info_ties.length < MAX_INFO_TIES) {
+      state.network.info.get(target.id)?.add(newId)
+      target.info_ties = [...new Set([...target.info_ties, newId])]
+    }
   }
 
   npcs.push(immigrant)
@@ -927,6 +997,266 @@ function checkImmigration(state: WorldState): void {
   const text = tf('engine.immigration_wave', { n: arrivals })
   addFeedRaw(text, 'info', state.year, state.day)
   addChronicle(text, state.year, state.day, 'minor')
+}
+
+// ── Network Maintenance ───────────────────────────────────────────────────────
+
+/**
+ * Daily: remove dead NPC IDs from all tie arrays and sync the network Maps.
+ * Prevents arrays from bloating as NPCs die over time.
+ */
+function maintainNetworkLinks(state: WorldState): void {
+  const alive = new Set(state.npcs.filter(n => n.lifecycle.is_alive).map(n => n.id))
+
+  for (const npc of state.npcs) {
+    if (!npc.lifecycle.is_alive) continue
+    npc.strong_ties = npc.strong_ties.filter(id => alive.has(id))
+    npc.weak_ties   = npc.weak_ties.filter(id => alive.has(id))
+    npc.info_ties   = npc.info_ties.filter(id => alive.has(id))
+  }
+
+  // Sync the Map-based graph too
+  for (const [, set] of state.network.strong) {
+    for (const id of [...set]) { if (!alive.has(id)) set.delete(id) }
+  }
+  for (const [, set] of state.network.weak) {
+    for (const id of [...set]) { if (!alive.has(id)) set.delete(id) }
+  }
+  for (const [, set] of state.network.info) {
+    for (const id of [...set]) { if (!alive.has(id)) set.delete(id) }
+  }
+}
+
+/**
+ * Every 30 days: refresh a fraction of info ties to reflect worldview drift.
+ * NPCs whose worldviews have diverged lose info ties; newly similar NPCs gain them.
+ * This prevents the info network from becoming stale after prolonged ideological shifts.
+ */
+function refreshInfoTies(state: WorldState): void {
+  const living = state.npcs.filter(n => n.lifecycle.is_alive)
+  const infoTarget = Math.round(10 + clamp(state.constitution.network_cohesion, 0.1, 1) * 30)
+
+  // Process ~20% of living NPCs per refresh cycle (spread load across calls)
+  const sample = living.filter(() => Math.random() < 0.20)
+
+  for (const npc of sample) {
+    // Drop ties where worldviews have significantly diverged
+    npc.info_ties = npc.info_ties.filter(id => {
+      const other = state.npcs[id]
+      if (!other?.lifecycle.is_alive) return false
+      const collectivismDiff = Math.abs(npc.worldview.collectivism - other.worldview.collectivism)
+      const authorityDiff    = Math.abs(npc.worldview.authority_trust - other.worldview.authority_trust)
+      const riskDiff         = Math.abs(npc.worldview.risk_tolerance - other.worldview.risk_tolerance)
+      // Keep tie if still ideologically close, same role, or same community group
+      return collectivismDiff < 0.40 || authorityDiff < 0.40 || riskDiff < 0.35
+        || npc.role === other.role
+        || (npc.community_group !== null && npc.community_group === other.community_group)
+    })
+
+    // Try to form new ties through friends-of-friends (triadic closure)
+    if (npc.info_ties.length < infoTarget) {
+      const candidates = new Set<number>()
+      for (const tid of npc.strong_ties.slice(0, 5)) {
+        const neighbor = state.npcs[tid]
+        if (!neighbor?.lifecycle.is_alive) continue
+        for (const iid of neighbor.info_ties) {
+          if (iid !== npc.id && !npc.info_ties.includes(iid)) candidates.add(iid)
+        }
+      }
+      for (const cid of candidates) {
+        if (npc.info_ties.length >= infoTarget) break
+        const other = state.npcs[cid]
+        if (!other?.lifecycle.is_alive || other.info_ties.length >= MAX_INFO_TIES) continue
+        const collectivismDiff = Math.abs(npc.worldview.collectivism - other.worldview.collectivism)
+        const authorityDiff    = Math.abs(npc.worldview.authority_trust - other.worldview.authority_trust)
+        if (collectivismDiff < 0.25 && authorityDiff < 0.25) {
+          npc.info_ties.push(cid)
+          state.network.info.get(npc.id)?.add(cid)
+          other.info_ties.push(npc.id)
+          state.network.info.get(cid)?.add(npc.id)
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Daily: NPCs who are socializing in the same zone have a small chance to
+ * form a new strong tie — organic friendship through repeated contact.
+ * Rate: ~1% per socializing pair per day. Capped by MAX_STRONG_TIES.
+ */
+function formOrganicStrongTies(state: WorldState): void {
+  const byZone: Record<string, NPC[]> = {}
+  for (const npc of state.npcs) {
+    if (!npc.lifecycle.is_alive || npc.action_state !== 'socializing') continue
+    if (npc.strong_ties.length >= MAX_STRONG_TIES) continue
+    if (!byZone[npc.zone]) byZone[npc.zone] = []
+    byZone[npc.zone].push(npc)
+  }
+
+  for (const group of Object.values(byZone)) {
+    if (group.length < 2) continue
+    // Sample a small subset of pairs to avoid O(N²) per zone
+    const maxPairs = Math.min(group.length, 8)
+    for (let i = 0; i < maxPairs; i++) {
+      const a = group[i]
+      const b = group[Math.floor(Math.random() * group.length)]
+      if (a.id === b.id || a.strong_ties.includes(b.id)) continue
+      if (b.strong_ties.length >= MAX_STRONG_TIES) continue
+      if (Math.random() < 0.01) {   // ~1% daily chance per encountered pair
+        a.strong_ties.push(b.id)
+        b.strong_ties.push(a.id)
+        state.network.strong.get(a.id)?.add(b.id)
+        state.network.strong.get(b.id)?.add(a.id)
+      }
+    }
+  }
+}
+
+// ── Class Solidarity & Labor Strikes ─────────────────────────────────────────
+
+/**
+ * Daily: spread class solidarity through weak_ties among same-role / same-class neighbors.
+ * High inequality accelerates spread; rising personal income and govt trust slow it.
+ * Leaders and guards naturally resist (structural interest in the status quo).
+ */
+function spreadSolidarity(state: WorldState): void {
+  const living = state.npcs.filter(n => n.lifecycle.is_alive)
+  const gini   = state.macro.gini
+  if (gini < 0.15) return  // solidarity is meaningless in truly egalitarian societies
+
+  const avgIncome = living.reduce((s, n) => s + n.daily_income, 0) / Math.max(living.length, 1)
+
+  for (const npc of living) {
+    // Elites and enforcers drift toward lower solidarity (structural interest)
+    if (npc.role === 'leader' || npc.role === 'guard') {
+      npc.class_solidarity = clamp(npc.class_solidarity - 0.3, 0, 100)
+      continue
+    }
+    if (npc.role === 'child') continue
+
+    let delta = 0
+
+    // Pull from same-class weak-tie neighbors with high solidarity + grievance
+    let pullCount = 0
+    for (const tid of npc.weak_ties.slice(0, 25)) {
+      const neighbor = state.npcs[tid]
+      if (!neighbor?.lifecycle.is_alive) continue
+      const wealthRatio = Math.max(npc.wealth, neighbor.wealth) / (Math.min(npc.wealth, neighbor.wealth) + 1)
+      const sameClass   = npc.role === neighbor.role || wealthRatio < 2.5
+      if (!sameClass) continue
+      if (neighbor.class_solidarity > npc.class_solidarity + 10 && neighbor.grievance > 45) {
+        delta += (neighbor.class_solidarity - npc.class_solidarity) * 0.025
+        pullCount++
+      }
+    }
+    if (pullCount > 0) delta = delta / pullCount
+
+    // Inequality amplifier: high gini turbocharges spread
+    delta *= (0.5 + gini * 1.5)
+
+    // Personal prosperity counters solidarity (rational self-interest)
+    if (npc.daily_income > avgIncome * 1.25) delta -= 0.8
+    if (npc.wealth > 2000) delta -= 0.4
+
+    // High government trust dampens solidarity
+    const govTrust = (npc.trust_in.government.intention + npc.trust_in.government.competence) / 2
+    if (govTrust > 0.55) delta -= govTrust * 0.6
+
+    // Natural gravity toward gini-calibrated baseline (long-run equilibrium)
+    const baseline = clamp((gini - 0.25) * 90, 0, 60)
+    delta += (baseline - npc.class_solidarity) * 0.005
+
+    npc.class_solidarity = clamp(npc.class_solidarity + delta, 0, 100)
+  }
+}
+
+// Cooldown: prevent the same role from striking twice within 60 sim-days
+const strikeCooldown: Record<string, number> = {}
+
+/**
+ * Daily: detect whether worker solidarity has crossed the strike threshold.
+ * A strike triggers when: avg solidarity > 72, avg grievance > 58, gini > 0.42.
+ * Existing strikes advance and end naturally or via government policy.
+ */
+function checkLaborStrikes(state: WorldState): void {
+  const living = state.npcs.filter(n => n.lifecycle.is_alive)
+
+  // ── Advance active strikes ──────────────────────────────────────────────
+  state.active_strikes = (state.active_strikes ?? []).filter(strike => {
+    const elapsed = state.tick - strike.start_tick
+    if (elapsed >= strike.duration_ticks) {
+      // Strike ends — exhaustion from sustained action drops solidarity
+      addFeedRaw(tf('engine.strike_end', { role: t(`role.${strike.role}`) as string }) as string, 'info', state.year, state.day)
+      addChronicle(tf('engine.strike_end', { role: t(`role.${strike.role}`) as string }) as string, state.year, state.day, 'major')
+      for (const npc of living.filter(n => n.role === strike.role)) {
+        npc.class_solidarity = clamp(npc.class_solidarity - 18, 0, 100)
+        npc.on_strike = false
+      }
+      return false
+    }
+
+    // While striking: hold action_state as 'organizing', maintain on_strike flag
+    for (const npc of living.filter(n => n.role === strike.role && n.class_solidarity > 45)) {
+      npc.on_strike      = true
+      npc.action_state   = 'organizing'
+    }
+    return true
+  })
+
+  // ── Detect new strikes ──────────────────────────────────────────────────
+  const strikeable = ['farmer', 'craftsman', 'merchant', 'scholar'] as const
+  for (const role of strikeable) {
+    if ((state.active_strikes ?? []).some(s => s.role === role)) continue
+    const cooldownEnd = strikeCooldown[role] ?? 0
+    if (state.tick - cooldownEnd < 24 * 60) continue  // 60-day cooldown per role
+
+    const roleNPCs       = living.filter(n => n.role === role)
+    if (roleNPCs.length < 4) continue
+    const avgSolidarity  = roleNPCs.reduce((s, n) => s + n.class_solidarity, 0) / roleNPCs.length
+    const avgGrievance   = roleNPCs.reduce((s, n) => s + n.grievance,        0) / roleNPCs.length
+
+    if (avgSolidarity > 72 && avgGrievance > 58 && state.macro.gini > 0.42) {
+      const demand: ActiveStrike['demand'] = avgGrievance > 80 ? 'rights'
+        : state.macro.gini > 0.60          ? 'wages'
+        :                                    'conditions'
+      const durationTicks = (5 + Math.floor(Math.random() * 10)) * 24   // 5–15 sim-days
+      const strike: ActiveStrike = { role, start_tick: state.tick, duration_ticks: durationTicks, demand }
+      state.active_strikes.push(strike)
+      strikeCooldown[role] = state.tick
+
+      const roleLabel   = t(`role.${role}`) as string
+      const demandLabel = t(`strike.demand.${demand}`) as string
+      addFeedRaw(tf('engine.strike_start', { role: roleLabel, demand: demandLabel }) as string, 'critical', state.year, state.day)
+      addChronicle(tf('engine.strike_start', { role: roleLabel, demand: demandLabel }) as string, state.year, state.day, 'major')
+    }
+  }
+}
+
+/**
+ * Daily: recompute bridge_score (betweenness proxy) for each NPC and
+ * update influence_score to reflect both strong-tie centrality and bridging power.
+ * Bridge score = fraction of distinct zone-clusters spanned by an NPC's weak_ties.
+ * A high bridge NPC controls cross-community information flow → more influence.
+ */
+function computeBridgeScores(state: WorldState): void {
+  const totalClusters = Math.max(new Set([...state.network.clusters.values()]).size, 1)
+  const maxDegree = Math.max(...state.npcs.map(n => n.strong_ties.length), 1)
+
+  for (const npc of state.npcs) {
+    if (!npc.lifecycle.is_alive) { npc.bridge_score = 0; continue }
+
+    const spannedClusters = new Set<number>()
+    for (const tid of npc.weak_ties) {
+      const cluster = state.network.clusters.get(tid)
+      if (cluster !== undefined) spannedClusters.add(cluster)
+    }
+    npc.bridge_score = spannedClusters.size / totalClusters
+
+    // Combined influence: 60% strong-tie centrality + 40% bridging power
+    const strongCentrality  = npc.strong_ties.length / maxDegree
+    npc.influence_score = clamp(strongCentrality * 0.6 + npc.bridge_score * 0.4, 0, 1)
+  }
 }
 
 // ── Season Transition ────────────────────────────────────────────────────────

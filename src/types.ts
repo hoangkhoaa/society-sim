@@ -26,6 +26,7 @@ export type EventType =
   | 'storm' | 'drought' | 'flood' | 'tsunami' | 'epidemic' | 'resource_boom' | 'harsh_winter'
   | 'trade_offer' | 'refugee_wave' | 'ideology_import' | 'external_threat' | 'blockade'
   | 'scandal_leak' | 'charismatic_npc' | 'martyr' | 'tech_shift' | 'wildfire' | 'earthquake'
+  | 'nuclear_explosion' | 'bombing' | 'meteor_strike' | 'volcanic_eruption'
 export type EventSource = 'player' | 'institution' | 'natural' | 'cascade'
 export type MemoryType = 'trust_broken' | 'helped' | 'harmed' | 'crisis' | 'windfall' | 'loss' | 'illness' | 'crime' | 'accident'
 export type MessageChannel = 'public' | 'private' | 'signal' | 'rumor'
@@ -168,6 +169,19 @@ export interface NPC {
   // Work rhythm & motivation
   work_motivation: WorkMotivationType   // what drives this NPC to work (regime-aligned + individual noise)
   bio_clock_offset: number              // individual biological clock offset in hours (−2 to +3)
+
+  // ── Class Solidarity / Labor Relations ─────────────────────────────────────
+  // Models collective class consciousness — how strongly an NPC identifies with
+  // their economic class and is willing to act collectively.
+  // Spreads via weak_ties among same-role / same-wealth-bracket neighbors.
+  // Distinct from grievance (personal suffering) and dissonance (ideological).
+  class_solidarity: number       // 0–100: solidarity with their economic class
+  on_strike: boolean             // currently participating in a labor strike
+
+  // ── Network enrichment ─────────────────────────────────────────────────────
+  // Betweenness centrality proxy: fraction of distinct zone-clusters in weak_ties.
+  // High bridge_score = NPC bridges separate communities → higher influence.
+  bridge_score: number           // 0–1
 }
 
 // ── Constitution ───────────────────────────────────────────────────────────
@@ -218,6 +232,10 @@ export interface EventEffects {
   stress_delta: number
   trust_delta: number
   displacement_chance: number
+  /** Fraction of affected NPCs killed immediately when event spawns (0–1). Used for catastrophic events. */
+  instant_kill_rate?: number
+  /** Death cause for instant kills: defaults to 'accident' if omitted */
+  instant_kill_cause?: DeathCause
 }
 
 export interface EventTrigger {
@@ -377,6 +395,16 @@ export interface MacroStats {
   natural_resources: number     // 0–100 (remaining extractable resource pool)
   energy: number                // 0–100 (society's productive energy output)
   literacy: number              // 0–100 (driven by scholar output; boosts economy & info spread)
+  labor_unrest: number          // 0–100 (avg class_solidarity × gini; triggers govt alert ≥65)
+}
+
+// ── Labor Strike ───────────────────────────────────────────────────────────
+
+export interface ActiveStrike {
+  role: Role                    // which occupational class is striking
+  start_tick: number
+  duration_ticks: number        // automatically ends after this; can be shortened by govt policy
+  demand: 'wages' | 'conditions' | 'rights'
 }
 
 // ── Network ────────────────────────────────────────────────────────────────
@@ -416,6 +444,7 @@ export interface WorldState {
   discoveries: TechDiscovery[]
   referendum: Referendum | null
   quarantine_zones: string[]    // zones locked by guard quarantine during epidemics
+  active_strikes: ActiveStrike[]
 
   // History & rumor
   rumors: Rumor[]
@@ -441,6 +470,8 @@ export interface AIConfig {
 // ── NPC Intervention ───────────────────────────────────────────────────────
 
 export interface NPCIntervention {
+  /** Direct change to class_solidarity (−100 to 100). Positive = agitate, negative = pacify. */
+  solidarity_delta?: number
   /** Which NPCs to target */
   target: 'all' | 'zone' | 'role' | 'id_list'
   zones?: string[]      // when target === 'zone'

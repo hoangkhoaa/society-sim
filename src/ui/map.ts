@@ -318,6 +318,9 @@ let animFrame: number | null = null
 let hoveredNPCId: number | null = null
 let frameCount = 0
 let _mapPaused = false
+
+// ── Selection state ───────────────────────────────────────────────────────────
+let selectedNPCId: number | null = null
 function isLightTheme(): boolean { return document.body.dataset.theme === 'light' }
 
 export function setMapPaused(value: boolean) { _mapPaused = value }
@@ -492,6 +495,7 @@ export function initMap(
   canvas.addEventListener('mousemove', onMouseMove)
   canvas.addEventListener('click',     onClick)
   canvas.addEventListener('mouseleave', () => { hoveredNPCId = null })
+  window.addEventListener('keydown', onKeyDown)
 
   if (animFrame !== null) cancelAnimationFrame(animFrame)
   drawLoop()
@@ -587,7 +591,7 @@ function computeWeather(world: WorldState): { rain: number; snow: number; dryFog
     if (ev.type === 'storm' || ev.type === 'flood' || ev.type === 'tsunami') rain = Math.max(rain, k)
     if (ev.type === 'harsh_winter') snow = Math.max(snow, k)
     if (ev.type === 'drought') dryFog = Math.max(dryFog, k)
-    if (ev.type === 'wildfire') smoke = Math.max(smoke, k)
+    if (ev.type === 'wildfire' || ev.type === 'nuclear_explosion' || ev.type === 'bombing' || ev.type === 'volcanic_eruption' || ev.type === 'meteor_strike') smoke = Math.max(smoke, k)
   }
   return { rain, snow, dryFog, smoke }
 }
@@ -808,6 +812,77 @@ function drawZones(W: number, H: number) {
   ctx.textAlign = 'left'
 }
 
+// ── Selected NPC relationship overlay ─────────────────────────────────────────
+// Drawn BEFORE NPC dots so lines appear underneath dots.
+// The selection glow ring is drawn AFTER the dots inside drawNPCs.
+
+function drawSelectedNPCTies(
+  world: WorldState,
+  posMap: Map<number, { px: number; py: number }>,
+) {
+  if (!ctx || selectedNPCId === null) return
+  const npc = world.npcs.find(n => n.id === selectedNPCId)
+  if (!npc || !npc.lifecycle.is_alive) { selectedNPCId = null; return }
+
+  const pos = posMap.get(npc.id)
+  if (!pos) return
+  const { px, py } = pos
+  const pulse = 0.5 + 0.5 * Math.sin(frameCount * 0.07)
+
+  // ── Weak-tie indicators: soft ring around each weak-tie NPC (no lines) ───
+  if (npc.weak_ties?.length) {
+    for (const tid of npc.weak_ties) {
+      const bNpc = world.npcs[tid]
+      if (!bNpc?.lifecycle.is_alive) continue
+      const bPos = posMap.get(tid)
+      if (!bPos) continue
+      ctx.beginPath()
+      ctx.arc(bPos.px, bPos.py, 5.5, 0, Math.PI * 2)
+      ctx.strokeStyle = 'rgba(180,180,230,0.25)'
+      ctx.lineWidth = 1.0
+      ctx.stroke()
+    }
+  }
+
+  // ── Info ties: dashed blue lines ─────────────────────────────────────────
+  if (npc.info_ties?.length) {
+    ctx.setLineDash([4, 6])
+    for (const tid of npc.info_ties) {
+      const bNpc = world.npcs[tid]
+      if (!bNpc?.lifecycle.is_alive) continue
+      const bPos = posMap.get(tid)
+      if (!bPos) continue
+      ctx.beginPath()
+      ctx.moveTo(px, py)
+      ctx.lineTo(bPos.px, bPos.py)
+      ctx.strokeStyle = `rgba(80,160,255,${0.38 + pulse * 0.22})`
+      ctx.lineWidth = 0.8
+      ctx.stroke()
+    }
+    ctx.setLineDash([])
+  }
+
+  // ── Strong ties: solid warm lines + ring on each tie partner ─────────────
+  for (const tid of npc.strong_ties) {
+    const bNpc = world.npcs[tid]
+    if (!bNpc?.lifecycle.is_alive) continue
+    const bPos = posMap.get(tid)
+    if (!bPos) continue
+    ctx.beginPath()
+    ctx.moveTo(px, py)
+    ctx.lineTo(bPos.px, bPos.py)
+    ctx.strokeStyle = `rgba(255,165,50,${0.60 + pulse * 0.28})`
+    ctx.lineWidth = 1.4
+    ctx.stroke()
+    // Ring on tie partner
+    ctx.beginPath()
+    ctx.arc(bPos.px, bPos.py, 5.5, 0, Math.PI * 2)
+    ctx.strokeStyle = `rgba(255,165,50,${0.50 + pulse * 0.20})`
+    ctx.lineWidth = 1.2
+    ctx.stroke()
+  }
+}
+
 function drawNPCs(world: WorldState, W: number, H: number) {
   if (!ctx) return
   const light = isLightTheme()
@@ -866,6 +941,19 @@ function drawNPCs(world: WorldState, W: number, H: number) {
     posMap.set(npc.id, { px, py })
   }
 
+  // ── Build related-NPC set for selection mode ──────────────────────────────
+  const relatedIds = new Set<number>()
+  if (selectedNPCId !== null) {
+    const sel = world.npcs.find(n => n.id === selectedNPCId)
+    if (sel) {
+      relatedIds.add(sel.id)
+      for (const id of sel.strong_ties) relatedIds.add(id)
+      for (const id of sel.info_ties)   relatedIds.add(id)
+      for (const id of sel.weak_ties)   relatedIds.add(id)
+    }
+  }
+  const hasSelection = relatedIds.size > 0
+
   // ── Family bond lines (spouse pairs in same render zone) ─────────────────
   const drawnFamilyPairs = new Set<string>()
   for (const npc of world.npcs) {
@@ -883,6 +971,9 @@ function drawNPCs(world: WorldState, W: number, H: number) {
     const aPos = posMap.get(npc.id)
     const bPos = posMap.get(sid)
     if (!aPos || !bPos) continue
+
+    // In selection mode: only draw bonds that involve the selected NPC or its connections
+    if (hasSelection && !relatedIds.has(npc.id) && !relatedIds.has(sid)) continue
 
     const aVis = npcVisuals.get(npc.id)
     const bVis = npcVisuals.get(sid)
@@ -903,12 +994,12 @@ function drawNPCs(world: WorldState, W: number, H: number) {
   }
 
   // ── Social relationship lines ──────────────────────────────────────────
-  // Draw strong-tie lines for direct connections and info-tie lines for information network
+  // Skipped in selection mode — drawSelectedNPCTies handles the selected NPC's ties.
   const drawnPairs = new Set<string>()
   const drawnInfoPairs = new Set<string>()
   const pulse = 0.5 + 0.5 * Math.sin(frameCount * 0.05)  // 0–1 pulsing
 
-  for (const npc of world.npcs) {
+  if (!hasSelection) for (const npc of world.npcs) {
     if (!npc.lifecycle.is_alive) continue
     const aPos = posMap.get(npc.id)
     if (!aPos) continue
@@ -988,7 +1079,10 @@ function drawNPCs(world: WorldState, W: number, H: number) {
       ctx.stroke()
       ctx.globalAlpha = 1
     }
-  }
+  } // end if (!hasSelection)
+
+  // ── Selected NPC relationship overlay (over normal ties, under dots) ────
+  drawSelectedNPCTies(world, posMap)
 
   // ── NPC dots ────────────────────────────────────────────────────────────
   for (const npc of world.npcs) {
@@ -996,6 +1090,10 @@ function drawNPCs(world: WorldState, W: number, H: number) {
     const pos = posMap.get(npc.id)
     if (!pos) continue
     const { px, py } = pos
+
+    // In selection mode: dim unrelated NPCs to near-invisible
+    const isRelated = !hasSelection || relatedIds.has(npc.id)
+    ctx.globalAlpha = isRelated ? 1 : 0.06
 
     const color = roleColor(npc.role, light)
     const isHovered = npc.id === hoveredNPCId
@@ -1023,6 +1121,23 @@ function drawNPCs(world: WorldState, W: number, H: number) {
     ctx.fillStyle = isHovered ? (light ? '#111' : '#fff') : color
     ctx.fill()
 
+    // Selection glow ring — drawn on top of the dot
+    if (npc.id === selectedNPCId) {
+      const selPulse = 0.5 + 0.5 * Math.sin(frameCount * 0.07)
+      // Outer pulsing ring
+      ctx.beginPath()
+      ctx.arc(px, py, radius + 3.5 + selPulse * 2.5, 0, Math.PI * 2)
+      ctx.strokeStyle = `rgba(255,220,60,${0.55 + selPulse * 0.30})`
+      ctx.lineWidth = 1.8
+      ctx.stroke()
+      // Inner crisp ring
+      ctx.beginPath()
+      ctx.arc(px, py, radius + 2.5, 0, Math.PI * 2)
+      ctx.strokeStyle = 'rgba(255,255,255,0.90)'
+      ctx.lineWidth = 1.0
+      ctx.stroke()
+    }
+
     // Name label on hover
     if (isHovered) {
       const label = `${npc.name} (${npc.role})`
@@ -1038,6 +1153,8 @@ function drawNPCs(world: WorldState, W: number, H: number) {
       ctx.fillText(label, bx + 4, by + 11)
     }
   }
+
+  ctx.globalAlpha = 1  // restore after dot loop
 
   // Update hovered NPC canvas position for interaction
   _posMapCache = posMap
@@ -1118,7 +1235,7 @@ function drawLegend(W: number, H: number) {
 
 let _posMapCache = new Map<number, { px: number; py: number }>()
 
-function getNPCAtPosition(world: WorldState, mx: number, my: number, _W: number, _H: number): number | null {
+function getNPCAtPosition(world: WorldState, mx: number, my: number): number | null {
   let closest: number | null = null
   let closestDist = 12 // px hit-radius
 
@@ -1144,7 +1261,7 @@ function onMouseMove(e: MouseEvent) {
   const mx = e.clientX - rect.left
   const my = e.clientY - rect.top
 
-  hoveredNPCId = getNPCAtPosition(world, mx, my, canvas.width, canvas.height)
+  hoveredNPCId = getNPCAtPosition(world, mx, my)
   canvas.style.cursor = hoveredNPCId !== null ? 'pointer' : 'default'
 }
 
@@ -1158,9 +1275,18 @@ function onClick(e: MouseEvent) {
   const mx = e.clientX - rect.left
   const my = e.clientY - rect.top
 
-  const npcId = getNPCAtPosition(world, mx, my, canvas.width, canvas.height)
+  const npcId = getNPCAtPosition(world, mx, my)
   if (npcId !== null) {
     const npc = world.npcs.find(n => n.id === npcId)
-    if (npc) openSpotlight(npc, world, config ?? null)
+    if (npc) {
+      selectedNPCId = npcId
+      openSpotlight(npc, world, config ?? null)
+    }
+  } else {
+    selectedNPCId = null
   }
+}
+
+function onKeyDown(e: KeyboardEvent) {
+  if (e.key === 'Escape') selectedNPCId = null
 }

@@ -16,6 +16,13 @@ import { clamp, ZONE_ADJACENCY } from './constitution'
 
 // ZONE_ADJACENCY is imported from constitution.ts (single source of truth)
 
+// ── Global tie caps ───────────────────────────────────────────────────────────
+// These are hard maximums — tie lists will never grow beyond these limits.
+// Initial targets (set by cohesion) stay within these bounds.
+export const MAX_STRONG_TIES = 25
+export const MAX_WEAK_TIES   = 200
+export const MAX_INFO_TIES   = 60
+
 // ── Info-network similarity score ───────────────────────────────────────────
 // Info ties connect NPCs with similar worldviews, same role, or same community group.
 // Geographic proximity does NOT matter — this models digital/social-media connections.
@@ -108,32 +115,34 @@ export async function buildNetwork(npcs: NPC[], constitution: Constitution): Pro
       .sort((a, b) => proximityScore(b, npc) - proximityScore(a, npc))
       .slice(0, strongTarget * 3)   // keep top 3× so we can sample
 
-    // Add mutual strong ties
+    // Add mutual strong ties — cap both sides to prevent hub overflow
     const s = strong.get(npc.id)!
     for (const candidate of strongCandidates.slice(0, strongTarget)) {
       if (s.size >= strongTarget) break
       if (proximityScore(candidate, npc) < 0) continue
       s.add(candidate.id)
-      strong.get(candidate.id)!.add(npc.id)
+      // Only add back-link if candidate has room
+      const candidateStrong = strong.get(candidate.id)!
+      if (candidateStrong.size < strongTarget) candidateStrong.add(npc.id)
     }
 
     // Weak ties: same zone + 2-hop adjacent zones (broader)
     const hop2 = (ZONE_ADJACENCY[npc.zone] ?? [])
       .flatMap(z => ZONE_ADJACENCY[z] ?? [])
-    const weakCandidates = [
+    const weakCandidates = shuffle([
       ...(byZone[npc.zone] ?? []),
       ...(ZONE_ADJACENCY[npc.zone] ?? []).flatMap(z => byZone[z] ?? []),
       ...hop2.flatMap(z => byZone[z] ?? []),
-    ].filter(c => c.id !== npc.id && !s.has(c.id))
+    ].filter(c => c.id !== npc.id && !s.has(c.id)))
 
+    // Fixed: iterate the shuffled list directly (no random-with-replacement)
     const w = weak.get(npc.id)!
-    for (let i = 0; i < weakCandidates.length && w.size < weakTarget; i++) {
-      const idx = Math.floor(Math.random() * weakCandidates.length)
-      const candidate = weakCandidates[idx]
-      if (candidate && candidate.id !== npc.id) {
-        w.add(candidate.id)
-        weak.get(candidate.id)!.add(npc.id)
-      }
+    for (const candidate of weakCandidates) {
+      if (w.size >= weakTarget) break
+      w.add(candidate.id)
+      // Only add back-link if candidate has room
+      const candidateWeak = weak.get(candidate.id)!
+      if (candidateWeak.size < weakTarget) candidateWeak.add(npc.id)
     }
   }
 
@@ -183,7 +192,9 @@ export async function buildNetwork(npcs: NPC[], constitution: Constitution): Pro
       if (inf.size >= infoTarget) break
       if (infoAffinityScore(candidate, npc) <= 0) continue
       inf.add(candidate.id)
-      info.get(candidate.id)!.add(npc.id)
+      // Only add back-link if candidate has room
+      const candidateInfo = info.get(candidate.id)!
+      if (candidateInfo.size < infoTarget) candidateInfo.add(npc.id)
     }
   }
 
