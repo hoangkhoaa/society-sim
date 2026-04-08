@@ -148,6 +148,12 @@ export function tick(state: WorldState): void {
     } else if (ev.type === 'crime') {
       addChronicle(tf('engine.crime', { name: ev.npc.name }) as string, state.year, state.day, 'minor')
       chronicled++
+    } else if (ev.type === 'overwork') {
+      addChronicle(tf('engine.overwork', { name: ev.npc.name }) as string, state.year, state.day, 'minor')
+      chronicled++
+    } else if (ev.type === 'burnout') {
+      addChronicle(tf('engine.burnout', { name: ev.npc.name }) as string, state.year, state.day, 'minor')
+      chronicled++
     }
   }
 
@@ -420,16 +426,26 @@ export function computeMacroStats(state: WorldState): WorldState['macro'] {
   const maxScholarOutput = npcs.length * Math.max(state.constitution.role_ratios.scholar, 0.01)
   const literacy = clamp(scholarOutput / maxScholarOutput * 100 + (techBonuses?.literacyBonus ?? 0), 0, 100)
 
-  // Energy index — productive output of the whole society, with literacy bonus
+  // Energy index — society's daily productive capacity, with literacy bonus.
+  // Energy is a daily aggregate — all non-disrupted workers contribute, including
+  // those currently resting (they work during daytime hours). Only truly disrupted
+  // NPCs (fleeing, confronting, organizing) reduce the energy stat.
   // High literacy boosts economy up to +12% (knowledge economy effect)
-  const workforce = npcs.filter(n => n.role !== 'child' && n.action_state !== 'fleeing' && n.action_state !== 'confront')
-  const productiveWorkers = workforce.filter(
-    n => n.action_state === 'working' || n.action_state === 'socializing' || n.action_state === 'complying',
+  const workforce = npcs.filter(n => n.role !== 'child')
+  const activeWorkforce = workforce.filter(
+    n => n.action_state !== 'fleeing' && n.action_state !== 'confront' && n.action_state !== 'organizing',
   )
-  const totalProductivity = productiveWorkers.reduce((s, n) => s + computeProductivity(n, state), 0)
+  const totalProductivity = activeWorkforce.reduce((s, n) => s + computeProductivity(n, state), 0)
   const maxPossibleProductivity = workforce.length * 1.0
   const literacyBonus = 1 + (Math.min(literacy + techBonuses.literacyBonus, 100) / 100) * 0.12
-  const energy = clamp(totalProductivity / Math.max(maxPossibleProductivity, 1) * 100 * literacyBonus, 0, 100)
+  // Food-Energy nexus: workers need food to sustain productivity.
+  // Adequate food (>60) grants full energy; food <60 progressively limits output.
+  const foodEnergyMod = food > 60 ? 1.0
+    : food > 30 ? 0.70 + (food - 30) / 30 * 0.30    // 0.70–1.00
+    : food > 10 ? 0.40 + (food - 10) / 20 * 0.30     // 0.40–0.70
+    : 0.20 + (food / 10) * 0.20                        // 0.20–0.40 (famine)
+  const rawEnergy = totalProductivity / Math.max(maxPossibleProductivity, 1) * 100 * literacyBonus
+  const energy = clamp(rawEnergy * foodEnergyMod, 0, 100)
 
   // Gini
   const wealths = npcs.map(n => n.wealth).sort((a, b) => a - b)

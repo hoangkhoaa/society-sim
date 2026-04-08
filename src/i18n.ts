@@ -126,6 +126,7 @@ const translations = {
     'sp.hunger':      'Hunger',
     'sp.exhaustion':  'Fatigue',
     'sp.isolation':   'Loneliness',
+    'sp.burnout':     '🔥 Burned out',
 
     // Spotlight — worldview bars
     'sp.collectivism':    'Collectivism',
@@ -187,6 +188,8 @@ const translations = {
     'engine.fell_ill':          '{name} has fallen ill.',
     'engine.recovered':         '{name} has recovered from illness.',
     'engine.crime':             '{name} committed a crime.',
+    'engine.overwork':          '{name} collapsed from overwork.',
+    'engine.burnout':           '{name} is suffering from burnout — chronic exhaustion and stress have taken their toll.',
     'engine.community_formed':  'A new community group has formed.',
     'engine.intervention': '⚡ Intervention affected {n} NPC{s}.',
     'engine.event_deaths': '💀 {n} people died from natural disasters.',
@@ -396,6 +399,7 @@ const translations = {
     'sp.hunger':      'Đói',
     'sp.exhaustion':  'Kiệt sức',
     'sp.isolation':   'Cô đơn',
+    'sp.burnout':     '🔥 Kiệt sức mãn tính',
 
     // Spotlight — worldview bars
     'sp.collectivism':    'Tập thể',
@@ -456,6 +460,8 @@ const translations = {
     'engine.fell_ill':          '{name} đã bị bệnh.',
     'engine.recovered':         '{name} đã hồi phục sau bệnh tật.',
     'engine.crime':             '{name} đã phạm tội.',
+    'engine.overwork':          '{name} đã ngã quỵ vì làm việc quá sức.',
+    'engine.burnout':           '{name} đang kiệt sức — stress và mệt mỏi kéo dài đã ảnh hưởng nghiêm trọng.',
     'engine.community_formed':  'Một nhóm cộng đồng mới đã được thành lập.',
     'engine.intervention': '⚡ Can thiệp ảnh hưởng đến {n} NPC.',
     'engine.event_deaths': '💀 {n} người tử vong do thiên tai.',

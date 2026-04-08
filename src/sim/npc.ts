@@ -32,6 +32,41 @@ export const ROLE_WEALTH_EXPECTATION: Record<Role, number> = {
   child:     0,   // children have no income expectation
 }
 
+// ── Role-based exhaustion rates (per tick while working) ────────────────────
+// Different jobs tire workers at different rates. Guards and farmers do heavy
+// physical labor; scholars and merchants do lighter mental/social work.
+
+const ROLE_EXHAUSTION_RATE: Record<Role, number> = {
+  guard:     0.55,   // heavy physical (patrols, standing watch)
+  farmer:    0.50,   // hard manual labor
+  craftsman: 0.40,   // skilled physical work
+  leader:    0.25,   // administrative stress
+  merchant:  0.25,   // moderate (negotiation, travel)
+  scholar:   0.20,   // mental work, lighter physical demand
+  child:     0.10,   // light activity
+}
+
+// ── Age-based exhaustion modifier ──────────────────────────────────────────
+// Younger workers have more stamina; elderly tire faster.
+
+function ageExhaustionModifier(age: number): number {
+  if (age < 22)  return 0.85   // youthful energy
+  if (age < 42)  return 1.00   // prime years
+  if (age < 56)  return 1.15   // slight mid-life increase
+  if (age < 66)  return 1.35   // noticeable
+  return 1.60                   // elderly — significant fatigue
+}
+
+// ── Age-based rest recovery modifier ───────────────────────────────────────
+// Elderly recover more slowly from exhaustion.
+
+function ageRestModifier(age: number): number {
+  if (age < 30)  return 1.10   // youthful bounce-back
+  if (age < 50)  return 1.00   // baseline
+  if (age < 65)  return 0.85   // slower recovery
+  return 0.70                   // elderly — much slower recovery
+}
+
 // ── Pareto wealth distribution ─────────────────────────────────────────────
 
 function paretoSample(gini: number): number {
@@ -204,6 +239,7 @@ export function createNPC(idx: number, total: number, constitution: Constitution
     sick_ticks: 0,
     criminal_record: false,
     community_group: null,
+    burnout_ticks: 0,
     debt: 0,
     debt_to: null,
     faction_id: null,
@@ -220,7 +256,12 @@ export function createNPC(idx: number, total: number, constitution: Constitution
 
 export function tickNPC(npc: NPC, state: WorldState, events?: IndividualEvent[]): void {
   if (!npc.lifecycle.is_alive) return
+  const wasBelowBurnoutThreshold = (npc.burnout_ticks ?? 0) < 480
   decayNeeds(npc, state)
+  // Emit burnout event once when crossing the threshold
+  if (wasBelowBurnoutThreshold && (npc.burnout_ticks ?? 0) >= 480) {
+    events?.push({ type: 'burnout', npc })
+  }
   npc.stress    = computeStress(npc)
   npc.happiness = computeHappiness(npc, state)
   updateGrievance(npc, state)
@@ -425,10 +466,39 @@ function decayNeeds(npc: NPC, state: WorldState): void {
   // Graduated scarcity penalty: food shortage accelerates hunger
   // food < 30 → mild penalty; food < 10 → famine conditions
   const scarcityPenalty = foodLevel < 30 ? (30 - foodLevel) / 100 * 0.9 : 0
-  npc.hunger     += hungerBase + scarcityPenalty
-  npc.exhaustion += npc.sick ? 0.6 : 0.3
-  npc.isolation  += 0.2
-  npc.fear       += violenceActive ? 2.0 : -0.3
+  npc.hunger    += hungerBase + scarcityPenalty
+  npc.isolation += 0.2
+  npc.fear      += violenceActive ? 2.0 : -0.3
+
+  // ── Exhaustion: role-based gain + age modifier ──────────────────────────
+  // Base metabolic cost always applies (+0.15/hr). Activity cost varies by
+  // role and action state. Sick NPCs tire 50% faster.
+  const baseMetabolic = 0.15
+  const ageMod        = ageExhaustionModifier(npc.age)
+  const sickMod       = npc.sick ? 1.5 : 1.0
+
+  if (npc.action_state === 'resting') {
+    // Resting: base metabolic still ticks, but recovery offsets it.
+    // Graduated recovery: deep fatigue (sleep debt) recovers slower.
+    const baseRecovery = 1.2
+    const recoveryMod  = ageRestModifier(npc.age)
+    const recoveryEfficiency = npc.exhaustion > 70 ? 0.70
+      : npc.exhaustion > 40 ? 0.85
+      : 1.0
+    const netRest = baseMetabolic * ageMod * sickMod - baseRecovery * recoveryMod * recoveryEfficiency
+    npc.exhaustion += netRest
+  } else if (npc.action_state === 'working') {
+    // Working: role-specific exhaustion rate on top of base metabolic
+    const roleRate = ROLE_EXHAUSTION_RATE[npc.role] ?? 0.30
+    npc.exhaustion += (baseMetabolic + roleRate) * ageMod * sickMod
+  } else if (npc.action_state === 'socializing') {
+    // Socializing: light activity (+0.10 on top of base)
+    npc.exhaustion += (baseMetabolic + 0.10) * ageMod * sickMod
+  } else {
+    // Organizing, fleeing, confronting, complying — moderate exertion
+    const actionRate = (npc.action_state === 'fleeing' || npc.action_state === 'confront') ? 0.35 : 0.15
+    npc.exhaustion += (baseMetabolic + actionRate) * ageMod * sickMod
+  }
 
   // Graduated food recovery when working: more food → better hunger reduction
   // food > 60: full recovery; food 30–60: reduced; food < 10: none
@@ -437,7 +507,6 @@ function decayNeeds(npc: NPC, state: WorldState): void {
     : foodLevel > 10 ? 0.7
     : 0
   if (npc.action_state === 'working' && hungerRecovery > 0) npc.hunger -= hungerRecovery
-  if (npc.action_state === 'resting')                       npc.exhaustion -= 3.0
   if (npc.action_state === 'socializing') {
     npc.isolation -= 2.5
     if (npc.strong_ties.length < 3) npc.isolation += 1.0
@@ -451,6 +520,16 @@ function decayNeeds(npc: NPC, state: WorldState): void {
     npc.isolation -= 0.4
     // In winter, community provides mutual support against cold/fear
     if (isWinter) npc.fear = clamp(npc.fear - 0.5, 0, 100)
+  }
+
+  // ── Burnout tracking ────────────────────────────────────────────────────
+  // When both stress and exhaustion exceed 70 for extended periods (480 ticks
+  // = 20 sim-days), the NPC enters burnout: forced compliance + reduced output.
+  if (npc.stress > 70 && npc.exhaustion > 70) {
+    npc.burnout_ticks = (npc.burnout_ticks ?? 0) + 1
+  } else {
+    // Slowly decay burnout accumulation when conditions improve
+    npc.burnout_ticks = Math.max(0, (npc.burnout_ticks ?? 0) - 0.5)
   }
 
   npc.hunger     = clamp(npc.hunger,     0, 100)
@@ -545,6 +624,17 @@ function normalRoutine(npc: NPC, state: WorldState): ActionState {
 }
 
 function selectAction(npc: NPC, state: WorldState): ActionState {
+  // Burnout override: burned-out NPCs are too exhausted for anything but compliance or rest
+  if ((npc.burnout_ticks ?? 0) >= 480) {
+    const hour = state.tick % 24
+    return (hour >= 22 || hour < 7) ? 'resting' : 'complying'
+  }
+
+  // Overwork exhaustion: very high exhaustion forces rest regardless of stress
+  if (npc.exhaustion > 90 && npc.action_state !== 'fleeing') {
+    return 'resting'
+  }
+
   if (npc.stress < npc.stress_threshold) return normalRoutine(npc, state)
 
   const govTrust = (npc.trust_in.government.competence + npc.trust_in.government.intention) / 2
@@ -713,12 +803,20 @@ export function computeProductivity(npc: NPC, state: WorldState): number {
   const resourcePenalty = (npc.role === 'craftsman' && state.macro.natural_resources < 20)
     ? (20 - state.macro.natural_resources) / 20 * 0.50
     : 0
+  // Fatigue penalty: exhaustion above 50 progressively reduces output (max 40% at 100)
+  const fatiguePenalty = npc.exhaustion > 50
+    ? (npc.exhaustion - 50) / 50 * 0.40
+    : 0
+  // Burnout penalty: chronic overwork severely reduces output
+  const burnoutPenalty = (npc.burnout_ticks ?? 0) >= 480 ? 0.50 : 0
   return Math.max(0,
     npc.base_skill * motivation * ageFactor
     * (1 - fairnessPenalty)
     * (1 - stressPenalty)
     * (1 - sickPenalty)
-    * (1 - resourcePenalty),
+    * (1 - resourcePenalty)
+    * (1 - fatiguePenalty)
+    * (1 - burnoutPenalty),
   )
 }
 
@@ -849,7 +947,7 @@ function wealthTick(npc: NPC, state: WorldState): void {
 
 // ── Lifecycle checks ───────────────────────────────────────────────────────
 
-export type IndividualEvent = { type: 'accident' | 'illness' | 'recovery' | 'crime'; npc: NPC }
+export type IndividualEvent = { type: 'accident' | 'illness' | 'recovery' | 'crime' | 'overwork' | 'burnout'; npc: NPC }
 
 function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[]): void {
   // Natural death by age
@@ -903,6 +1001,19 @@ function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[])
       npc.sick_ticks = (5 + Math.random() * 10 | 0) * 24   // 5–15 sim-days
       npc.exhaustion = clamp(npc.exhaustion + 30, 0, 100)
       events?.push({ type: 'illness', npc })
+    }
+  }
+
+  // ★ Overwork collapse — working at extreme exhaustion risks sudden illness
+  // Simulates physical collapse from chronic fatigue. Higher chance when very exhausted.
+  if (!npc.sick && npc.exhaustion > 85 && npc.action_state === 'working') {
+    const collapseProbability = (npc.exhaustion - 85) / 15 * 0.003 * ageExhaustionModifier(npc.age)
+    if (Math.random() < collapseProbability) {
+      npc.sick = true
+      npc.sick_ticks = (3 + Math.random() * 7 | 0) * 24   // 3–10 sim-days
+      npc.exhaustion = 100
+      npc.stress = clamp(npc.stress + 15, 0, 100)
+      events?.push({ type: 'overwork', npc })
     }
   }
 
