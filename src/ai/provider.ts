@@ -1,5 +1,14 @@
 import type { AIConfig, AIProvider } from '../types'
 
+/** Official Ollama Cloud API host ([docs](https://docs.ollama.com/cloud)). */
+export const OLLAMA_CLOUD_DEFAULT_HOST = 'https://ollama.com'
+
+function resolveOllamaCloudRoot(baseUrl: string | undefined): string {
+  const trimmed = (baseUrl ?? '').trim()
+  const root = trimmed || OLLAMA_CLOUD_DEFAULT_HOST
+  return root.replace(/\/$/, '')
+}
+
 // ── Usage tracking ────────────────────────────────────────────────────────
 let _totalRequests = 0
 let _totalTokens = 0
@@ -148,9 +157,11 @@ const PROVIDERS: Record<AIProvider, ProviderDef> = {
     },
   },
 
+  // Ollama Cloud: native HTTP API on ollama.com — /api/chat (not OpenAI-compatible /v1/chat/completions).
+  // Auth: Bearer API key from https://ollama.com/settings/keys
   ollama_cloud: {
-    defaultModel: 'llama3.2:3b',
-    url: (_model, _key, baseUrl) => `${baseUrl.replace(/\/$/, '')}/v1/chat/completions`,
+    defaultModel: 'gpt-oss:120b',
+    url: (_model, _key, baseUrl) => `${resolveOllamaCloudRoot(baseUrl)}/api/chat`,
     headers: (key) => ({
       Authorization: `Bearer ${key}`,
       'content-type': 'application/json',
@@ -164,9 +175,17 @@ const PROVIDERS: Record<AIProvider, ProviderDef> = {
       ],
     }),
     parseResponse: (json: unknown) => {
-      const j = json as { choices: { message: { content: string } }[]; usage?: { total_tokens?: number } }
-      _totalTokens += j.usage?.total_tokens ?? 0
-      return j.choices[0].message.content
+      const j = json as {
+        message?: { content?: string }
+        prompt_eval_count?: number
+        eval_count?: number
+      }
+      const text = j.message?.content
+      if (typeof text !== 'string') {
+        throw new Error('Ollama Cloud: missing assistant message in response')
+      }
+      _totalTokens += (j.prompt_eval_count ?? 0) + (j.eval_count ?? 0)
+      return text
     },
   },
 }
@@ -191,12 +210,10 @@ export const PROVIDER_MODELS: Record<AIProvider, string[]> = {
     'phi4-mini:3.8b',
     'qwen2.5:7b',
   ],
+  // Use "List models" after signing in; see https://ollama.com/search?c=cloud
   ollama_cloud: [
-    'llama3.2:3b',
-    'llama3.2:1b',
-    'gemma3:4b',
-    'phi4-mini:3.8b',
-    'qwen2.5:7b',
+    'gpt-oss:120b',
+    'gpt-oss:20b',
   ],
 }
 
@@ -290,15 +307,23 @@ export async function listAvailableModels(input: ListModelsInput): Promise<strin
     return [...new Set(out)].sort()
   }
 
-  const ollamaRoot = (() => {
-    if (provider === 'ollama') return 'http://localhost:11434'
-    const b = (base_url ?? '').replace(/\/$/, '')
-    if (!b) throw new Error('Base URL required for Ollama (cloud).')
-    return b
-  })()
+  if (provider === 'ollama') {
+    const ollamaRoot = 'http://localhost:11434'
+    const res = await fetch(`${ollamaRoot}/api/tags`)
+    if (!res.ok) {
+      const t = await res.text()
+      throw new Error(`Ollama tags ${res.status}: ${t.slice(0, 240)}`)
+    }
+    const json = (await res.json()) as { models?: { name: string }[] }
+    return (json.models ?? []).map(m => m.name).filter(Boolean).sort()
+  }
 
-  const headers: Record<string, string> = {}
-  if (provider === 'ollama_cloud' && key) headers.Authorization = `Bearer ${key}`
+  // ollama_cloud — same /api/tags shape as local; host defaults to https://ollama.com
+  const ollamaRoot = resolveOllamaCloudRoot(base_url)
+  if (!key.trim()) {
+    throw new Error('Ollama Cloud requires an API key (ollama.com/settings/keys).')
+  }
+  const headers: Record<string, string> = { Authorization: `Bearer ${key.trim()}` }
 
   const res = await fetch(`${ollamaRoot}/api/tags`, { headers })
   if (!res.ok) {

@@ -14,13 +14,11 @@
       <div class="onboarding-title">Society Sim</div>
       <div class="onboarding-sub" data-i18n="onboarding.sub">A living world. You talk to it.</div>
 
-      <!-- Language selector -->
-      <div class="lang-row">
-        <button class="btn-lang" data-lang="vi">Vietnamese</button>
-        <button class="btn-lang active" data-lang="en">English</button>
-      </div>
-
       <div class="onboarding-form">
+        <div class="form-row">
+          <label for="lang-select" data-i18n="onboarding.language">Language</label>
+          <select id="lang-select" autocomplete="language"></select>
+        </div>
         <div class="form-row">
           <label data-i18n="onboarding.provider">Provider</label>
           <select id="provider-select">
@@ -28,21 +26,20 @@
             <option value="anthropic">Anthropic</option>
             <option value="openai">OpenAI</option>
             <option value="ollama">Ollama (local)</option>
-            <option value="ollama_cloud">Ollama (cloud / remote)</option>
+            <option value="ollama_cloud">Ollama Cloud (ollama.com)</option>
           </select>
         </div>
         <div class="form-row" id="base-url-row" style="display:none">
-          <label data-i18n="onboarding.base_url">Base URL</label>
-          <input type="text" id="base-url-input"
-            data-i18n-ph="onboarding.base_url_ph"
-            placeholder="http://your-server:11434">
+          <label id="onboarding-base-url-label" for="base-url-input">Base URL</label>
+          <input type="text" id="base-url-input" autocomplete="url" placeholder="">
         </div>
         <div class="form-row" id="api-key-row">
           <label data-i18n="onboarding.api_key">API Key</label>
-          <input type="password" id="api-key-input"
-            data-i18n-ph="onboarding.api_key_ph"
-            placeholder="Enter your API key...">
+          <input type="password" id="api-key-input" autocomplete="off" placeholder="">
         </div>
+        <p id="onboarding-key-hint-row" class="onboarding-security-hint" data-i18n="onboarding.api_key_security_hint">
+          Tip: create your own API key with your provider, set spending or rate limits there, then paste it here. For extra safety, use a dedicated key and revoke or delete it as soon as you finish playing.
+        </p>
         <div class="form-row">
           <button type="button" id="btn-list-models" class="btn-ghost" style="width:100%" data-i18n="onboarding.btn_list_models">List available models</button>
         </div>

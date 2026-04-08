@@ -5,9 +5,15 @@ import { listAvailableModels, PROVIDER_MODELS, getAIUsage, getRemainingRPM, getW
 import { addFeedRaw, addFeedThinking, setFeedFilter, setChronicleFilter, refreshChronicleTimestamps } from './ui/feed'
 import { showConfirm, showInfo } from './ui/modal'
 import { initWorld, tick, spawnEvent, applyInterventions, applyInstantEventDeaths } from './sim/engine'
-import { setLang, t, tf } from './i18n'
+import {
+  setLang,
+  t,
+  tf,
+  populateLanguageSelect,
+  getStoredLangPreference,
+  isSupportedLang,
+} from './i18n'
 import { initMap, setMapPaused } from './ui/map'
-import type { Lang } from './i18n'
 import { runGovernmentCycle } from './sim/government'
 import { checkPressTrigger } from './sim/press'
 
@@ -43,18 +49,6 @@ function toggleTheme() {
 }
 
 initTheme()
-
-// ── Language selector ──────────────────────────────────────────────────────
-
-document.querySelectorAll<HTMLButtonElement>('.btn-lang').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const lang = btn.dataset.lang as Lang
-    setLang(lang)
-    refreshChronicleTimestamps()
-    document.querySelectorAll('.btn-lang').forEach(b => b.classList.remove('active'))
-    btn.classList.add('active')
-  })
-})
 
 // ── Screen management ──────────────────────────────────────────────────────
 
@@ -104,16 +98,55 @@ function applyFallbackModels(provider: AIProvider) {
   onboardingModelsReady = !!modelSelect.value
 }
 
+function updateProviderFieldLabels() {
+  const provider = providerSelect.value as AIProvider
+  const isCloud = provider === 'ollama_cloud'
+  const baseLabel = document.getElementById('onboarding-base-url-label')
+  if (baseLabel) {
+    baseLabel.textContent = isCloud
+      ? (t('onboarding.base_url_cloud') as string)
+      : (t('onboarding.base_url') as string)
+  }
+  baseUrlInput.placeholder = isCloud
+    ? (t('onboarding.base_url_cloud_ph') as string)
+    : (t('onboarding.base_url_ph') as string)
+  apiKeyInput.placeholder = isCloud
+    ? (t('onboarding.api_key_cloud_ph') as string)
+    : (t('onboarding.api_key_ph') as string)
+}
+
 function syncProviderFields() {
   const provider = providerSelect.value as AIProvider
   const isLocal = provider === 'ollama'
   const isCloud = provider === 'ollama_cloud'
   apiKeyRow.style.display = isLocal ? 'none' : ''
+  const keyHintRow = document.getElementById('onboarding-key-hint-row')
+  if (keyHintRow) keyHintRow.style.display = isLocal ? 'none' : ''
   baseUrlRow.style.display = isCloud ? '' : 'none'
+  updateProviderFieldLabels()
   resetModelSelect()
 }
 
 providerSelect.addEventListener('change', syncProviderFields)
+
+function initLanguageSelect() {
+  const langSelect = document.getElementById('lang-select') as HTMLSelectElement | null
+  if (!langSelect) return
+  populateLanguageSelect(langSelect)
+  const initial = getStoredLangPreference()
+  langSelect.value = initial
+  setLang(initial)
+  updateProviderFieldLabels()
+  langSelect.addEventListener('change', () => {
+    const v = langSelect.value
+    if (!isSupportedLang(v)) return
+    setLang(v)
+    updateProviderFieldLabels()
+    refreshChronicleTimestamps()
+  })
+}
+
+initLanguageSelect()
 syncProviderFields()
 
 function fillModelSelect(ids: string[]) {
@@ -132,16 +165,11 @@ function fillModelSelect(ids: string[]) {
 btnListModels.addEventListener('click', async () => {
   const provider = providerSelect.value as AIProvider
   const isLocal = provider === 'ollama'
-  const isCloud = provider === 'ollama_cloud'
   const key = apiKeyInput.value.trim()
   const baseUrl = baseUrlInput.value.trim()
 
   if (!isLocal && !key) {
     showError(t('onboarding.err_no_key') as string)
-    return
-  }
-  if (isCloud && !baseUrl) {
-    showError(t('onboarding.err_base_url') as string)
     return
   }
 
@@ -170,15 +198,10 @@ btnListModels.addEventListener('click', async () => {
 
 btnStart.addEventListener('click', async () => {
   const isLocal = providerSelect.value === 'ollama'
-  const isCloud = providerSelect.value === 'ollama_cloud'
   const key = apiKeyInput.value.trim()
   const baseUrl = baseUrlInput.value.trim()
   if (!isLocal && !key) {
     showError(t('onboarding.err_no_key') as string)
-    return
-  }
-  if (isCloud && !baseUrl) {
-    showError(t('onboarding.err_base_url') as string)
     return
   }
   if (!onboardingModelsReady || !modelSelect.value) {

@@ -1,23 +1,25 @@
-// ── Language types ─────────────────────────────────────────────────────────
-
-export type Lang = 'en' | 'vi'
-
-// ── Translation registry ───────────────────────────────────────────────────
-
 const translations = {
   en: {
     // Onboarding
     'onboarding.sub':           'A living world. You talk to it.',
+    'onboarding.language':      'Language',
     'onboarding.provider':      'Provider',
     'onboarding.base_url':      'Base URL',
     'onboarding.base_url_ph':   'http://your-server:11434',
+    'onboarding.base_url_cloud': 'API host (optional)',
+    'onboarding.base_url_cloud_ph': 'https://ollama.com — leave empty for default',
     'onboarding.api_key':       'API Key',
     'onboarding.api_key_ph':    'Enter your API key...',
+    'onboarding.api_key_cloud_ph': 'Ollama API key (ollama.com/settings/keys)',
     'onboarding.btn_list_models': 'List available models',
     'onboarding.btn_list_models_loading': 'Loading models…',
     'onboarding.model':         'Model',
     'onboarding.model_placeholder': '— Load models after entering your key —',
     'onboarding.token_mode':    'Token mode',
+    'onboarding.rpm_limit':     'Rate limit (RPM)',
+    'onboarding.rpm_limit_ph':  'Requests per minute (0 = unlimited)',
+    'onboarding.rpm_hint':
+      'Gemini free: 15 RPM · Paid: 60+ RPM · 0 = no limit',
     'onboarding.btn_start':     'Begin →',
     'onboarding.connecting':    'Connecting...',
     'onboarding.err_no_key':    'Please enter an API key.',
@@ -27,6 +29,8 @@ const translations = {
     'onboarding.fallback_models_hint': 'Using built-in model list — pick carefully; invalid ids will fail at runtime.',
     'onboarding.err_conn':      'Connection error:',
     'onboarding.btn_no_api_key': 'Play without API Key',
+    'onboarding.api_key_security_hint':
+      'Tip: create your own API key with your provider, set spending or rate limits there, then paste it here. For extra safety, use a dedicated key and revoke or delete it as soon as you finish playing.',
 
     // Setup
     'setup.title':        'Society Setup',
@@ -335,16 +339,24 @@ const translations = {
   vi: {
     // Onboarding
     'onboarding.sub':           'Một thế giới sống. Bạn nói chuyện với nó.',
+    'onboarding.language':      'Ngôn ngữ',
     'onboarding.provider':      'Nhà cung cấp',
     'onboarding.base_url':      'URL máy chủ',
     'onboarding.base_url_ph':   'http://may-chu:11434',
+    'onboarding.base_url_cloud': 'Máy chủ API (tùy chọn)',
+    'onboarding.base_url_cloud_ph': 'https://ollama.com — để trống dùng mặc định',
     'onboarding.api_key':       'API Key',
     'onboarding.api_key_ph':    'Nhập API key...',
+    'onboarding.api_key_cloud_ph': 'API key Ollama (ollama.com/settings/keys)',
     'onboarding.btn_list_models': 'Tải danh sách model',
     'onboarding.btn_list_models_loading': 'Đang tải model…',
     'onboarding.model':         'Model',
     'onboarding.model_placeholder': '— Nhập key rồi bấm tải danh sách model —',
     'onboarding.token_mode':    'Chế độ token',
+    'onboarding.rpm_limit':     'Giới hạn tốc độ (RPM)',
+    'onboarding.rpm_limit_ph':  'Số request mỗi phút (0 = không giới hạn)',
+    'onboarding.rpm_hint':
+      'Gemini miễn phí: 15 RPM · Trả phí: 60+ RPM · 0 = không giới hạn',
     'onboarding.btn_start':     'Bắt đầu →',
     'onboarding.connecting':    'Đang kết nối...',
     'onboarding.err_no_key':    'Vui lòng nhập API key.',
@@ -354,6 +366,8 @@ const translations = {
     'onboarding.fallback_models_hint': 'Đang dùng danh sách model mặc định — chọn cẩn thận; model sai sẽ lỗi khi gọi API.',
     'onboarding.err_conn':      'Lỗi kết nối:',
     'onboarding.btn_no_api_key': 'Chơi không cần API Key',
+    'onboarding.api_key_security_hint':
+      'Gợi ý: hãy tự tạo API key ở nhà cung cấp, đặt giới hạn chi tiêu hoặc tốc độ gọi API ngay tại đó, rồi dán key vào đây để chơi. Nếu muốn an toàn hơn, bạn có thể tạo một key riêng cho lần chơi và xóa hoặc thu hồi key ngay sau khi chơi xong.',
 
     // Setup
     'setup.title':        'Thiết lập xã hội',
@@ -659,12 +673,58 @@ const translations = {
   },
 } as const
 
+export type Lang = keyof typeof translations
+
+/**
+ * Locales exposed in the UI. To add a language:
+ * 1. Add `code: { ...keys }` to `translations` above (copy `en` as template).
+ * 2. Append `{ code, nativeName }` here (`nativeName` = endonym, e.g. Deutsch, 日本語).
+ */
+export const LANGUAGE_CATALOG: ReadonlyArray<{ code: Lang; nativeName: string }> = [
+  { code: 'en', nativeName: 'English' },
+  { code: 'vi', nativeName: 'Tiếng Việt' },
+]
+
+const LANG_STORAGE_KEY = 'society_sim_lang'
+
+const _validLangs = new Set<string>(LANGUAGE_CATALOG.map(e => e.code))
+
+export function isSupportedLang(code: string): code is Lang {
+  return _validLangs.has(code)
+}
+
+export function getStoredLangPreference(): Lang {
+  try {
+    const raw = localStorage.getItem(LANG_STORAGE_KEY)
+    if (raw && isSupportedLang(raw)) return raw
+  } catch {
+    /* private mode etc. */
+  }
+  return 'en'
+}
+
+/** Fill `<select id="lang-select">` options from the catalog (native names). */
+export function populateLanguageSelect(select: HTMLSelectElement): void {
+  select.innerHTML = ''
+  for (const { code, nativeName } of LANGUAGE_CATALOG) {
+    const opt = document.createElement('option')
+    opt.value = code
+    opt.textContent = nativeName
+    select.appendChild(opt)
+  }
+}
+
 // ── State ──────────────────────────────────────────────────────────────────
 
 let currentLang: Lang = 'en'
 
 export function setLang(lang: Lang): void {
   currentLang = lang
+  try {
+    localStorage.setItem(LANG_STORAGE_KEY, lang)
+  } catch {
+    /* ignore */
+  }
   document.documentElement.lang = lang
   // Re-render all elements carrying a data-i18n attribute
   document.querySelectorAll<HTMLElement>('[data-i18n]').forEach(el => {

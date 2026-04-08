@@ -114,9 +114,9 @@ export const PRESS_TEMPLATES: PressTemplate[] = [
   h(s => s.avgHappiness > 70,                      '😊 Survey: majority of citizens say they are happy with current conditions.',         '😊 Khảo sát: đa số dân chúng nói họ hạnh phúc với điều kiện hiện tại.', 'info'),
 
   // ── Resources ──
-  h(s => s.resources < 10, '⛏ Natural resources nearly exhausted. Craftsmen unable to source materials.',  '⛏ Tài nguyên thiên nhiên gần cạn kiệt. Thợ thủ công không tìm được nguyên liệu.', 'critical'),
-  h(s => s.resources < 25, '⛏ Resource depletion accelerates. Industry warns of supply chain collapse.',   '⛏ Khai thác tài nguyên tăng tốc. Ngành công nghiệp cảnh báo chuỗi cung ứng sắp đổ.', 'warning'),
-  h(s => s.resources > 80, '⛏ Resource abundance: forests thick, mines productive, land fertile.',         '⛏ Tài nguyên dồi dào: rừng rậm, mỏ hiệu quả, đất phì nhiêu.', 'info'),
+  h(s => s.resources < 10, '🪨 Natural resources nearly exhausted. Craftsmen unable to source materials.',  '🪨 Tài nguyên thiên nhiên gần cạn kiệt. Thợ thủ công không tìm được nguyên liệu.', 'critical'),
+  h(s => s.resources < 25, '🪨 Resource depletion accelerates. Industry warns of supply chain collapse.',   '🪨 Khai thác tài nguyên tăng tốc. Ngành công nghiệp cảnh báo chuỗi cung ứng sắp đổ.', 'warning'),
+  h(s => s.resources > 80, '🌳 Resource abundance: forests thick, mines productive, land fertile.',         '🌳 Tài nguyên dồi dào: rừng rậm, mỏ hiệu quả, đất phì nhiêu.', 'info'),
 
   // ── Literacy / Education ──
   h(s => s.literacy > 80, '📚 Academic renaissance — literacy rates soar, knowledge economy thriving.',    '📚 Phục hưng học thuật — tỉ lệ biết chữ tăng vọt, kinh tế tri thức phát triển.', 'info'),
