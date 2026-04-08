@@ -3,6 +3,8 @@
 // event fires. Visible for 8 seconds then fades out automatically.
 // Only shown for 'major' and 'critical' severity stories.
 
+import { t } from '../i18n'
+
 let _activeCard: HTMLElement | null = null
 let _cardTimeout: ReturnType<typeof setTimeout> | null = null
 
@@ -32,7 +34,7 @@ export function showStoryCard(
 
   const labelEl = document.createElement('div')
   labelEl.className = 'story-card-label'
-  labelEl.textContent = severity === 'critical' ? '⚡ Critical Event' : '📜 Chronicle'
+  labelEl.textContent = severity === 'critical' ? t('story.critical') as string : t('story.chronicle') as string
 
   const textEl = document.createElement('p')
   textEl.textContent = text.length > 160 ? text.slice(0, 157) + '…' : text

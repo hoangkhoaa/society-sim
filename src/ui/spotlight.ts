@@ -1,6 +1,6 @@
 import type { NPC, WorldState, AIConfig } from '../types'
 import { generateNPCThought } from '../ai/god-agent'
-import { t, getLang } from '../i18n'
+import { t, tf, getLang } from '../i18n'
 
 const panel   = document.getElementById('spotlight')!
 const spName  = document.getElementById('sp-name')!
@@ -439,39 +439,35 @@ function worldviewBar(label: string, value: number, color: string): string {
 
 // ── Full memory buffer (up to 10 entries) ─────────────────────────────────────
 
-const MEMORY_META: Record<string, { icon: string; label: string; sign: 1 | -1 }> = {
-  trust_broken: { icon: '🔪', label: 'Betrayal',   sign: -1 },
-  helped:       { icon: '🫱🏻‍🫲🏼', label: 'Helped',     sign:  1 },
-  harmed:       { icon: '💣', label: 'Harmed',     sign: -1 },
-  crisis:       { icon: '🚨', label: 'Crisis',     sign: -1 },
-  windfall:     { icon: '🏆', label: 'Windfall',   sign:  1 },
-  loss:         { icon: '🕳️', label: 'Loss',       sign: -1 },
-  illness:      { icon: '🦠', label: 'Illness',    sign: -1 },
-  crime:        { icon: '🕵️‍♂️', label: 'Crime',      sign: -1 },
-  accident:     { icon: '🚑', label: 'Accident',   sign: -1 },
+// Memory type key → i18n key suffix mapping
+const MEMORY_META: Record<string, { icon: string; key: string; sign: 1 | -1 }> = {
+  trust_broken: { icon: '🔪', key: 'betrayal',  sign: -1 },
+  helped:       { icon: '🫱🏻‍🫲🏼', key: 'helped',    sign:  1 },
+  harmed:       { icon: '💣', key: 'harmed',    sign: -1 },
+  crisis:       { icon: '🚨', key: 'crisis',    sign: -1 },
+  windfall:     { icon: '🏆', key: 'windfall',  sign:  1 },
+  loss:         { icon: '🕳️', key: 'loss',      sign: -1 },
+  illness:      { icon: '🦠', key: 'illness',   sign: -1 },
+  crime:        { icon: '🕵️‍♂️', key: 'crime',     sign: -1 },
+  accident:     { icon: '🚑', key: 'accident',  sign: -1 },
 }
 
 function memorySection(npc: NPC, currentTick: number): string {
   if (!npc.memory || npc.memory.length === 0) return ''
-  const vi = getLang() === 'vi'
-  const title = vi ? 'Ký ức' : 'Memory'
 
   const rows = npc.memory.map(mem => {
-    const meta = MEMORY_META[mem.type] ?? { icon: '◆', label: mem.type, sign: 1 as const }
+    const meta = MEMORY_META[mem.type] ?? { icon: '◆', key: mem.type, sign: 1 as const }
     const w     = mem.emotional_weight          // -100 to +100
     const isPos = w >= 0
     const pct   = Math.min(100, Math.abs(w))
     const color = isPos ? '#5dcaa5' : '#e24b4b'
     const daysAgo = Math.floor((currentTick - mem.tick) / 24)
-    const ago   = daysAgo <= 0 ? (vi ? 'hôm nay' : 'today')
-                : daysAgo === 1 ? (vi ? '1 ngày trước' : '1 day ago')
-                : (vi ? `${daysAgo} ngày trước` : `${daysAgo}d ago`)
-    const label = vi
-      ? (MEMORY_META[mem.type]
-          ? { trust_broken:'Phản bội', helped:'Được giúp đỡ', harmed:'Bị tổn hại', crisis:'Khủng hoảng',
-              windfall:'May mắn', loss:'Mất mát', illness:'Bệnh tật', crime:'Tội ác', accident:'Tai nạn' }[mem.type] ?? meta.label
-          : meta.label)
-      : meta.label
+    const ago   = daysAgo <= 0
+      ? t('sp.mem.today') as string
+      : daysAgo === 1
+        ? t('sp.mem.1day_ago') as string
+        : tf('sp.mem.ndays_ago', { n: daysAgo })
+    const label = (t(`sp.mem.${meta.key}`) ?? meta.key) as string
     return `
       <div class="sp-mem-row">
         <span class="sp-mem-icon">${meta.icon}</span>
@@ -493,7 +489,7 @@ function memorySection(npc: NPC, currentTick: number): string {
 
   return `
     <div class="sp-section">
-      <div class="sp-section-title">${title}</div>
+      <div class="sp-section-title">${t('sp.memory') as string}</div>
       <div class="sp-mem-list">${rows}</div>
     </div>`
 }

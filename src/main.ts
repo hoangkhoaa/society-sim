@@ -469,11 +469,11 @@ function setStat(valueId: string, value: number, statId: string, warnAt: number,
 // ── Daily stat delta badges + crisis banner ─────────────────────────────────
 
 const STAT_DELTA_DEFS = [
-  { valueId: 'v-stability', statId: 'stat-stability', key: 'stability' as const },
-  { valueId: 'v-food',      statId: 'stat-food',      key: 'food' as const },
-  { valueId: 'v-resources', statId: 'stat-resources', key: 'natural_resources' as const },
-  { valueId: 'v-energy',    statId: 'stat-energy',    key: 'energy' as const },
-  { valueId: 'v-trust',     statId: 'stat-trust',     key: 'trust' as const },
+  { valueId: 'v-stability', statId: 'stat-stability', key: 'stability' as const,        i18nKey: 'topbar.stat_stability' },
+  { valueId: 'v-food',      statId: 'stat-food',      key: 'food' as const,             i18nKey: 'topbar.stat_food' },
+  { valueId: 'v-resources', statId: 'stat-resources', key: 'natural_resources' as const, i18nKey: 'topbar.stat_resources' },
+  { valueId: 'v-energy',    statId: 'stat-energy',    key: 'energy' as const,           i18nKey: 'topbar.stat_energy' },
+  { valueId: 'v-trust',     statId: 'stat-trust',     key: 'trust' as const,            i18nKey: 'topbar.stat_trust' },
 ]
 
 function checkStatDeltas(macro: WorldState['macro']) {
@@ -490,14 +490,14 @@ function checkStatDeltas(macro: WorldState['macro']) {
   let criticalCount = 0
   const criticalNames: string[] = []
 
-  for (const { valueId, statId, key } of STAT_DELTA_DEFS) {
+  for (const { valueId, statId, key, i18nKey } of STAT_DELTA_DEFS) {
     const curr = macro[key]
     const delta = curr - prev[key]
 
     // Pulse animation for critical stats
     if (curr <= 20) {
       criticalCount++
-      criticalNames.push(`${key.replace('natural_resources', 'Resources').replace('stability', 'Stability').replace('food', 'Food').replace('energy', 'Energy').replace('trust', 'Trust')} ${Math.round(curr)}%`)
+      criticalNames.push(`${t(i18nKey) as string} ${Math.round(curr)}%`)
     }
 
     // Delta badge for significant daily changes
@@ -521,7 +521,7 @@ function checkStatDeltas(macro: WorldState['macro']) {
   // Crisis banner
   const banner = document.getElementById('crisis-banner')!
   if (criticalCount >= 3) {
-    banner.textContent = `⚠ CIVILIZATION IN CRISIS — ${criticalNames.join(' · ')}`
+    banner.textContent = `${t('crisis.banner') as string} — ${criticalNames.join(' · ')}`
     banner.classList.remove('hidden')
   } else {
     banner.classList.add('hidden')
@@ -560,9 +560,9 @@ function checkStrikeReadiness() {
     if (avgSol >= WARN_SOL && avgGriev >= WARN_GRIEV && world.macro.gini > 0.42) {
       const solPct   = Math.round(avgSol)
       const grievPct = Math.round(avgGriev)
-      const label    = role.charAt(0).toUpperCase() + role.slice(1)
+      const label    = t(`role.${role}`) as string || role
       addFeedRaw(
-        `⚠ ${label}s showing strike readiness — solidarity ${solPct}%, grievance ${grievPct}%`,
+        tf('feed.strike_readiness', { role: label, sol: solPct, griev: grievPct }),
         'warning', world.year, world.day,
       )
       _strikeWarnCooldown[role] = world.day
@@ -691,7 +691,7 @@ function updateLaborTension() {
     const grievColor = avgGriev >= WARN_GRIEV ? '#ef9f27' : '#378add'
     const roleClass  = danger ? 'labor-role danger' : atRisk ? 'labor-role warn' : 'labor-role'
     const icon       = onStrike ? '⚒ ' : atRisk ? '⚠ ' : ''
-    const label      = role.charAt(0).toUpperCase() + role.slice(1)
+    const label      = t(`role.${role}`) as string || role
 
     return `<div class="labor-row">
       <span class="${roleClass}">${icon}${label}</span>
@@ -704,8 +704,8 @@ function updateLaborTension() {
   }).join('')
 
   laborEl.innerHTML = `
-    <div class="labor-section-title">⚒ Labor Tension</div>
-    <div class="labor-legend">solidarity / grievance</div>
+    <div class="labor-section-title">${t('labor.title') as string}</div>
+    <div class="labor-legend">${t('labor.legend') as string}</div>
     ${rows}`
 }
 
@@ -739,7 +739,7 @@ function updateRumors() {
     </div>`
   }).join('')
 
-  el.innerHTML = `<div class="rumor-title">💬 Rumors (${active.length})</div>${rows}`
+  el.innerHTML = `<div class="rumor-title">${tf('rumors.title', { count: active.length })}</div>${rows}`
 }
 
 // ── Consequence scheduler ──────────────────────────────────────────────────
@@ -811,16 +811,16 @@ function updateGovCooldown() {
 // Build a display card for showPolicyChoice from a GovernmentPolicyAI object
 function buildPolicyCard(p: GovernmentPolicyAI): PolicyDisplayCard {
   const parts: string[] = []
-  if ((p.food_delta ?? 0) > 0) parts.push('🍞 Food ↑')
-  else if ((p.food_delta ?? 0) < 0) parts.push('🍞 Food ↓')
-  if ((p.resource_delta ?? 0) > 0) parts.push('⛏ Resources ↑')
-  if ((p.npc_grievance_delta ?? 0) < -3) parts.push('Grievance ↓')
-  else if ((p.npc_grievance_delta ?? 0) > 3) parts.push('Grievance ↑')
-  if ((p.npc_happiness_delta ?? 0) > 3) parts.push('😊 Happiness ↑')
-  if ((p.npc_fear_delta ?? 0) > 3) parts.push('😨 Fear ↑')
-  else if ((p.npc_fear_delta ?? 0) < -3) parts.push('Fear ↓')
-  if ((p.npc_solidarity_delta ?? 0) < -5) parts.push('Solidarity ↓')
-  else if ((p.npc_solidarity_delta ?? 0) > 5) parts.push('Solidarity ↑')
+  if ((p.food_delta ?? 0) > 0) parts.push(t('policy.food_up') as string)
+  else if ((p.food_delta ?? 0) < 0) parts.push(t('policy.food_down') as string)
+  if ((p.resource_delta ?? 0) > 0) parts.push(t('policy.resources_up') as string)
+  if ((p.npc_grievance_delta ?? 0) < -3) parts.push(t('policy.grievance_down') as string)
+  else if ((p.npc_grievance_delta ?? 0) > 3) parts.push(t('policy.grievance_up') as string)
+  if ((p.npc_happiness_delta ?? 0) > 3) parts.push(t('policy.happiness_up') as string)
+  if ((p.npc_fear_delta ?? 0) > 3) parts.push(t('policy.fear_up') as string)
+  else if ((p.npc_fear_delta ?? 0) < -3) parts.push(t('policy.fear_down') as string)
+  if ((p.npc_solidarity_delta ?? 0) < -5) parts.push(t('policy.solidarity_down') as string)
+  else if ((p.npc_solidarity_delta ?? 0) > 5) parts.push(t('policy.solidarity_up') as string)
   return {
     label: p.option_label ?? (p.severity === 'critical' ? '⚠ Emergency' : '📋 Policy'),
     name: p.policy_name,

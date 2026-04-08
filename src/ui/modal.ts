@@ -1,4 +1,5 @@
 import type { ConfirmOptions } from '../types'
+import { t, tf } from '../i18n'
 
 const overlay    = document.getElementById('modal-overlay')!
 const modalBox   = document.getElementById('modal-box')!
@@ -53,9 +54,9 @@ export function showPolicyChoice(
 
   return new Promise(resolve => {
     const uid = `pcd-${Date.now()}`
-    title.textContent = '🏛 Government — Choose a Policy'
+    title.textContent = t('modal.policy_title') as string
     body.innerHTML = `
-      <div class="policy-countdown">Auto-selecting in <span id="${uid}">20</span>s</div>
+      <div class="policy-countdown">${tf('modal.policy_countdown', { s: '<span id="' + uid + '">20</span>' })}</div>
       <div class="policy-cards">
         ${renderPolicyCard(cardA, 'a', uid)}
         ${renderPolicyCard(cardB, 'b', uid)}
@@ -95,7 +96,7 @@ export function showPolicyChoice(
 }
 
 function renderPolicyCard(card: PolicyDisplayCard, slot: 'a' | 'b', uid: string): string {
-  const btnLabel = slot === 'a' ? 'Choose A' : 'Choose B'
+  const btnLabel = slot === 'a' ? t('modal.policy_btn_a') as string : t('modal.policy_btn_b') as string
   const btnClass = card.severity === 'critical' ? 'btn-primary' : 'btn-ghost'
   return `
     <div class="policy-card ${card.severity}">
