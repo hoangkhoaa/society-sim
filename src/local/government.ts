@@ -433,6 +433,10 @@ export function noAlertsSummaryLine(lang: Lang): string {
 export type PolicyStance = 'loyalist' | 'pragmatist' | 'skeptic' | 'dissident'
 export type PolicyType   = 'benefit' | 'hardship' | 'security' | 'economic' | 'generic'
 
+// Probability that a role-specific prefix line is prepended to a reaction thought.
+// At ~35% it adds occupational colour without feeling repetitive.
+const ROLE_PREFIX_PROBABILITY = 0.35
+
 const POLICY_REACTIONS: Record<PolicyStance, Record<PolicyType, Localized<string[]>>> = {
   loyalist: {
     benefit: {
@@ -796,9 +800,9 @@ export function getNPCPolicyReactionThought(
   const pool = pick(lang, POLICY_REACTIONS[stance][policyType])
   let thought = pool[Math.floor(Math.random() * pool.length)]
 
-  // Optionally prepend a role-specific context line (~35% chance)
+  // Optionally prepend a role-specific context line
   const rolePrefix = ROLE_REACTION_PREFIX[role]
-  if (rolePrefix && Math.random() < 0.35) {
+  if (rolePrefix && Math.random() < ROLE_PREFIX_PROBABILITY) {
     const prefixMap = pick(lang, rolePrefix)
     thought = prefixMap[stance] + ' ' + thought
   }
