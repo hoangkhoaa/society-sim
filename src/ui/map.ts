@@ -1,6 +1,6 @@
 import type { WorldState, Role } from '../types'
 import { ZONE_LABELS } from '../types'
-import { openSpotlight } from './spotlight'
+import { openSpotlight, close as closeSpotlight } from './spotlight'
 import type { AIConfig } from '../types'
 import { t } from '../i18n'
 
@@ -578,7 +578,7 @@ function draw() {
     return
   }
 
-  drawZones(W, H)
+  drawZones(world, W, H)
   drawNPCs(world, W, H)
   drawAtmosphere(world, W, H)
   drawLegend(W, H)
@@ -767,7 +767,28 @@ function drawOcean(W: number, H: number) {
   ctx.restore()
 }
 
-function drawZones(W: number, H: number) {
+// ── Event zone tint colors ─────────────────────────────────────────────────
+
+type EventZoneTint = [number, number, number]  // [r, g, b]
+
+const EVENT_ZONE_TINTS: Partial<Record<string, EventZoneTint>> = {
+  earthquake:        [210, 110,  20],
+  epidemic:          [180,  25,  25],
+  wildfire:          [220,  70,   0],
+  flood:             [ 30,  80, 200],
+  tsunami:           [ 30,  80, 200],
+  drought:           [190, 150,  20],
+  harsh_winter:      [130, 165, 225],
+  storm:             [ 50,  80, 170],
+  nuclear_explosion: [ 80, 210,  40],
+  bombing:           [ 90,  80,  80],
+  volcanic_eruption: [200,  55,   0],
+  meteor_strike:     [120,  50, 200],
+  external_threat:   [160,  30,  30],
+  blockade:          [130,  60,  20],
+}
+
+function drawZones(world: WorldState, W: number, H: number) {
   if (!ctx) return
   const light = isLightTheme()
   const coastPath = getIslandPath(W, H)
@@ -803,6 +824,24 @@ function drawZones(W: number, H: number) {
     grd.addColorStop(1, lightenHex(baseColor, light ? 0.88 : 0.82))
     ctx.fillStyle = grd
     ctx.fill(cellPath)
+  }
+
+  // ── Event zone tinting overlay ────────────────────────────────────────────
+  // Affected zones get a pulsing colored overlay based on the event type.
+  // The overlay fades as the event progresses (fresher events = more visible).
+  for (const ev of world.active_events) {
+    const tint = EVENT_ZONE_TINTS[ev.type]
+    if (!tint) continue
+    const progress = ev.elapsed_ticks / ev.duration_ticks
+    const pulse = 0.5 + 0.5 * Math.sin(frameCount * 0.05)
+    const baseAlpha = (0.18 + pulse * 0.10) * (1 - progress * 0.5) * ev.intensity
+    const [r, g, b] = tint
+    for (const zone of ev.zones) {
+      const cellPath = _zonePaths[zone]
+      if (!cellPath) continue
+      ctx.fillStyle = `rgba(${r},${g},${b},${baseAlpha.toFixed(3)})`
+      ctx.fill(cellPath)
+    }
   }
 
   // Noisy zone borders
@@ -858,7 +897,11 @@ function drawSelectedNPCTies(
 ) {
   if (!ctx || selectedNPCId === null) return
   const npc = world.npcs.find(n => n.id === selectedNPCId)
-  if (!npc || !npc.lifecycle.is_alive) { selectedNPCId = null; return }
+  if (!npc || !npc.lifecycle.is_alive) {
+    selectedNPCId = null
+    closeSpotlight()
+    return
+  }
 
   const pos = posMap.get(npc.id)
   if (!pos) return
@@ -1138,6 +1181,26 @@ function drawNPCs(world: WorldState, W: number, H: number) {
     const baseRadius = isChild ? 1.5 : 2.5
     const radius = isHovered ? 5 : baseRadius
 
+    // Sick ring — pulsing sickly green
+    if (npc.sick) {
+      const sickPulse = 0.5 + 0.5 * Math.sin(frameCount * 0.11 + npc.id * 0.61)
+      ctx.beginPath()
+      ctx.arc(px, py, radius + 3.5, 0, Math.PI * 2)
+      ctx.strokeStyle = `rgba(140,210,60,${0.35 + sickPulse * 0.30})`
+      ctx.lineWidth = 1.2
+      ctx.stroke()
+    }
+
+    // On-strike ring — amber, outer
+    if (npc.on_strike) {
+      const strikePulse = 0.5 + 0.5 * Math.sin(frameCount * 0.055 + npc.id * 0.4)
+      ctx.beginPath()
+      ctx.arc(px, py, radius + 5, 0, Math.PI * 2)
+      ctx.strokeStyle = `rgba(239,159,39,${0.40 + strikePulse * 0.25})`
+      ctx.lineWidth = 1.4
+      ctx.stroke()
+    }
+
     // Stress ring
     if (npc.stress > 60) {
       ctx.beginPath()
@@ -1380,6 +1443,7 @@ function onClick(e: MouseEvent) {
   } else {
     selectedNPCId = null
     _needsMapRedraw = true
+    closeSpotlight()
   }
 }
 
@@ -1387,5 +1451,6 @@ function onKeyDown(e: KeyboardEvent) {
   if (e.key === 'Escape' && selectedNPCId !== null) {
     selectedNPCId = null
     _needsMapRedraw = true
+    closeSpotlight()
   }
 }

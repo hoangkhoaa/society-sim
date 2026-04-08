@@ -3,7 +3,7 @@ import type { AIConfig, AIProvider, Constitution, WorldState } from './types'
 import { setupGreeting, setupChat, applyPreset, handlePlayerChat, resetInGameHistory, predictConsequences, generateConstitutionText } from './ai/god-agent'
 import { listAvailableModels, PROVIDER_MODELS, getAIUsage, getRemainingRPM, getWaitSeconds } from './ai/provider'
 import { addFeedRaw, addFeedThinking, setFeedFilter, setChronicleFilter, refreshChronicleTimestamps } from './ui/feed'
-import { showConfirm, showInfo } from './ui/modal'
+import { showConfirm, showInfo, showPolicyChoice, type PolicyDisplayCard } from './ui/modal'
 import { initWorld, tick, spawnEvent, applyInterventions, applyInstantEventDeaths } from './sim/engine'
 import {
   setLang,
@@ -14,7 +14,7 @@ import {
   isSupportedLang,
 } from './i18n'
 import { initMap, setMapPaused } from './ui/map'
-import { runGovernmentCycle } from './sim/government'
+import { runGovernmentCycle, detectRegime, type GovernmentPolicyAI } from './sim/government'
 import { checkPressTrigger } from './sim/press'
 
 // ── App state ──────────────────────────────────────────────────────────────
@@ -396,6 +396,9 @@ async function startGame(constitution: Constitution) {
 
 // ── Topbar ─────────────────────────────────────────────────────────────────
 
+// Track macro stats from the previous daily tick to compute deltas
+let _prevDailyMacro: { stability: number; food: number; natural_resources: number; energy: number; trust: number } | null = null
+
 function updateTopbar() {
   if (!world) return
   const { macro, day, year } = world
@@ -403,6 +406,12 @@ function updateTopbar() {
 
   document.getElementById('clock-label')!.textContent =
     tf('topbar.clock', { y: year, m: month, d: day })
+
+  const regimeEl = document.getElementById('regime-label')
+  if (regimeEl && world.constitution) {
+    const regime = detectRegime(world.constitution)
+    regimeEl.textContent = regime.charAt(0).toUpperCase() + regime.slice(1)
+  }
 
   setStat('v-stability', macro.stability, 'stat-stability', 40, 25)
   setStat('v-food',      macro.food,      'stat-food',      35, 20)
@@ -417,7 +426,7 @@ function updateTopbar() {
   const rpmStr = rpm > 0 ? ` · ${getRemainingRPM(rpm)}/${rpm} rpm` : ''
   document.getElementById('ai-usage')!.textContent = `${requests} req · ${tokStr} tok${rpmStr}`
 
-  // Active events indicator
+  // Active events indicator — with tooltip showing per-event effects
   const evEl = document.getElementById('active-events')!
   const activeEvs = world.active_events
   if (activeEvs.length > 0) {
@@ -428,8 +437,22 @@ function updateTopbar() {
     })
     evEl.textContent = `⚡ ${labels.join(' · ')}`
     evEl.classList.remove('hidden')
+    // Tooltip: show zone + effects + days remaining
+    const tips = activeEvs.map(ev => {
+      const fx = ev.effects_per_tick
+      const parts: string[] = []
+      if (fx.food_stock_delta < 0) parts.push(`Food ${Math.round(fx.food_stock_delta * 24)}/day`)
+      if (fx.stress_delta > 0)     parts.push(`Stress +${(fx.stress_delta * 24).toFixed(1)}/day`)
+      if (fx.trust_delta < 0)      parts.push(`Trust ${(fx.trust_delta * 24).toFixed(1)}/day`)
+      const daysLeft = Math.max(0, Math.ceil((ev.duration_ticks - ev.elapsed_ticks) / 24))
+      const label = t(`event.${ev.type}`) ?? ev.type
+      const zones = ev.zones.map(z => z.replace(/_/g, ' ')).join(', ')
+      return `${label} — ${zones}\n  ${parts.join(', ') || 'ongoing'} — ${daysLeft}d left`
+    })
+    evEl.title = tips.join('\n\n')
   } else {
     evEl.classList.add('hidden')
+    evEl.title = ''
   }
 }
 
@@ -437,9 +460,114 @@ function setStat(valueId: string, value: number, statId: string, warnAt: number,
   const el     = document.getElementById(valueId)!
   const parent = document.getElementById(statId)!
   el.textContent = `${Math.round(value)}%`
-  parent.classList.remove('warn', 'danger')
-  if (value <= dangerAt) parent.classList.add('danger')
+  parent.classList.remove('warn', 'danger', 'critical')
+  if (value <= 20) parent.classList.add('critical')
+  else if (value <= dangerAt) parent.classList.add('danger')
   else if (value <= warnAt) parent.classList.add('warn')
+}
+
+// ── Daily stat delta badges + crisis banner ─────────────────────────────────
+
+const STAT_DELTA_DEFS = [
+  { valueId: 'v-stability', statId: 'stat-stability', key: 'stability' as const,        i18nKey: 'topbar.stat_stability' },
+  { valueId: 'v-food',      statId: 'stat-food',      key: 'food' as const,             i18nKey: 'topbar.stat_food' },
+  { valueId: 'v-resources', statId: 'stat-resources', key: 'natural_resources' as const, i18nKey: 'topbar.stat_resources' },
+  { valueId: 'v-energy',    statId: 'stat-energy',    key: 'energy' as const,           i18nKey: 'topbar.stat_energy' },
+  { valueId: 'v-trust',     statId: 'stat-trust',     key: 'trust' as const,            i18nKey: 'topbar.stat_trust' },
+]
+
+function checkStatDeltas(macro: WorldState['macro']) {
+  const prev = _prevDailyMacro
+  _prevDailyMacro = {
+    stability: macro.stability,
+    food: macro.food,
+    natural_resources: macro.natural_resources,
+    energy: macro.energy,
+    trust: macro.trust,
+  }
+  if (!prev) return
+
+  let criticalCount = 0
+  const criticalNames: string[] = []
+
+  for (const { valueId, statId, key, i18nKey } of STAT_DELTA_DEFS) {
+    const curr = macro[key]
+    const delta = curr - prev[key]
+
+    // Pulse animation for critical stats
+    if (curr <= 20) {
+      criticalCount++
+      criticalNames.push(`${t(i18nKey) as string} ${Math.round(curr)}%`)
+    }
+
+    // Delta badge for significant daily changes
+    if (Math.abs(delta) >= 3) {
+      const valueEl = document.getElementById(valueId)!
+      // Remove stale badge if any
+      valueEl.parentElement?.querySelector('.stat-delta')?.remove()
+      const badge = document.createElement('span')
+      badge.className = `stat-delta ${delta < 0 ? 'down' : 'up'}`
+      badge.textContent = `${delta > 0 ? '▲' : '▼'}${Math.abs(Math.round(delta))}`
+      badge.addEventListener('animationend', () => badge.remove(), { once: true })
+      valueEl.insertAdjacentElement('afterend', badge)
+    }
+
+    // Remove stale badges for stats without notable change
+    if (Math.abs(delta) < 3) {
+      document.getElementById(statId)?.querySelector('.stat-delta')?.remove()
+    }
+  }
+
+  // Crisis banner
+  const banner = document.getElementById('crisis-banner')!
+  if (criticalCount >= 3) {
+    banner.textContent = `${t('crisis.banner') as string} — ${criticalNames.join(' · ')}`
+    banner.classList.remove('hidden')
+  } else {
+    banner.classList.add('hidden')
+  }
+}
+
+// ── Strike readiness warning ───────────────────────────────────────────────
+// Fires a feed warning once per 3 days when a role is close to strike threshold.
+// Threshold (engine.ts): solidarity > 72 AND grievance > 58 AND gini > 0.42
+// We warn at 80% of those values and cooldown per role to avoid spam.
+
+const _strikeWarnCooldown: Partial<Record<string, number>> = {}
+
+function checkStrikeReadiness() {
+  if (!world) return
+  for (const role of STRIKEABLE_ROLES) {
+    // Skip if already striking
+    if (world.active_strikes.some(s => s.role === role)) continue
+
+    // Cooldown: only warn once every 3 sim-days per role
+    const lastWarn = _strikeWarnCooldown[role] ?? -999
+    if (world.day - lastWarn < 3) continue
+
+    let solSum = 0, grievSum = 0, count = 0
+    for (const n of world.npcs) {
+      if (!n.lifecycle.is_alive || n.role !== role) continue
+      solSum   += n.class_solidarity ?? 0
+      grievSum += n.grievance
+      count++
+    }
+    if (count < 4) continue
+
+    const avgSol   = solSum / count
+    const avgGriev = grievSum / count
+
+    if (avgSol >= WARN_SOL && avgGriev >= WARN_GRIEV && world.macro.gini > 0.42) {
+      const solPct   = Math.round(avgSol)
+      const grievPct = Math.round(avgGriev)
+      const label    = t(`role.${role}`) as string || role
+      addFeedRaw(
+        tf('feed.strike_readiness', { role: label, sol: solPct, griev: grievPct }),
+        'warning', world.year, world.day,
+      )
+      _strikeWarnCooldown[role] = world.day
+    }
+  }
 }
 
 function countLivingNpcs(w: WorldState): number {
@@ -518,6 +646,100 @@ function updateDemographics() {
     if (fill) fill.style.width = `${pct}%`
     if (pctEl) pctEl.textContent = `${pct}%`
   }
+
+  updateLaborTension()
+}
+
+// ── Labor tension: per-role solidarity + grievance ─────────────────────────
+
+const STRIKEABLE_ROLES = ['farmer', 'craftsman', 'merchant', 'scholar'] as const
+// Strike thresholds (mirrors engine.ts checkLaborStrikes)
+const STRIKE_SOL_THRESH = 72
+const STRIKE_GRIEV_THRESH = 58
+// Warn when within 80% of threshold
+const WARN_SOL  = STRIKE_SOL_THRESH  * 0.80   // 57.6
+const WARN_GRIEV = STRIKE_GRIEV_THRESH * 0.80   // 46.4
+
+function updateLaborTension() {
+  if (!world) return
+  const laborEl = document.getElementById('d-labor')
+  if (!laborEl) return
+
+  type RoleStat = { sol: number; griev: number; count: number }
+  const stats: Partial<Record<string, RoleStat>> = {}
+  for (const role of STRIKEABLE_ROLES) stats[role] = { sol: 0, griev: 0, count: 0 }
+
+  for (const n of world.npcs) {
+    if (!n.lifecycle.is_alive) continue
+    const s = stats[n.role]
+    if (!s) continue
+    s.sol   += n.class_solidarity ?? 0
+    s.griev += n.grievance
+    s.count++
+  }
+
+  const rows = STRIKEABLE_ROLES.map(role => {
+    const s = stats[role]
+    if (!s || s.count === 0) return ''
+    const avgSol   = Math.round(s.sol / s.count)
+    const avgGriev = Math.round(s.griev / s.count)
+    const onStrike = world!.active_strikes.some(st => st.role === role)
+    const atRisk   = avgSol >= WARN_SOL && avgGriev >= WARN_GRIEV
+    const danger   = avgSol >= STRIKE_SOL_THRESH || onStrike
+
+    const solColor   = danger ? '#e24b4b' : atRisk ? '#ef9f27' : '#2a6'
+    const grievColor = avgGriev >= WARN_GRIEV ? '#ef9f27' : '#378add'
+    const roleClass  = danger ? 'labor-role danger' : atRisk ? 'labor-role warn' : 'labor-role'
+    const icon       = onStrike ? '⚒ ' : atRisk ? '⚠ ' : ''
+    const label      = t(`role.${role}`) as string || role
+
+    return `<div class="labor-row">
+      <span class="${roleClass}">${icon}${label}</span>
+      <div class="labor-bars">
+        <div class="labor-bar-track"><div class="labor-bar-fill" style="width:${avgSol}%;background:${solColor}"></div></div>
+        <div class="labor-bar-track"><div class="labor-bar-fill" style="width:${avgGriev}%;background:${grievColor};opacity:.65"></div></div>
+      </div>
+      <span class="labor-vals">${avgSol}<br>${avgGriev}</span>
+    </div>`
+  }).join('')
+
+  laborEl.innerHTML = `
+    <div class="labor-section-title">${t('labor.title') as string}</div>
+    <div class="labor-legend">${t('labor.legend') as string}</div>
+    ${rows}`
+}
+
+// ── Active rumors display ──────────────────────────────────────────────────
+
+const RUMOR_EFFECT_ICONS: Record<string, string> = {
+  trust_down:    '💔',
+  trust_up:      '💚',
+  fear_up:       '😨',
+  grievance_up:  '😡',
+}
+
+function updateRumors() {
+  if (!world) return
+  const el = document.getElementById('d-rumors')
+  if (!el) return
+  const active = world.rumors.filter(r => r.expires_tick > world!.tick)
+  if (active.length === 0) { el.innerHTML = ''; return }
+
+  const totalNpcs = world.npcs.filter(n => n.lifecycle.is_alive).length || 1
+
+  const rows = active.map(r => {
+    const icon = RUMOR_EFFECT_ICONS[r.effect] ?? '💬'
+    const reachPct = Math.round(Math.min(100, (r.reach / totalNpcs) * 100))
+    const daysLeft = Math.max(0, Math.ceil((r.expires_tick - world!.tick) / 24))
+    const text = r.content.length > 42 ? r.content.slice(0, 42) + '…' : r.content
+    return `<div class="rumor-row">
+      <span class="rumor-effect">${icon}</span>
+      <span class="rumor-text" title="${r.content}">${text}</span>
+      <span class="rumor-reach">${reachPct}% · ${daysLeft}d</span>
+    </div>`
+  }).join('')
+
+  el.innerHTML = `<div class="rumor-title">${tf('rumors.title', { count: active.length })}</div>${rows}`
 }
 
 // ── Consequence scheduler ──────────────────────────────────────────────────
@@ -586,6 +808,33 @@ function updateGovCooldown() {
   }
 }
 
+// Build a display card for showPolicyChoice from a GovernmentPolicyAI object
+function buildPolicyCard(p: GovernmentPolicyAI): PolicyDisplayCard {
+  const parts: string[] = []
+  if ((p.food_delta ?? 0) > 0) parts.push(t('policy.food_up') as string)
+  else if ((p.food_delta ?? 0) < 0) parts.push(t('policy.food_down') as string)
+  if ((p.resource_delta ?? 0) > 0) parts.push(t('policy.resources_up') as string)
+  if ((p.npc_grievance_delta ?? 0) < -3) parts.push(t('policy.grievance_down') as string)
+  else if ((p.npc_grievance_delta ?? 0) > 3) parts.push(t('policy.grievance_up') as string)
+  if ((p.npc_happiness_delta ?? 0) > 3) parts.push(t('policy.happiness_up') as string)
+  if ((p.npc_fear_delta ?? 0) > 3) parts.push(t('policy.fear_up') as string)
+  else if ((p.npc_fear_delta ?? 0) < -3) parts.push(t('policy.fear_down') as string)
+  if ((p.npc_solidarity_delta ?? 0) < -5) parts.push(t('policy.solidarity_down') as string)
+  else if ((p.npc_solidarity_delta ?? 0) > 5) parts.push(t('policy.solidarity_up') as string)
+  return {
+    label: p.option_label ?? (p.severity === 'critical' ? '⚠ Emergency' : '📋 Policy'),
+    name: p.policy_name,
+    desc: p.description,
+    effects: parts.slice(0, 5).join(' · '),
+    severity: p.severity,
+  }
+}
+
+async function govPolicyCallback(opts: [GovernmentPolicyAI, GovernmentPolicyAI]): Promise<GovernmentPolicyAI> {
+  const idx = await showPolicyChoice(buildPolicyCard(opts[0]), buildPolicyCard(opts[1]))
+  return opts[idx]
+}
+
 async function triggerGovernment() {
   if (!world || govBusy) return
   govBusy = true
@@ -594,7 +843,7 @@ async function triggerGovernment() {
   const govConfig = (rpmBudget >= 2) ? aiConfig : null
   lastGovernmentPeriod = Math.floor(world.day / GOV_PERIOD_DAYS)
   try {
-    await runGovernmentCycle(world, govConfig)
+    await runGovernmentCycle(world, govConfig, govPolicyCallback)
   } finally {
     govBusy = false
     updateGovCooldown()
@@ -630,7 +879,10 @@ function startSimLoop() {
     updateTopbar()
     if (world.tick % 24 === 0) {
       updateDemographics()
+      updateRumors()
       flushConsequences()
+      checkStatDeltas(world.macro)
+      checkStrikeReadiness()
     }
     // Free press: every 5 sim-days — generates headlines before government reads them
     // If RPM budget is tight, press runs in template-only mode (pass null config)
@@ -650,7 +902,7 @@ function startSimLoop() {
       }
       govBusy = true
       lastGovernmentPeriod = govPeriod
-      runGovernmentCycle(world, govConfig).finally(() => { govBusy = false; updateGovCooldown() })
+      runGovernmentCycle(world, govConfig, govPolicyCallback).finally(() => { govBusy = false; updateGovCooldown() })
     }
     updateGovCooldown()
     if (living === 0) triggerGameOver()

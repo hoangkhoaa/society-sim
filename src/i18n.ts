@@ -86,6 +86,54 @@ const translations = {
     'demo.age_3':   '50–69',
     'demo.age_4':   '70+',
 
+    // Labor tension panel
+    'labor.title':  '⚒ Labor Tension',
+    'labor.legend': 'solidarity / grievance',
+
+    // Rumors panel
+    'rumors.title': '💬 Rumors ({count})',
+
+    // Crisis banner + strike readiness feed
+    'crisis.banner':           '⚠ CIVILIZATION IN CRISIS',
+    'feed.strike_readiness':   '⚠ {role}s showing strike readiness — solidarity {sol}%, grievance {griev}%',
+
+    // Story card labels
+    'story.critical':          '⚡ Critical Event',
+    'story.chronicle':         '📜 Chronicle',
+
+    // Policy choice modal
+    'modal.policy_title':      '🏛 Government — Choose a Policy',
+    'modal.policy_btn_a':      'Choose A',
+    'modal.policy_btn_b':      'Choose B',
+    'modal.policy_countdown':  'Auto-selecting in {s}s',
+
+    // Policy effect labels
+    'policy.food_up':          '🍞 Food ↑',
+    'policy.food_down':        '🍞 Food ↓',
+    'policy.resources_up':     '⛏ Resources ↑',
+    'policy.grievance_down':   'Grievance ↓',
+    'policy.grievance_up':     'Grievance ↑',
+    'policy.happiness_up':     '😊 Happiness ↑',
+    'policy.fear_up':          '😨 Fear ↑',
+    'policy.fear_down':        'Fear ↓',
+    'policy.solidarity_down':  'Solidarity ↓',
+    'policy.solidarity_up':    'Solidarity ↑',
+
+    // NPC Memory section
+    'sp.memory':               'Memory',
+    'sp.mem.betrayal':         'Betrayal',
+    'sp.mem.helped':           'Helped',
+    'sp.mem.harmed':           'Harmed',
+    'sp.mem.crisis':           'Crisis',
+    'sp.mem.windfall':         'Windfall',
+    'sp.mem.loss':             'Loss',
+    'sp.mem.illness':          'Illness',
+    'sp.mem.crime':            'Crime',
+    'sp.mem.accident':         'Accident',
+    'sp.mem.today':            'today',
+    'sp.mem.1day_ago':         '1 day ago',
+    'sp.mem.ndays_ago':        '{n}d ago',
+
     // Chat
     'chat.ph': 'Talk to the world... ("create a storm", "government corruption to the extreme,...")',
     'chat.disabled': 'AI chat disabled — running without API key',
@@ -179,6 +227,12 @@ const translations = {
     'sp.sick':            'Sick',
     'sp.days_remaining':  'days remaining',
     'sp.criminal_record': 'Criminal record',
+    'sp.burnout_risk':    'Burnout risk',
+    'sp.burnout_days':    'days of strain',
+    'sp.ideological_stab':'Ideological stability',
+    'sp.susceptible':     '⚠ Susceptible to radicalization',
+    'sp.class_solidarity':'Class solidarity',
+    'sp.on_strike':       '⚒ On strike',
 
     // Appearance labels
     'app.short': 'Short', 'app.average': 'Average', 'app.tall': 'Tall',
@@ -431,6 +485,54 @@ const translations = {
     'demo.age_3':   '50–69',
     'demo.age_4':   '70+',
 
+    // Labor tension panel
+    'labor.title':  '⚒ Căng thẳng lao động',
+    'labor.legend': 'đoàn kết / bức xúc',
+
+    // Rumors panel
+    'rumors.title': '💬 Tin đồn ({count})',
+
+    // Crisis banner + strike readiness feed
+    'crisis.banner':           '⚠ VĂN MINH ĐANG KHỦNG HOẢNG',
+    'feed.strike_readiness':   '⚠ {role} đang có dấu hiệu đình công — đoàn kết {sol}%, bức xúc {griev}%',
+
+    // Story card labels
+    'story.critical':          '⚡ Sự kiện nghiêm trọng',
+    'story.chronicle':         '📜 Biên niên',
+
+    // Policy choice modal
+    'modal.policy_title':      '🏛 Chính phủ — Chọn chính sách',
+    'modal.policy_btn_a':      'Chọn A',
+    'modal.policy_btn_b':      'Chọn B',
+    'modal.policy_countdown':  'Tự chọn sau {s}s',
+
+    // Policy effect labels
+    'policy.food_up':          '🍞 Lương thực ↑',
+    'policy.food_down':        '🍞 Lương thực ↓',
+    'policy.resources_up':     '⛏ Tài nguyên ↑',
+    'policy.grievance_down':   'Bức xúc ↓',
+    'policy.grievance_up':     'Bức xúc ↑',
+    'policy.happiness_up':     '😊 Hạnh phúc ↑',
+    'policy.fear_up':          '😨 Nỗi sợ ↑',
+    'policy.fear_down':        'Nỗi sợ ↓',
+    'policy.solidarity_down':  'Đoàn kết ↓',
+    'policy.solidarity_up':    'Đoàn kết ↑',
+
+    // NPC Memory section
+    'sp.memory':               'Ký ức',
+    'sp.mem.betrayal':         'Phản bội',
+    'sp.mem.helped':           'Được giúp đỡ',
+    'sp.mem.harmed':           'Bị tổn hại',
+    'sp.mem.crisis':           'Khủng hoảng',
+    'sp.mem.windfall':         'May mắn',
+    'sp.mem.loss':             'Mất mát',
+    'sp.mem.illness':          'Bệnh tật',
+    'sp.mem.crime':            'Tội ác',
+    'sp.mem.accident':         'Tai nạn',
+    'sp.mem.today':            'hôm nay',
+    'sp.mem.1day_ago':         '1 ngày trước',
+    'sp.mem.ndays_ago':        '{n} ngày trước',
+
     // Chat
     'chat.ph': 'Nói chuyện với thế giới... ("tạo cơn bão to, chính phủ tham nhũng cực độ,...")',
     'chat.disabled': 'Chat AI bị tắt — đang chạy không có API key',
@@ -524,6 +626,12 @@ const translations = {
     'sp.sick':            'Bệnh',
     'sp.days_remaining':  'ngày còn lại',
     'sp.criminal_record': 'Tiền án',
+    'sp.burnout_risk':    'Nguy cơ kiệt sức',
+    'sp.burnout_days':    'ngày căng thẳng',
+    'sp.ideological_stab':'Ổn định tư tưởng',
+    'sp.susceptible':     '⚠ Dễ bị cực đoan hóa',
+    'sp.class_solidarity':'Đoàn kết giai cấp',
+    'sp.on_strike':       '⚒ Đang đình công',
 
     // Appearance labels
     'app.short': 'Thấp', 'app.average': 'Trung bình', 'app.tall': 'Cao',

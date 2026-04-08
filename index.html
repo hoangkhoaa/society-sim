@@ -104,6 +104,7 @@
     <!-- Topbar -->
     <div id="topbar">
       <span id="clock-label">–</span>
+      <span id="regime-label"></span>
       <div class="top-divider"></div>
       <span class="macro-stat" id="stat-stability"><span data-i18n="topbar.stat_stability">Stability</span> <b id="v-stability">–</b></span>
       <span class="macro-stat" id="stat-food"><span data-i18n="topbar.stat_food">Food</span> <b id="v-food">–</b></span>
@@ -128,6 +129,9 @@
       <div id="map-container">
         <canvas id="map-canvas"></canvas>
 
+        <!-- Crisis banner — top overlay, shown when 3+ stats critical -->
+        <div id="crisis-banner" class="hidden"></div>
+
         <!-- Demographics panel — bottom-left overlay -->
         <div id="demographics">
           <div class="demo-title" data-i18n="demo.title">📊 Population</div>
@@ -141,6 +145,8 @@
             <span class="demo-label" data-i18n="demo.immigrants">Immigrants</span><b id="d-immigrants">–</b>
           </div>
           <div class="demo-ages" id="d-ages"></div>
+          <div id="d-labor"></div>
+          <div id="d-rumors"></div>
         </div>
 
         <!-- NPC Spotlight Panel — opened on NPC click -->

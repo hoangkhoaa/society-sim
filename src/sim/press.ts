@@ -9,7 +9,7 @@
 // Headlines feed into the main feed & chronicle and are also passed as context
 // to the Government cycle so it can "read the press" before deciding policy.
 
-import type { WorldState, AIConfig } from '../types'
+import type { WorldState, AIConfig, Rumor } from '../types'
 import { addFeedRaw, addChronicle } from '../ui/feed'
 import { callAI } from '../ai/provider'
 import { getLang } from '../i18n'
@@ -238,6 +238,97 @@ async function generateAIHeadlines(state: WorldState, scan: PressScan, config: A
   return JSON.parse(jsonMatch[0])
 }
 
+// ── Press-triggered rumor cascade ──────────────────────────────────────────
+// Critical headlines automatically seed a matching rumor into the world.
+// Max one new rumor per press cycle; skipped if same effect already active.
+
+function spawnPressRumor(state: WorldState, scan: PressScan, criticalCount: number): void {
+  if (criticalCount === 0) return
+  const isVi = getLang() === 'vi'
+
+  type Spec = Pick<Rumor, 'effect' | 'subject'> & { en: string; vi: string }
+  let spec: Spec | null = null
+
+  if (scan.trust < 30) {
+    spec = {
+      effect: 'trust_down', subject: 'government',
+      en: 'Officials are embezzling public funds under cover of the ongoing crisis.',
+      vi: 'Quan chức đang biển thủ công quỹ dưới danh nghĩa xử lý khủng hoảng.',
+    }
+  } else if (scan.food < 20) {
+    spec = {
+      effect: 'fear_up', subject: 'government',
+      en: 'The true food shortage is far worse than official reports dare to admit.',
+      vi: 'Tình trạng thiếu lương thực thực sự tệ hơn nhiều so với báo cáo chính thức.',
+    }
+  } else if (scan.gini > 0.55) {
+    spec = {
+      effect: 'grievance_up', subject: 'market',
+      en: 'Wealthy merchants are secretly hoarding food and supplies while the poor starve.',
+      vi: 'Thương nhân giàu có đang bí mật tích trữ lương thực trong khi người nghèo đói khát.',
+    }
+  } else if (scan.epidemicActive) {
+    spec = {
+      effect: 'fear_up', subject: 'government',
+      en: 'The epidemic spreads faster than health authorities dare report.',
+      vi: 'Dịch bệnh lây lan nhanh hơn những gì cơ quan y tế dám báo cáo.',
+    }
+  }
+
+  if (!spec) return
+  if (state.rumors.some(r => r.effect === spec!.effect && r.expires_tick > state.tick)) return
+
+  state.rumors.push({
+    id: `press_${state.tick}_${spec.effect}`,
+    content: isVi ? spec.vi : spec.en,
+    subject: spec.subject,
+    effect: spec.effect,
+    reach: 15,
+    born_tick: state.tick,
+    expires_tick: state.tick + 15 * 24,
+  })
+}
+
+// ── Investigative scandal ───────────────────────────────────────────────────
+// Special breaking headline with direct mechanical effect. Fires at most once
+// every 20 sim-days when trust, gini, AND political pressure are all dire.
+
+let _lastScandalDay = -999
+
+function checkInvestigativeScandal(
+  state: WorldState,
+  scan: PressScan,
+): { text: string; severity: 'critical' } | null {
+  if (scan.trust >= 28 || scan.gini <= 0.52 || scan.pressure <= 60) return null
+  if (state.day - _lastScandalDay < 20) return null
+  _lastScandalDay = state.day
+
+  const isVi = getLang() === 'vi'
+
+  // Spawn a high-reach corruption rumor (if not already active at this scale)
+  const alreadyHigh = state.rumors.some(r => r.effect === 'trust_down' && r.reach >= 25 && r.expires_tick > state.tick)
+  if (!alreadyHigh) {
+    state.rumors.push({
+      id: `scandal_${state.tick}`,
+      content: isVi
+        ? 'Báo cáo điều tra phơi bày tham nhũng hệ thống ở cấp cao nhất chính quyền.'
+        : 'Investigative report exposes systemic corruption at the highest levels of government.',
+      subject: 'government',
+      effect: 'trust_down',
+      reach: 30,
+      born_tick: state.tick,
+      expires_tick: state.tick + 20 * 24,
+    })
+  }
+
+  return {
+    text: isVi
+      ? '🗞 NÓNG: Báo cáo điều tra phơi bày tham nhũng hệ thống ở cấp cao nhất chính quyền.'
+      : '🗞 BREAKING: Investigative report exposes systemic corruption at the highest levels of government.',
+    severity: 'critical',
+  }
+}
+
 // ── Public API ──────────────────────────────────────────────────────────────
 
 let _lastPressDay = -1
@@ -280,6 +371,10 @@ export async function runPressCycle(
       }
     }
 
+    // Investigative scandal: inserts a special breaking headline if conditions met
+    const scandal = checkInvestigativeScandal(state, scan)
+    if (scandal) headlines.unshift({ text: scandal.text, severity: scandal.severity })
+
     // Emit to feed + chronicle
     _latestHeadlines = []
     for (const h of headlines) {
@@ -287,6 +382,10 @@ export async function runPressCycle(
       addChronicle(h.text, state.year, state.day, h.severity === 'critical' ? 'critical' : 'major')
       _latestHeadlines.push(h.text)
     }
+
+    // Spawn a rumor from critical headlines
+    const criticalCount = headlines.filter(h => h.severity === 'critical').length
+    spawnPressRumor(state, scan, criticalCount)
   } finally {
     _pressBusy = false
   }

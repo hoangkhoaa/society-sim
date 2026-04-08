@@ -11,6 +11,7 @@ import { clamp } from './constitution'
 import { getLang, tf } from '../i18n'
 import { getLatestHeadlines } from './press'
 import { describeAlert, noAlertsSummaryLine, pickRoutineMessage, getFallbackPolicy } from '../local/government'
+import { showStoryCard } from '../ui/story-card'
 
 // ── Alert thresholds ──────────────────────────────────────────────────────────
 
@@ -36,7 +37,8 @@ interface Alert {
   description: string
 }
 
-interface GovernmentPolicyAI {
+export interface GovernmentPolicyAI {
+  option_label?: string
   policy_name: string
   description: string
   severity: 'important' | 'critical'
@@ -69,7 +71,7 @@ type RegimeType =
   | 'technocratic'
   | 'moderate'
 
-function detectRegime(c: Constitution): RegimeType {
+export function detectRegime(c: Constitution): RegimeType {
   // Theocratic: high state power, high trust, high cohesion
   if (c.state_power >= 0.70 && c.base_trust >= 0.65 && c.network_cohesion >= 0.70) return 'theocratic'
   // Technocratic: growth-first with strong individual rights
@@ -167,27 +169,43 @@ Your policies MUST reflect your regime's character. They should trend toward res
 - Low individual rights → coercion is acceptable; grievance is a secondary concern
 - High trust/cohesion → rely on social solidarity and moral framing
 
-Return JSON in EXACTLY this format (all numeric values are optional, omit if not applicable):
+Return JSON with EXACTLY TWO policy options — one stability-first, one trust-first:
 {
-  "policy_name": "Short policy name (3–6 words)",
-  "description": "1–2 sentences: what the policy is and why it was enacted",
-  "severity": "important" or "critical",
-  "public_statement": "Official statement in the voice of YOUR regime (colorful, in-character, 1 sentence)",
-  "food_delta": <integer, direct change to food stock; positive = add food supply; range ±500 to ±3000>,
-  "resource_delta": <integer, direct change to natural resources; range ±500 to ±5000>,
-  "npc_stress_delta": <integer -20 to 20, applied to ALL citizens>,
-  "npc_fear_delta": <integer -20 to 20>,
-  "npc_hunger_delta": <integer -20 to 20>,
-  "npc_grievance_delta": <integer -20 to 20>,
-  "npc_happiness_delta": <integer -15 to 15>,
-  "merchant_stress_delta": <integer, optional — extra effect on merchants only>,
-  "merchant_grievance_delta": <integer, optional>,
-  "farmer_stress_delta": <integer, optional>,
-  "farmer_hunger_delta": <integer, optional>,
-  "npc_solidarity_delta": <integer -30 to 10, optional — change ALL workers' class solidarity; negative = pacify unrest, positive = legitimize grievances>,
-  "worker_solidarity_delta": <integer -40 to 10, optional — targeted solidarity change for one role>,
-  "worker_role": <"farmer"|"craftsman"|"merchant"|"scholar", required if worker_solidarity_delta set>
+  "options": [
+    {
+      "option_label": "Label for option A (2–4 words, e.g. 'Emergency Rationing')",
+      "policy_name": "Short policy name (3–6 words)",
+      "description": "1–2 sentences: what the policy is and why it was enacted",
+      "severity": "important" or "critical",
+      "public_statement": "Official statement in the voice of YOUR regime (colorful, in-character, 1 sentence)",
+      "food_delta": <integer, direct change to food stock; positive = add food supply; range ±500 to ±3000>,
+      "resource_delta": <integer, direct change to natural resources; range ±500 to ±5000>,
+      "npc_stress_delta": <integer -20 to 20, applied to ALL citizens>,
+      "npc_fear_delta": <integer -20 to 20>,
+      "npc_hunger_delta": <integer -20 to 20>,
+      "npc_grievance_delta": <integer -20 to 20>,
+      "npc_happiness_delta": <integer -15 to 15>,
+      "merchant_stress_delta": <integer, optional>,
+      "merchant_grievance_delta": <integer, optional>,
+      "farmer_stress_delta": <integer, optional>,
+      "farmer_hunger_delta": <integer, optional>,
+      "npc_solidarity_delta": <integer -30 to 10, optional>,
+      "worker_solidarity_delta": <integer -40 to 10, optional>,
+      "worker_role": <"farmer"|"craftsman"|"merchant"|"scholar", required if worker_solidarity_delta set>
+    },
+    {
+      "option_label": "Label for option B (2–4 words)",
+      "policy_name": "...",
+      "description": "...",
+      "severity": "...",
+      "public_statement": "...",
+      ... same optional numeric fields ...
+    }
+  ]
 }
+Option A (index 0): prioritizes IMMEDIATE stability, control, or crisis resolution — decisive, regime-flavored.
+Option B (index 1): prioritizes LONG-TERM trust, citizen welfare, or social investment — gentler trade-offs.
+The two options must have meaningfully different stat effects. Both must reflect your regime's character.
 
 LABOR RELATIONS: class_solidarity (0–100) drives labor_unrest. When solidarity > 72 + grievance > 58 + gini > 0.42, workers STRIKE — productivity drops to zero for that role (5–15 sim-days).
 - To suppress unrest: set npc_solidarity_delta negative (propaganda, repression, wage concessions)
@@ -436,6 +454,68 @@ function generateFallbackPolicy(state: WorldState, alerts: Alert[]): GovernmentP
   }
 }
 
+// ── Soft alternative policy (always deterministic) ───────────────────────────
+// Used as option B when the AI isn't available or as a contrast to a strong option A.
+
+function generateSofterFallback(primary: GovernmentPolicyAI, _regime: RegimeType, lang: string): GovernmentPolicyAI {
+  const isVi = lang === 'vi'
+  return {
+    option_label:       isVi ? 'Cải cách Dần dần' : 'Gradual Reform',
+    policy_name:        isVi ? 'Cải cách & Đối thoại' : 'Dialogue & Reform',
+    description:        isVi
+      ? 'Chính phủ lắng nghe nguyện vọng dân chúng, nhượng bộ dần và tái xây dựng niềm tin xã hội.'
+      : 'The government listens to citizen concerns, makes modest concessions, and rebuilds social trust.',
+    severity:           'important' as const,
+    public_statement:   isVi
+      ? 'Chúng tôi cam kết cải thiện từng bước — bởi lòng tin không thể áp đặt bằng sắc lệnh.'
+      : 'We commit to step-by-step improvement — because trust cannot be mandated by decree.',
+    food_delta:         primary.food_delta     ? Math.round(primary.food_delta     * 0.55) : undefined,
+    resource_delta:     primary.resource_delta ? Math.round(primary.resource_delta * 0.55) : undefined,
+    npc_stress_delta:   -6,
+    npc_happiness_delta: 10,
+    npc_grievance_delta: (primary.npc_grievance_delta ?? 0) < 0
+      ? Math.round((primary.npc_grievance_delta ?? 0) * 0.5) : -6,
+    npc_fear_delta:     (primary.npc_fear_delta ?? 0) > 0 ? -4 : undefined,
+    npc_solidarity_delta: primary.npc_solidarity_delta
+      ? Math.round(primary.npc_solidarity_delta * 0.4) : undefined,
+  }
+}
+
+// ── Faction reactions to a policy ─────────────────────────────────────────────
+
+function emitFactionReactions(state: WorldState, policy: GovernmentPolicyAI): void {
+  const factions = state.factions?.filter(f => (f.power ?? 0) > 0.25)
+  if (!factions || factions.length === 0) return
+  const isVi = getLang() === 'vi'
+  const VALUE_ICONS: Record<string, string> = { security: '🛡', equality: '⚖', freedom: '🗽', growth: '📈' }
+
+  for (const faction of factions.slice(0, 3)) {
+    const dv = faction.dominant_value as string
+    let stance: 'supports' | 'opposes' | null = null
+
+    if (dv === 'security') {
+      if ((policy.npc_solidarity_delta ?? 0) < -5 || (policy.resource_delta ?? 0) > 2000) stance = 'supports'
+      else if ((policy.npc_fear_delta ?? 0) < -5) stance = 'opposes'
+    } else if (dv === 'equality') {
+      if ((policy.food_delta ?? 0) > 500 || (policy.npc_grievance_delta ?? 0) < -5) stance = 'supports'
+      else if ((policy.merchant_grievance_delta ?? 0) < 0 || (policy.npc_solidarity_delta ?? 0) < -20) stance = 'opposes'
+    } else if (dv === 'freedom') {
+      if ((policy.npc_fear_delta ?? 0) < -3 || (policy.npc_happiness_delta ?? 0) > 5) stance = 'supports'
+      else if ((policy.npc_fear_delta ?? 0) > 5 || (policy.npc_solidarity_delta ?? 0) < -20) stance = 'opposes'
+    } else if (dv === 'growth') {
+      if ((policy.resource_delta ?? 0) > 1000 || (policy.merchant_stress_delta ?? 0) < 0) stance = 'supports'
+      else if ((policy.npc_stress_delta ?? 0) > 10) stance = 'opposes'
+    }
+
+    if (!stance) continue
+    const icon = VALUE_ICONS[dv] ?? '◆'
+    const msg = isVi
+      ? `${icon} Phe ${faction.name} (${dv}): ${stance === 'supports' ? 'ủng hộ' : 'phản đối'} chính sách này`
+      : `${icon} ${faction.name} (${dv}): ${stance}s this policy`
+    addFeedRaw(msg, 'info', state.year, state.day)
+  }
+}
+
 // ── Main entry point ──────────────────────────────────────────────────────────
 
 let _governmentBusy = false
@@ -443,39 +523,60 @@ let _governmentBusy = false
 export async function runGovernmentCycle(
   state: WorldState,
   config: AIConfig | null,
+  onPolicyChoice?: (options: [GovernmentPolicyAI, GovernmentPolicyAI]) => Promise<GovernmentPolicyAI>,
 ): Promise<void> {
   if (_governmentBusy) return
   _governmentBusy = true
 
   try {
+    const lang = getLang()
     const alerts = detectAlerts(state)
     const hasCritical = alerts.some(a => a.level === 'critical')
     const feedSeverity = hasCritical ? 'critical' : 'political'
     const alertSummary = alerts.length > 0
       ? alerts.map(a => `• ${a.description}`).join('\n')
-      : noAlertsSummaryLine(getLang())
+      : noAlertsSummaryLine(lang)
+
+    // Helper: apply a chosen policy, emit story card + faction reactions + feed
+    const commitPolicy = (policy: GovernmentPolicyAI) => {
+      applyPolicy(state, policy)
+      emitFactionReactions(state, policy)
+      showStoryCard(
+        `${policy.policy_name} — ${policy.public_statement}`,
+        '🏛',
+        policy.severity === 'critical' ? 'critical' : 'major',
+      )
+    }
 
     if (!config) {
       // No API key — deterministic mode
       if (alerts.length === 0) {
         const regime = detectRegime(state.constitution)
-        addFeedRaw(`🏛 ${pickRoutineMessage(getLang(), regime)}`, 'political', state.year, state.day)
-      } else {
-        const policy = generateFallbackPolicy(state, alerts)
-        applyPolicy(state, policy)
-        const msg = [
-          tf('gov.feed_title', { policy: policy.policy_name }),
-          policy.description,
-          tf('gov.feed_public_statement', { statement: policy.public_statement }),
-          tf('gov.feed_alerts', { alerts: alertSummary }),
-        ].join('\n')
-        addFeedRaw(msg, feedSeverity, state.year, state.day)
-        addChronicle(tf('gov.chronicle_enacted', { policy: policy.policy_name }), state.year, state.day, hasCritical ? 'critical' : 'major')
+        addFeedRaw(`🏛 ${pickRoutineMessage(lang, regime)}`, 'political', state.year, state.day)
+        return
       }
+
+      const optA = generateFallbackPolicy(state, alerts)
+      optA.option_label = lang === 'vi' ? 'Can thiệp Trực tiếp' : 'Direct Intervention'
+      const optB = generateSofterFallback(optA, detectRegime(state.constitution), lang)
+
+      const policy = (alerts.length > 0 && onPolicyChoice)
+        ? await onPolicyChoice([optA, optB])
+        : optA
+
+      commitPolicy(policy)
+      const msg = [
+        tf('gov.feed_title', { policy: policy.policy_name }),
+        policy.description,
+        tf('gov.feed_public_statement', { statement: policy.public_statement }),
+        tf('gov.feed_alerts', { alerts: alertSummary }),
+      ].join('\n')
+      addFeedRaw(msg, feedSeverity, state.year, state.day)
+      addChronicle(tf('gov.chronicle_enacted', { policy: policy.policy_name }), state.year, state.day, hasCritical ? 'critical' : 'major')
       return
     }
 
-    // AI-powered policy decision — always runs when config is available
+    // AI-powered policy decision
     const pressHeadlines = getLatestHeadlines()
     const pressBlock = pressHeadlines.length > 0
       ? ['', 'RECENT PRESS HEADLINES (public sentiment):', ...pressHeadlines.map(h => `  ${h}`)]
@@ -490,8 +591,8 @@ export async function runGovernmentCycle(
       : []
 
     const directive = alerts.length > 0
-      ? 'Decide your government\'s policy response to these alerts.'
-      : 'No critical alerts currently. Review the overall state and decide on PROACTIVE policy — investments, infrastructure, trade deals, reforms, preparations, or public morale initiatives. Your regime should still act, not idle.'
+      ? 'Provide TWO policy options to respond to these alerts.'
+      : 'No critical alerts currently. Provide TWO proactive policy options — investments, reforms, trade deals, or morale initiatives. Your regime should act, not idle.'
 
     const prompt = [
       `GOVERNMENT REVIEW — Day ${state.day}, Year ${state.year}`,
@@ -518,8 +619,21 @@ export async function runGovernmentCycle(
 
     try {
       const raw = await callAI(config, buildGovernmentSystemPrompt(state), prompt)
-      const policy = JSON.parse(extractJSON(raw)) as GovernmentPolicyAI
-      applyPolicy(state, policy)
+      const parsed = JSON.parse(extractJSON(raw))
+
+      // Accept both new {options:[...]} format and old flat-object fallback
+      const options: GovernmentPolicyAI[] = Array.isArray(parsed.options) ? parsed.options : [parsed]
+      const optA: GovernmentPolicyAI = options[0]
+      optA.option_label ??= lang === 'vi' ? 'Ổn định Ngay' : 'Stabilize Now'
+      const optB: GovernmentPolicyAI = options[1]
+        ?? generateSofterFallback(optA, detectRegime(state.constitution), lang)
+      optB.option_label ??= lang === 'vi' ? 'Cải cách Dần dần' : 'Gradual Reform'
+
+      const policy = (alerts.length > 0 && onPolicyChoice)
+        ? await onPolicyChoice([optA, optB])
+        : optA
+
+      commitPolicy(policy)
       const msg = [
         tf('gov.feed_title', { policy: policy.policy_name }),
         policy.description,
@@ -528,10 +642,17 @@ export async function runGovernmentCycle(
       addFeedRaw(msg, feedSeverity, state.year, state.day)
       addChronicle(tf('gov.chronicle_enacted', { policy: policy.policy_name }), state.year, state.day, hasCritical ? 'critical' : 'major')
     } catch {
-      // AI call failed — use deterministic fallback or routine message
+      // AI call failed — deterministic fallback
       if (alerts.length > 0) {
-        const policy = generateFallbackPolicy(state, alerts)
-        applyPolicy(state, policy)
+        const optA = generateFallbackPolicy(state, alerts)
+        optA.option_label = lang === 'vi' ? 'Can thiệp Trực tiếp' : 'Direct Intervention'
+        const optB = generateSofterFallback(optA, detectRegime(state.constitution), lang)
+
+        const policy = onPolicyChoice
+          ? await onPolicyChoice([optA, optB])
+          : optA
+
+        commitPolicy(policy)
         const msg = [
           tf('gov.feed_title', { policy: policy.policy_name }),
           policy.description,
@@ -541,7 +662,7 @@ export async function runGovernmentCycle(
         addChronicle(tf('gov.chronicle_enacted', { policy: policy.policy_name }), state.year, state.day, hasCritical ? 'critical' : 'major')
       } else {
         const regime = detectRegime(state.constitution)
-        addFeedRaw(`🏛 ${pickRoutineMessage(getLang(), regime)}`, 'political', state.year, state.day)
+        addFeedRaw(`🏛 ${pickRoutineMessage(lang, regime)}`, 'political', state.year, state.day)
       }
     }
   } finally {
