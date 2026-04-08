@@ -1,4 +1,4 @@
-import type { NPC, Constitution, WorldState, Role, TrustMap, ActionState } from '../types'
+import type { NPC, Constitution, WorldState, Role, TrustMap, ActionState, WorkMotivationType, WorkSchedule } from '../types'
 import { faker } from '@faker-js/faker'
 import { clamp, gaussian, rand, randInt, weightedRandom, getSeason, ZONE_ADJACENCY } from './constitution'
 import { t, tf, tOcc } from '../i18n'
@@ -65,6 +65,107 @@ function ageRestModifier(age: number): number {
   if (age < 50)  return 1.00   // baseline
   if (age < 65)  return 0.85   // slower recovery
   return 0.70                   // elderly — much slower recovery
+}
+
+// ── Work Schedule Inference ────────────────────────────────────────────────
+// Derives a default work schedule from constitution parameters when the
+// constitution does not explicitly define one. Exported so tests can use it.
+
+export function inferWorkSchedule(c: Constitution): WorkSchedule {
+  // Authoritarian / Warlord: no days off, dawn-to-dusk
+  if (c.state_power >= 0.75 && c.individual_rights_floor < 0.25) {
+    return { work_days_per_week: 7, work_start_hour: 5, work_end_hour: 20 }
+  }
+  // Feudal: near-constant labor, one day off
+  if (c.gini_start >= 0.55 && c.individual_rights_floor < 0.20) {
+    return { work_days_per_week: 6, work_start_hour: 5, work_end_hour: 19 }
+  }
+  // Theocratic: 6-day week with one religious rest day
+  if (c.state_power >= 0.70 && c.base_trust >= 0.65 && c.network_cohesion >= 0.70) {
+    return { work_days_per_week: 6, work_start_hour: 6, work_end_hour: 18 }
+  }
+  // Welfare / Nordic: short work week, humane hours
+  if (c.safety_net >= 0.65 && c.gini_start < 0.40) {
+    return { work_days_per_week: 5, work_start_hour: 8, work_end_hour: 16 }
+  }
+  // Technocratic: 5-day, flexible start
+  if (c.value_priority[0] === 'growth' && c.individual_rights_floor >= 0.50) {
+    return { work_days_per_week: 5, work_start_hour: 9, work_end_hour: 18 }
+  }
+  // Competitive market / Libertarian: 6-day, long hours
+  if (c.market_freedom >= 0.70 && c.state_power < 0.40) {
+    return { work_days_per_week: 6, work_start_hour: 7, work_end_hour: 19 }
+  }
+  // Socialist / State-heavy: 6-day, standard hours
+  if (c.state_power >= 0.70 && c.market_freedom < 0.30) {
+    return { work_days_per_week: 6, work_start_hour: 6, work_end_hour: 16 }
+  }
+  // Commune: 6-day, shorter hours, community-focused
+  if (c.market_freedom < 0.25 && c.state_power < 0.35) {
+    return { work_days_per_week: 6, work_start_hour: 7, work_end_hour: 17 }
+  }
+  // Default / Moderate
+  return { work_days_per_week: 5, work_start_hour: 7, work_end_hour: 18 }
+}
+
+// ── Work Motivation Inference ──────────────────────────────────────────────
+// Assigns a motivation type aligned with the regime's character, with
+// individual noise so not everyone in the same regime is identical.
+
+export function inferMotivationType(role: Role, c: Constitution, npcId: number): WorkMotivationType {
+  const ALL_TYPES: WorkMotivationType[] = ['survival', 'coerced', 'mandatory', 'happiness', 'achievement', 'duty']
+
+  // Build regime-weighted probability for each motivation type
+  const weights: Record<WorkMotivationType, number> = {
+    survival:    0,
+    coerced:     0,
+    mandatory:   0,
+    happiness:   0,
+    achievement: 0,
+    duty:        0,
+  }
+
+  // Coercion: authoritarian / low rights / feudal repression
+  const coercionFactor = clamp((1 - c.individual_rights_floor) * c.state_power, 0, 1)
+  weights.coerced = coercionFactor * 2.0
+
+  // Survival: high inequality + weak safety net → work just to survive
+  weights.survival = clamp((c.gini_start - 0.35) * 2, 0, 1) * clamp(1 - c.safety_net * 1.5, 0, 1) * 2.5
+
+  // Happiness / fulfillment: welfare, high safety net, low inequality
+  weights.happiness = c.safety_net * (1 - c.gini_start) * 2.0
+
+  // Achievement / self-proving: competitive market, growth-focused
+  const growthRank = c.value_priority.indexOf('growth')
+  const growthWeight = growthRank >= 0 ? (4 - growthRank) / 4 : 0
+  weights.achievement = c.market_freedom * (0.5 + growthWeight * 0.5) * 2.0
+
+  // Duty / cultural obligation: high trust, high cohesion, theocratic/communal
+  weights.duty = c.base_trust * c.network_cohesion * 2.0
+
+  // Mandatory / collective obligation: socialist / state-directed, not fully coerced
+  weights.mandatory = clamp(c.state_power * (1 - coercionFactor * 0.6), 0, 1) * 1.5
+
+  // Role overrides
+  if (role === 'leader') { weights.achievement += 0.6; weights.duty += 0.3 }
+  if (role === 'guard')  { weights.duty += 0.5; weights.coerced = Math.max(0, weights.coerced - 0.4) }
+  if (role === 'merchant')  { weights.achievement += 0.4 }
+  if (role === 'scholar')   { weights.happiness += 0.4 }
+  if (role === 'farmer')    { weights.survival += 0.2; weights.duty += 0.1 }
+
+  // Clamp negatives
+  for (const k of ALL_TYPES) weights[k] = Math.max(0, weights[k])
+
+  // Deterministic weighted sample by NPC id (stable across runs)
+  const total = ALL_TYPES.reduce((s, k) => s + weights[k], 0)
+  if (total <= 0) return 'mandatory'
+  const h = Math.sin((npcId + 1) * 12.9898 + 999 * 78.233) * 43758.5453
+  let r = (h - Math.floor(h)) * total
+  for (const k of ALL_TYPES) {
+    r -= weights[k]
+    if (r <= 0) return k
+  }
+  return 'mandatory'
 }
 
 // ── Pareto wealth distribution ─────────────────────────────────────────────
@@ -244,6 +345,8 @@ export function createNPC(idx: number, total: number, constitution: Constitution
     debt_to: null,
     faction_id: null,
     legendary: false,
+    work_motivation: inferMotivationType(role, constitution, idx),
+    bio_clock_offset: clamp(Math.round(gaussian(0, 1.2)), -2, 3),
   }
 
   return {
@@ -578,48 +681,94 @@ function computeHappiness(npc: NPC, state: WorldState): number {
 
 // ── Action Selection ───────────────────────────────────────────────────────
 
+// Role-based adjustments to regime work hours (relative to regime baseline).
+const ROLE_SCHEDULE_OFFSET: Record<Role, { start: number; end: number }> = {
+  farmer:    { start: -1, end: -1 },   // early bird — dawn start, done before dark
+  craftsman: { start:  0, end:  0 },   // follows regime baseline
+  merchant:  { start:  0, end: +1 },   // stays open late
+  scholar:   { start: +1, end:  0 },   // slightly later start
+  guard:     { start:  0, end:  0 },   // handled separately
+  leader:    { start: -1, end: +1 },   // long hours
+  child:     { start:  0, end:  0 },   // handled separately
+}
+
 function normalRoutine(npc: NPC, state: WorldState): ActionState {
   const hour = state.tick % 24
+  const c    = state.constitution
+  const sched: WorkSchedule = c.work_schedule ?? inferWorkSchedule(c)
 
-  // Guards: short sleep block, mostly on duty
+  // Determine whether today is a designated rest day for this regime.
+  // (state.day - 1) % 7 gives 0–6; days ≥ work_days_per_week are off.
+  const dayOfWeek = (state.day - 1) % 7
+  const isRestDay = dayOfWeek >= sched.work_days_per_week
+
+  // ── Guards: rotation schedule ──────────────────────────────────────────
+  // Guards in humane regimes (safety_net > 0.40) get true rest days; in harsh
+  // regimes they are always on duty with only a short sleep window.
   if (npc.role === 'guard') {
+    const guardHasRestDay = isRestDay && c.safety_net > 0.40
+    if (guardHasRestDay) {
+      if (hour >= 22 || hour < 8) return 'resting'
+      if (hour >= 14) return 'socializing'
+      return 'resting'
+    }
     if (hour >= 23 || hour < 5) return 'resting'
     return 'working'
   }
 
-  // Leaders: long office hours, short social window
+  // ── Leaders: long hours; work even on rest days but take social time ───
   if (npc.role === 'leader') {
-    if (hour >= 23 || hour < 6) return 'resting'
-    if (hour >= 19) return 'socializing'
+    if (isRestDay) {
+      if (hour >= 23 || hour < 7) return 'resting'
+      if (hour >= 13) return 'socializing'
+      return 'working'  // leaders rarely fully disconnect
+    }
+    const leaderStart = Math.max(3, sched.work_start_hour - 1)
+    const leaderEnd   = Math.min(23, sched.work_end_hour   + 1)
+    if (hour >= 23 || hour < leaderStart) return 'resting'
+    if (hour >= leaderEnd) return 'socializing'
     return 'working'
   }
 
-  // Children: later wake / earlier bed, spread by id
+  // ── Children: age-appropriate fixed schedule ───────────────────────────
   if (npc.role === 'child') {
-    const wake = 7 + Math.floor(scheduleUnit(npc.id, 15) * 2)      // 7–8
+    const wake  = 7 + Math.floor(scheduleUnit(npc.id, 15) * 2)   // 7–8
     const sleep = 20 + Math.floor(scheduleUnit(npc.id, 16) * 2)  // 20–21
     if (hour >= sleep || hour < wake) return 'resting'
-    if (hour >= 16) return 'socializing'
+    if (isRestDay || hour >= 16) return 'socializing'
     return 'working'
   }
 
-  // Night-shift merchants/craftsmen: sleep ~daytime, work evenings through dawn
+  // ── Rest day (all other adults) ─────────────────────────────────────────
+  if (isRestDay) {
+    const offset   = npc.bio_clock_offset
+    const wakeTime = clamp(8 + offset, 6, 12)
+    if (hour < wakeTime || hour >= 22) return 'resting'
+    if (hour >= 10) return 'socializing'
+    return 'resting'
+  }
+
+  // ── Night-shift workers (existing logic preserved) ─────────────────────
   if (isNightShiftWorker(npc)) {
     const lateSleeper = scheduleUnit(npc.id, 12) < 0.35
-    const sleepStart = lateSleeper ? 10 : 8
-    const sleepEnd = lateSleeper ? 18 : 17
+    const sleepStart  = lateSleeper ? 10 : 8
+    const sleepEnd    = lateSleeper ? 18 : 17
     if (hour >= sleepStart && hour < sleepEnd) return 'resting'
     if (hour >= 17 && hour < 20) return 'socializing'
     return 'working'
   }
 
-  // Typical adult: wake 5–8, work until 15–18, socialize until 21–23, then rest
-  const morningEnd = 5 + Math.floor(scheduleUnit(npc.id, 2) * 4)    // 5–8
-  const leaveWork = 15 + Math.floor(scheduleUnit(npc.id, 14) * 4)   // 15–18
-  const nightStart = 21 + Math.floor(scheduleUnit(npc.id, 1) * 3)   // 21–23
+  // ── Typical working day: regime schedule + role offset + bio clock ─────
+  const roleAdj   = ROLE_SCHEDULE_OFFSET[npc.role]
+  const offset    = npc.bio_clock_offset
+  const workStart = clamp(sched.work_start_hour + roleAdj.start + offset, 3, 12)
+  const workEnd   = clamp(sched.work_end_hour   + roleAdj.end   + offset, 12, 23)
+  // Social window before sleep: 1–3 hours after work, scaled by NPC id
+  const socialHours = 1 + Math.floor(scheduleUnit(npc.id, 1) * 3)     // 1–3 h
+  const sleepHour   = Math.min(workEnd + socialHours, 23)
 
-  if (hour >= nightStart || hour < morningEnd) return 'resting'
-  if (hour >= leaveWork) return 'socializing'
+  if (hour >= sleepHour || hour < workStart) return 'resting'
+  if (hour >= workEnd) return 'socializing'
   return 'working'
 }
 
@@ -790,8 +939,46 @@ function updateWorldview(npc: NPC, state: WorldState): void {
 
 // ── Wealth tick ────────────────────────────────────────────────────────────
 
+// Compute a motivation factor (0–1) based on the NPC's work_motivation type.
+// Different motivation types respond differently to needs and worldview.
+function computeMotivationFactor(npc: NPC): number {
+  switch (npc.work_motivation) {
+    case 'survival':
+      // Moderately hungry → works hard to eat; starving or satisfied → reduced drive
+      if (npc.hunger > 70) return 0.40 + (100 - npc.hunger) / 100 * 0.25   // exhausted by hunger
+      if (npc.hunger > 25) return 0.65 + (npc.hunger - 25) / 100 * 0.30    // rising urgency
+      return 0.55 + (npc.happiness / 100) * 0.20                             // fed — modest effort
+
+    case 'coerced':
+      // Fear drives compliance but erodes output above threshold (terror paralysis)
+      return Math.max(0.15,
+        0.60 - Math.max(0, npc.fear - 50) / 100 * 0.40
+        + (npc.happiness / 100) * 0.10,
+      )
+
+    case 'mandatory':
+      // Steady, duty-bound output; happiness gives modest lift
+      return 0.60 + (npc.happiness / 100) * 0.25
+
+    case 'happiness':
+      // Strongly happiness-driven — output tracks life satisfaction closely
+      return 0.35 + (npc.happiness / 100) * 0.60
+
+    case 'achievement':
+      // Skill-expression + competition drive; happiness provides smaller bonus
+      return 0.50 + npc.base_skill * 0.30 + (npc.happiness / 100) * 0.20
+
+    case 'duty':
+      // Collectivist loyalty; stable regardless of personal happiness
+      return 0.55 + npc.worldview.collectivism * 0.25 + (npc.happiness / 100) * 0.10
+
+    default:
+      return 0.50 + (npc.happiness / 100) * 0.50
+  }
+}
+
 export function computeProductivity(npc: NPC, state: WorldState): number {
-  const motivation    = 0.5 + (npc.happiness / 100) * 0.5
+  const motivation    = computeMotivationFactor(npc)
   const expected      = ROLE_WEALTH_EXPECTATION[npc.role]
   const fairness      = clamp(npc.wealth / Math.max(expected, 1), 0, 2.0)
   // Below expectation → penalty (under-resourced, unmotivated); above → no bonus (incentive satisfied)
@@ -1199,10 +1386,11 @@ function transitionToAdultCareer(npc: NPC, state: WorldState): void {
 
   // Pick role using weighted random selection
   const selectedRole = weightedRandom(weights as Record<string, number>) as Role
-  npc.role        = selectedRole
-  npc.zone        = assignZone(selectedRole)
-  npc.occupation  = tOcc(selectedRole)
-  npc.description = generateDescription(npc)  // refresh description with new role
+  npc.role            = selectedRole
+  npc.zone            = assignZone(selectedRole)
+  npc.occupation      = tOcc(selectedRole)
+  npc.work_motivation = inferMotivationType(selectedRole, state.constitution, npc.id)
+  npc.description     = generateDescription(npc)  // refresh description with new role
 }
 
 // ── Trust update ───────────────────────────────────────────────────────────

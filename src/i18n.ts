@@ -127,6 +127,15 @@ const translations = {
     'sp.exhaustion':  'Fatigue',
     'sp.isolation':   'Loneliness',
     'sp.burnout':     '🔥 Burned out',
+    'sp.work_motivation': 'Work motivation',
+
+    // Work motivation labels
+    'motiv.survival':    '🍞 Survival',
+    'motiv.coerced':     '⛓ Coerced',
+    'motiv.mandatory':   '📋 Mandatory',
+    'motiv.happiness':   '✨ Fulfillment',
+    'motiv.achievement': '🏆 Achievement',
+    'motiv.duty':        '🛡 Duty',
 
     // Spotlight — worldview bars
     'sp.collectivism':    'Collectivism',
@@ -400,6 +409,15 @@ const translations = {
     'sp.exhaustion':  'Kiệt sức',
     'sp.isolation':   'Cô đơn',
     'sp.burnout':     '🔥 Kiệt sức mãn tính',
+    'sp.work_motivation': 'Động lực làm việc',
+
+    // Work motivation labels (Vietnamese)
+    'motiv.survival':    '🍞 Sinh tồn',
+    'motiv.coerced':     '⛓ Cưỡng bức',
+    'motiv.mandatory':   '📋 Bắt buộc',
+    'motiv.happiness':   '✨ Mưu cầu hạnh phúc',
+    'motiv.achievement': '🏆 Chứng tỏ bản thân',
+    'motiv.duty':        '🛡 Nghĩa vụ',
 
     // Spotlight — worldview bars
     'sp.collectivism':    'Tập thể',
