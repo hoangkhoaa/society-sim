@@ -13,7 +13,7 @@ import {
   getStoredLangPreference,
   isSupportedLang,
 } from './i18n'
-import { initMap, setMapPaused } from './ui/map'
+import { initMap, setMapPaused, setMapLegendVisible } from './ui/map'
 import { runGovernmentCycle, detectRegime, type GovernmentPolicyAI } from './sim/government'
 import { checkPressTrigger } from './sim/press'
 
@@ -399,6 +399,45 @@ async function startGame(constitution: Constitution) {
 // Track macro stats from the previous daily tick to compute deltas
 let _prevDailyMacro: { stability: number; food: number; natural_resources: number; energy: number; trust: number } | null = null
 
+function getTopbarLevel(value: number, warnAt: number, dangerAt: number): string {
+  if (value <= 20) return t('topbar.tip_level_critical') as string
+  if (value <= dangerAt) return t('topbar.tip_level_danger') as string
+  if (value <= warnAt) return t('topbar.tip_level_warning') as string
+  return t('topbar.tip_level_healthy') as string
+}
+
+function updateTopbarTooltips(macro: WorldState['macro']) {
+  const setTip = (id: string, text: string) => {
+    const el = document.getElementById(id)
+    if (el) el.title = text
+  }
+
+  setTip(
+    'stat-stability',
+    `${t('topbar.tip_stability') as string}\n${t('topbar.stat_stability') as string}: ${Math.round(macro.stability)}%\n${getTopbarLevel(macro.stability, 40, 25)}`,
+  )
+  setTip(
+    'stat-food',
+    `${t('topbar.tip_food') as string}\n${t('topbar.stat_food') as string}: ${Math.round(macro.food)}%\n${getTopbarLevel(macro.food, 35, 20)}`,
+  )
+  setTip(
+    'stat-resources',
+    `${t('topbar.tip_resources') as string}\n${t('topbar.stat_resources') as string}: ${Math.round(macro.natural_resources)}%\n${getTopbarLevel(macro.natural_resources, 30, 15)}`,
+  )
+  setTip(
+    'stat-energy',
+    `${t('topbar.tip_energy') as string}\n${t('topbar.stat_energy') as string}: ${Math.round(macro.energy)}%\n${getTopbarLevel(macro.energy, 35, 20)}`,
+  )
+  setTip(
+    'stat-trust',
+    `${t('topbar.tip_trust') as string}\n${t('topbar.stat_trust') as string}: ${Math.round(macro.trust)}%\n${getTopbarLevel(macro.trust, 35, 20)}`,
+  )
+  setTip(
+    'stat-gini',
+    `${t('topbar.tip_gini') as string}\n${t('topbar.stat_gini') as string}: ${macro.gini.toFixed(2)}`,
+  )
+}
+
 function updateTopbar() {
   if (!world) return
   const { macro, day, year } = world
@@ -419,6 +458,7 @@ function updateTopbar() {
   setStat('v-energy',    macro.energy,    'stat-energy',    35, 20)
   setStat('v-trust',     macro.trust,     'stat-trust',     35, 20)
   document.getElementById('v-gini')!.textContent = macro.gini.toFixed(2)
+  updateTopbarTooltips(macro)
 
   const { requests, tokens } = getAIUsage()
   const tokStr = tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : `${tokens}`
@@ -720,10 +760,15 @@ const RUMOR_EFFECT_ICONS: Record<string, string> = {
 
 function updateRumors() {
   if (!world) return
-  const el = document.getElementById('d-rumors')
-  if (!el) return
+  const panel = document.getElementById('chronicle-rumors')
+  const el = document.getElementById('rumor-log')
+  if (!el || !panel) return
   const active = world.rumors.filter(r => r.expires_tick > world!.tick)
-  if (active.length === 0) { el.innerHTML = ''; return }
+  panel.classList.remove('hidden')
+  if (active.length === 0) {
+    el.innerHTML = `<div class="rumor-empty">${t('rumors.empty') as string}</div>`
+    return
+  }
 
   const totalNpcs = world.npcs.filter(n => n.lifecycle.is_alive).length || 1
 
@@ -778,8 +823,39 @@ let speed = 1
 let simInterval: ReturnType<typeof setInterval> | null = null
 let peakPopulation = 0
 const btnPause = document.getElementById('btn-pause')!
+const btnToggleDemo = document.getElementById('btn-toggle-demo') as HTMLButtonElement
+const btnToggleLegend = document.getElementById('btn-toggle-legend') as HTMLButtonElement
 const btnTheme = document.getElementById('btn-theme')!
 btnTheme.addEventListener('click', toggleTheme)
+const demographicsPanel = document.getElementById('demographics') as HTMLElement
+
+const DEMO_VISIBLE_KEY = 'ui_demographics_visible'
+const LEGEND_VISIBLE_KEY = 'ui_legend_visible'
+let demographicsVisible = localStorage.getItem(DEMO_VISIBLE_KEY) !== '0'
+let legendVisible = localStorage.getItem(LEGEND_VISIBLE_KEY) !== '0'
+
+function applyOverlayVisibility() {
+  demographicsPanel.classList.toggle('hidden', !demographicsVisible)
+  setMapLegendVisible(legendVisible)
+
+  btnToggleDemo.classList.toggle('off', !demographicsVisible)
+  btnToggleLegend.classList.toggle('off', !legendVisible)
+  btnToggleDemo.title = demographicsVisible ? 'Hide demographics panel' : 'Show demographics panel'
+  btnToggleLegend.title = legendVisible ? 'Hide network legend' : 'Show network legend'
+}
+
+btnToggleDemo.addEventListener('click', () => {
+  demographicsVisible = !demographicsVisible
+  localStorage.setItem(DEMO_VISIBLE_KEY, demographicsVisible ? '1' : '0')
+  applyOverlayVisibility()
+})
+
+btnToggleLegend.addEventListener('click', () => {
+  legendVisible = !legendVisible
+  localStorage.setItem(LEGEND_VISIBLE_KEY, legendVisible ? '1' : '0')
+  applyOverlayVisibility()
+})
+applyOverlayVisibility()
 
 // Government cycle: runs once every 15 sim-days.
 // Tracks which 15-day period has already been processed to avoid double-firing at high speeds.
@@ -1215,6 +1291,13 @@ document.getElementById('btn-constitution')!.addEventListener('click', () => {
     </table>`
 
   showInfo(t('topbar.constitution') as string, bodyHtml)
+})
+
+document.getElementById('btn-map-note')!.addEventListener('click', () => {
+  showInfo(
+    t('map.note_title') as string,
+    t('map.note_body') as string,
+  )
 })
 
 // ── Log filter buttons ─────────────────────────────────────────────────────

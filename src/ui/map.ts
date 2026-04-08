@@ -321,6 +321,7 @@ let _mapPaused = false
 /** When sim is paused, skip most frames unless user moved mouse / resized / tab visible again. */
 let _needsMapRedraw = true
 let _visibilityListenerAttached = false
+let _legendVisible = true
 
 // ── Selection state ───────────────────────────────────────────────────────────
 let selectedNPCId: number | null = null
@@ -329,6 +330,11 @@ function isLightTheme(): boolean { return document.body.dataset.theme === 'light
 export function setMapPaused(value: boolean) {
   _mapPaused = value
   if (!value) _needsMapRedraw = true
+}
+
+export function setMapLegendVisible(value: boolean) {
+  _legendVisible = value
+  _needsMapRedraw = true
 }
 
 // ── NPC visual state (separate from sim data) ──────────────────────────────
@@ -581,7 +587,7 @@ function draw() {
   drawZones(world, W, H)
   drawNPCs(world, W, H)
   drawAtmosphere(world, W, H)
-  drawLegend(W, H)
+  if (_legendVisible) drawLegend(W, H)
 }
 
 function drawAtmosphere(world: WorldState, W: number, H: number) {

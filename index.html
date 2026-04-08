@@ -115,6 +115,8 @@
       <div class="top-spacer"></div>
       <button class="btn-top" id="btn-pause">⏸</button>
       <button class="btn-top" id="btn-speed">1×</button>
+      <button class="btn-top" id="btn-toggle-demo" title="Toggle demographics panel">👥</button>
+      <button class="btn-top" id="btn-toggle-legend" title="Toggle network legend">🕸</button>
       <button class="btn-top" id="btn-theme" title="Toggle light/dark mode">🌙</button>
       <button class="btn-top" id="btn-constitution" data-i18n="topbar.constitution">📜 Constitution</button>
       <button class="btn-top" id="btn-gov" title="Trigger government cycle manually">🏛 <span id="gov-cd">–</span></button>
@@ -128,6 +130,7 @@
       <!-- Map placeholder (PixiJS canvas will go here in Phase 3) -->
       <div id="map-container">
         <canvas id="map-canvas"></canvas>
+        <button id="btn-map-note" class="map-note-btn" data-i18n-title="map.note_btn_title" title="Map notes">🗺</button>
 
         <!-- Crisis banner — top overlay, shown when 3+ stats critical -->
         <div id="crisis-banner" class="hidden"></div>
@@ -193,6 +196,10 @@
               <button class="log-filter-btn active" data-filter="major" data-i18n="filter.important">Important</button>
               <button class="log-filter-btn" data-filter="critical" data-i18n="filter.critical">Critical</button>
             </div>
+          </div>
+          <div id="chronicle-rumors" class="hidden">
+            <div class="chronicle-subheader">Rumors</div>
+            <div id="rumor-log"></div>
           </div>
           <div id="chronicle-log"></div>
         </div>

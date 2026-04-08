@@ -348,6 +348,9 @@ body[data-theme='light'] #modal-body { color: #4c6179; }
   transition: all .15s;
 }
 .btn-top:hover { background: #1a1a1a; color: #ccc; }
+.btn-top.off {
+  opacity: 0.5;
+}
 
 #active-events {
   font-size: 10px;
@@ -389,6 +392,27 @@ body[data-theme='light'] #modal-body { color: #4c6179; }
   background: #111;
 }
 #map-canvas { display: block; }
+.map-note-btn {
+  position: absolute;
+  top: 34px;
+  right: 10px;
+  z-index: 7;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid #232323;
+  background: rgba(10, 10, 10, 0.66);
+  color: #cfd6e6;
+  cursor: pointer;
+}
+.map-note-btn:hover {
+  background: rgba(22, 22, 22, 0.82);
+}
+body[data-theme='light'] .map-note-btn {
+  border-color: #cfd9e5;
+  background: rgba(255, 255, 255, 0.74);
+  color: #3b4e67;
+}
 
 /* Demographics overlay — bottom-left of map */
 #demographics {
@@ -591,6 +615,32 @@ body[data-theme='light'] #modal-body { color: #4c6179; }
 .chronicle-time {
   color: #2a2a2a;
   font-size: 10px;
+}
+
+/* Rumors sub-panel inside chronicle */
+#chronicle-rumors {
+  border-bottom: 1px solid #151515;
+  padding: 4px 10px 6px;
+  max-height: 112px;
+  overflow-y: auto;
+}
+#chronicle-rumors::-webkit-scrollbar { width: 2px; }
+#chronicle-rumors::-webkit-scrollbar-thumb { background: #1f1f1f; border-radius: 2px; }
+.chronicle-subheader {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: #4b4b4b;
+  margin-bottom: 4px;
+}
+#rumor-log .rumor-title {
+  margin: 0 0 4px;
+}
+.rumor-empty {
+  font-size: 10px;
+  color: #666;
+  font-style: italic;
 }
 
 /* Chat bar */
@@ -1040,6 +1090,13 @@ body[data-theme='light'] #regime-label { color: #9aacbe; }
 body[data-theme='light'] .rumor-title { color: #8a9bb0; }
 body[data-theme='light'] .rumor-text  { color: #446; }
 body[data-theme='light'] .rumor-reach { color: #9aacbe; }
+body[data-theme='light'] .rumor-empty { color: #7d90a6; }
+body[data-theme='light'] #chronicle-rumors {
+  border-bottom-color: #dbe5ef;
+}
+body[data-theme='light'] .chronicle-subheader {
+  color: #7a8ea4;
+}
 
 /* ── Responsive (mobile/tablet) ─────────────────────────────────────────── */
 @media (max-width: 900px) {

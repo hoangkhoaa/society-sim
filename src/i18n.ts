@@ -63,6 +63,22 @@ const translations = {
     'topbar.stat_trust':     'Trust',
     'topbar.stat_gini':      'Gini',
     'topbar.ai_thinking':    '⏸ AI…',
+    'topbar.tip_stability':
+      'Overall social order and resilience. Low values mean unrest, fragmentation, and crisis risk.',
+    'topbar.tip_food':
+      'Food security and stock coverage. Low values lead to hunger, stress, and instability.',
+    'topbar.tip_resources':
+      'Remaining natural resource capacity for production and growth.',
+    'topbar.tip_energy':
+      'Effective productive capacity of the society (workforce output adjusted by literacy and food constraints).',
+    'topbar.tip_trust':
+      'Average public trust in government intention and institutions.',
+    'topbar.tip_gini':
+      'Wealth inequality index (0 = equal, 1 = extreme inequality). Higher values increase social tension.',
+    'topbar.tip_level_healthy': 'Status: healthy',
+    'topbar.tip_level_warning': 'Status: warning',
+    'topbar.tip_level_danger':  'Status: danger',
+    'topbar.tip_level_critical':'Status: critical',
 
     // Feed
     'feed.header':      'Event Log',
@@ -92,6 +108,7 @@ const translations = {
 
     // Rumors panel
     'rumors.title': '💬 Rumors ({count})',
+    'rumors.empty': 'No active rumors right now.',
 
     // Crisis banner + strike readiness feed
     'crisis.banner':           '⚠ CIVILIZATION IN CRISIS',
@@ -145,6 +162,17 @@ const translations = {
     'map.legend.family':      'Warm gold — spouses when close in the same area',
     'map.legend.spotlight':   'Click a citizen — highlight their ties (incl. weak-tie rings)',
     'map.legend.roles_title': 'Dot colors — roles',
+    'map.note_btn_title':     'Map notes',
+    'map.note_title':         '🗺 Map Notes',
+    'map.note_body':
+      '<b>This map is conceptual, not real geographic population density.</b><br><br>' +
+      'It is a systems map that helps you read social dynamics quickly, not a literal city GIS layout.<br><br>' +
+      '<b>How to read it:</b><br>' +
+      '• Zones represent functional domains (food, market, governance, learning, housing).<br>' +
+      '• NPC positions are visual cues for activity/state, not surveyed addresses.<br>' +
+      '• Lines emphasize relationship dynamics (strong ties, info ties, family links), not roads.<br>' +
+      '• Distances are stylized for readability and simulation clarity.<br><br>' +
+      'Treat each zone as a narrative/functional layer of society.',
 
     // Modal
     'modal.confirm_btn': 'Confirm',
@@ -462,6 +490,22 @@ const translations = {
     'topbar.stat_trust':     'Tin tưởng',
     'topbar.stat_gini':      'Gini',
     'topbar.ai_thinking':    '⏸ AI…',
+    'topbar.tip_stability':
+      'Mức trật tự và khả năng chống chịu của xã hội. Thấp sẽ dễ bất ổn, phân rã và khủng hoảng.',
+    'topbar.tip_food':
+      'An ninh lương thực và mức dự trữ. Thấp sẽ dẫn đến đói, căng thẳng và bất ổn.',
+    'topbar.tip_resources':
+      'Dung lượng tài nguyên tự nhiên còn lại cho sản xuất và tăng trưởng.',
+    'topbar.tip_energy':
+      'Năng lực sản xuất hiệu dụng của xã hội (đầu ra lao động sau khi tính học vấn và ràng buộc lương thực).',
+    'topbar.tip_trust':
+      'Mức tin tưởng trung bình của dân vào ý định chính phủ và thể chế.',
+    'topbar.tip_gini':
+      'Chỉ số bất bình đẳng tài sản (0 = bình đẳng, 1 = cực đoan). Càng cao càng dễ căng thẳng xã hội.',
+    'topbar.tip_level_healthy': 'Trạng thái: ổn',
+    'topbar.tip_level_warning': 'Trạng thái: cảnh báo',
+    'topbar.tip_level_danger':  'Trạng thái: nguy hiểm',
+    'topbar.tip_level_critical':'Trạng thái: nghiêm trọng',
 
     // Feed
     'feed.header':      'Nhật ký sự kiện',
@@ -491,6 +535,7 @@ const translations = {
 
     // Rumors panel
     'rumors.title': '💬 Tin đồn ({count})',
+    'rumors.empty': 'Hiện chưa có tin đồn nào đang hoạt động.',
 
     // Crisis banner + strike readiness feed
     'crisis.banner':           '⚠ VĂN MINH ĐANG KHỦNG HOẢNG',
@@ -544,6 +589,17 @@ const translations = {
     'map.legend.family':      'Vàng ấm — vợ/chồng khi ở gần trong cùng khu',
     'map.legend.spotlight':   'Bấm vào công dân — xem nổi bật các mối quan hệ (kể cả vòng quen biết)',
     'map.legend.roles_title': 'Màu chấm — nghề & vai trò',
+    'map.note_btn_title':     'Ghi chú bản đồ',
+    'map.note_title':         '🗺 Ghi chú bản đồ',
+    'map.note_body':
+      '<b>Bản đồ này mang tính mô phỏng khái niệm, không phải phân bố dân cư địa lý thực.</b><br><br>' +
+      'Đây là bản đồ hệ thống để bạn đọc động lực xã hội nhanh hơn, không phải bản đồ GIS đô thị theo nghĩa đen.<br><br>' +
+      '<b>Cách đọc bản đồ:</b><br>' +
+      '• Mỗi zone đại diện cho một miền chức năng xã hội (lương thực, thị trường, quản trị, tri thức, khu ở).<br>' +
+      '• Vị trí NPC là tín hiệu trực quan về hoạt động/trạng thái, không phải địa chỉ khảo sát thực.<br>' +
+      '• Các đường nối nhấn mạnh quan hệ xã hội (liên kết mạnh, mạng thông tin, liên kết gia đình), không phải đường xá.<br>' +
+      '• Khoảng cách được cách điệu để dễ đọc và rõ logic mô phỏng.<br><br>' +
+      'Hãy hiểu zone như một lớp diễn giải/chức năng của xã hội.',
 
     // Modal
     'modal.confirm_btn': 'Xác nhận',
