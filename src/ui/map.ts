@@ -1203,33 +1203,64 @@ function drawLegend(W: number, H: number) {
 
   const margin = 12
   const pad = 10
-  const gap = 8
-  const infoLineW = 22
+  const gap = 5
+  const lineW = 22
   const bgR = 6
+  const titleH = 11
+  const netRowH = 13
+  const hintH = 11
+  const rolesTitleH = 10
+  const roleRowH = 20
   ctx.textAlign = 'left'
 
-  ctx.font = '9px system-ui'
-  const infoLabel = String(t('sp.info_ties'))
-  const infoRowW = infoLineW + 6 + ctx.measureText(infoLabel).width
+  const heading = String(t('map.legend.heading'))
+  const netRows: { dash: boolean; color: string; label: string }[] = [
+    { dash: true, color: 'rgba(80,160,255,0.85)', label: String(t('map.legend.info')) },
+    { dash: false, color: 'rgba(93,202,165,0.78)', label: String(t('map.legend.strong')) },
+    { dash: false, color: 'rgba(255,200,120,0.88)', label: String(t('map.legend.family')) },
+  ]
+  const spotlightHint = String(t('map.legend.spotlight'))
+  const rolesTitle = String(t('map.legend.roles_title'))
+
+  ctx.font = '600 9px system-ui'
+  let blockW = pad * 2 + ctx.measureText(heading).width
+
+  ctx.font = '8px system-ui'
+  for (const r of netRows) {
+    const w = pad * 2 + lineW + 6 + ctx.measureText(r.label).width
+    blockW = Math.max(blockW, w)
+  }
+  blockW = Math.max(blockW, pad * 2 + ctx.measureText(spotlightHint).width)
+  blockW = Math.max(blockW, pad * 2 + ctx.measureText(rolesTitle).width)
 
   let rolesRowW = 0
+  ctx.font = '8px system-ui'
   for (const role of roles) {
     const label = role.charAt(0).toUpperCase() + role.slice(1)
-    rolesRowW += ctx.measureText(label).width + 22
+    rolesRowW += ctx.measureText(label).width + 20
   }
+  blockW = Math.ceil(Math.max(blockW, rolesRowW + pad * 2))
 
-  const blockW = Math.ceil(Math.max(infoRowW, rolesRowW) + pad * 2)
-  const infoRowH = 16
-  const roleRowH = 22
-  const blockH = pad + infoRowH + gap + roleRowH + pad
+  const blockH =
+    pad +
+    titleH +
+    gap +
+    netRows.length * (netRowH + gap) -
+    gap +
+    gap +
+    hintH +
+    gap +
+    rolesTitleH +
+    gap +
+    roleRowH +
+    pad
 
   const blockRight = W - margin
   const blockLeft = blockRight - blockW
   const blockBottom = H - margin
   const blockTop = blockBottom - blockH
 
-  // Single panel: network line on top, roles below (avoids overlap with demographics bottom-left)
-  ctx.fillStyle = light ? 'rgba(255,255,255,0.72)' : 'rgba(0,0,0,0.55)'
+  ctx.fillStyle = light ? 'rgba(255,255,255,0.78)' : 'rgba(0,0,0,0.58)'
   ctx.beginPath()
   ctx.moveTo(blockLeft + bgR, blockTop)
   ctx.arcTo(blockRight, blockTop, blockRight, blockBottom, bgR)
@@ -1238,32 +1269,55 @@ function drawLegend(W: number, H: number) {
   ctx.arcTo(blockLeft, blockTop, blockRight, blockTop, bgR)
   ctx.fill()
 
-  const infoLineY = blockTop + pad + Math.floor(infoRowH / 2)
-  ctx.setLineDash([3, 4])
-  ctx.beginPath()
-  ctx.moveTo(blockLeft + pad, infoLineY)
-  ctx.lineTo(blockLeft + pad + infoLineW, infoLineY)
-  ctx.strokeStyle = 'rgba(80,160,255,0.75)'
-  ctx.lineWidth = 1
-  ctx.stroke()
-  ctx.setLineDash([])
+  const textColor = light ? 'rgba(0,0,0,0.72)' : 'rgba(255,255,255,0.58)'
+  let y = blockTop + pad
 
-  ctx.fillStyle = light ? 'rgba(0,0,0,0.62)' : 'rgba(255,255,255,0.55)'
-  ctx.font = '9px system-ui'
-  ctx.fillText(infoLabel, blockLeft + pad + infoLineW + 6, infoLineY + 3)
+  ctx.fillStyle = textColor
+  ctx.font = '600 9px system-ui'
+  ctx.fillText(heading, blockLeft + pad, y + 9)
+  y += titleH + gap
 
-  const roleBaseline = blockTop + pad + infoRowH + gap + 14
+  ctx.font = '8px system-ui'
+  for (const r of netRows) {
+    const midY = y + Math.floor(netRowH / 2)
+    ctx.beginPath()
+    ctx.moveTo(blockLeft + pad, midY)
+    ctx.lineTo(blockLeft + pad + lineW, midY)
+    ctx.lineWidth = 1
+    if (r.dash) {
+      ctx.setLineDash([3, 4])
+      ctx.strokeStyle = r.color
+      ctx.stroke()
+      ctx.setLineDash([])
+    } else {
+      ctx.strokeStyle = r.color
+      ctx.stroke()
+    }
+    ctx.fillStyle = textColor
+    ctx.fillText(r.label, blockLeft + pad + lineW + 6, midY + 3)
+    y += netRowH + gap
+  }
+
+  ctx.fillStyle = light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.42)'
+  ctx.fillText(spotlightHint, blockLeft + pad, y + 8)
+  y += hintH + gap
+
+  ctx.fillStyle = textColor
+  ctx.fillText(rolesTitle, blockLeft + pad, y + 8)
+  y += rolesTitleH + gap
+
   let x = blockLeft + pad
+  const roleBaseline = y + 10
   for (const role of roles) {
     ctx.beginPath()
     ctx.arc(x + 4, roleBaseline - 4, 4, 0, Math.PI * 2)
     ctx.fillStyle = roleColor(role, light)
     ctx.fill()
 
-    ctx.fillStyle = light ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.55)'
+    ctx.fillStyle = textColor
     const label = role.charAt(0).toUpperCase() + role.slice(1)
     ctx.fillText(label, x + 11, roleBaseline)
-    x += ctx.measureText(label).width + 22
+    x += ctx.measureText(label).width + 20
   }
 }
 

@@ -90,6 +90,14 @@ const translations = {
     'chat.ph': 'Talk to the world... ("create a storm", "government corruption to the extreme,...")',
     'chat.disabled': 'AI chat disabled — running without API key',
 
+    // Map legend — social network visuals
+    'map.legend.heading':     'Social network',
+    'map.legend.info':        'Blue dashed — news & rumors while socializing or organizing',
+    'map.legend.strong':      'Solid lines — close ties nearby; color shifts with activity',
+    'map.legend.family':      'Warm gold — spouses when close in the same area',
+    'map.legend.spotlight':   'Click a citizen — highlight their ties (incl. weak-tie rings)',
+    'map.legend.roles_title': 'Dot colors — roles',
+
     // Modal
     'modal.confirm_btn': 'Confirm',
     'modal.cancel_btn':  'Cancel',
@@ -426,6 +434,14 @@ const translations = {
     // Chat
     'chat.ph': 'Nói chuyện với thế giới... ("tạo cơn bão to, chính phủ tham nhũng cực độ,...")',
     'chat.disabled': 'Chat AI bị tắt — đang chạy không có API key',
+
+    // Map legend — social network visuals
+    'map.legend.heading':     'Mạng xã hội',
+    'map.legend.info':        'Xanh nét đứt — tin đồn/tin tức khi giao lưu hoặc tổ chức',
+    'map.legend.strong':      'Nét liền — quan hệ thân gần; màu đổi theo hoạt động',
+    'map.legend.family':      'Vàng ấm — vợ/chồng khi ở gần trong cùng khu',
+    'map.legend.spotlight':   'Bấm vào công dân — xem nổi bật các mối quan hệ (kể cả vòng quen biết)',
+    'map.legend.roles_title': 'Màu chấm — nghề & vai trò',
 
     // Modal
     'modal.confirm_btn': 'Xác nhận',
