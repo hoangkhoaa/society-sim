@@ -600,10 +600,74 @@ function computeBirthChancePerDay(a: NPC, b: NPC, state: WorldState): number {
   return clamp(chance, 0, 0.003)
 }
 
+// ── Romance / Marriage helpers ──────────────────────────────────────────────
+
+// Heartbreak cooldown length: 30 sim-days (720 ticks × 24 = 17 280 ticks)
+const HEARTBREAK_COOLDOWN_TICKS = 30 * 24
+
+// Minimum romance score required before either partner can propose
+const ROMANCE_THRESHOLD = 45
+
+// Returns true if a and b are direct blood relations (parent-child).
+function isBloodRelation(a: NPC, b: NPC): boolean {
+  return a.lifecycle.children_ids.includes(b.id) || b.lifecycle.children_ids.includes(a.id)
+}
+
+// Worldview similarity: 0 (completely opposite) → 1 (identical)
+function worldviewSimilarity(a: NPC, b: NPC): number {
+  const dims = ['collectivism', 'authority_trust', 'risk_tolerance', 'time_preference'] as const
+  const totalDiff = dims.reduce((s, d) => s + Math.abs(a.worldview[d] - b.worldview[d]), 0)
+  return 1 - totalDiff / dims.length   // 0–1; 1 = identical worldview
+}
+
+// Compatibility score for a couple (0–1); affects marriage probability and divorce risk.
+// High score → more likely to marry, less likely to divorce.
+function coupleCompatibility(a: NPC, b: NPC): number {
+  const wv   = worldviewSimilarity(a, b)                         // 0–1
+  const age  = Math.max(0, 1 - Math.abs(a.age - b.age) / 30)    // 0–1
+  // Wealth compatibility: extreme ratio = incompatible
+  const minW = Math.min(a.wealth, b.wealth) + 1
+  const maxW = Math.max(a.wealth, b.wealth) + 1
+  const wlth = Math.max(0, 1 - Math.log(maxW / minW) / Math.log(50))  // 0–1
+  return clamp(wv * 0.55 + age * 0.25 + wlth * 0.20, 0, 1)
+}
+
+// Apply heartbreak to an NPC: cooldown + grievance + isolation spike.
+function applyHeartbreak(npc: NPC, state: WorldState): void {
+  npc.lifecycle.romance_target_id = null
+  npc.lifecycle.romance_score     = 0
+  npc.lifecycle.heartbreak_cooldown = HEARTBREAK_COOLDOWN_TICKS
+  npc.grievance  = clamp(npc.grievance  + 25, 0, 100)
+  npc.isolation  = clamp(npc.isolation  + 20, 0, 100)
+  // Memory entry for the heartbreak
+  npc.memory.push({ event_id: 'heartbreak_' + state.tick, type: 'trust_broken', emotional_weight: -35, tick: state.tick })
+  if (npc.memory.length > 10) npc.memory.shift()
+}
+
+// Dissolve a marriage and apply consequences to both partners.
+function dissolveMarriage(npc: NPC, spouse: NPC, state: WorldState, reason: 'divorce' | 'widowed'): void {
+  npc.lifecycle.spouse_id    = null
+  spouse.lifecycle.spouse_id = null
+
+  if (reason === 'divorce') {
+    applyHeartbreak(npc,    state)
+    applyHeartbreak(spouse, state)
+    addChronicle(tf('engine.divorced', { a: npc.name, b: spouse.name }) as string, state.year, state.day, 'minor')
+    addFeedRaw(tf('engine.divorced', { a: npc.name, b: spouse.name }) as string, 'info', state.year, state.day)
+  }
+}
+
 function checkLifecycleEvents(state: WorldState): void {
   const living = state.npcs.filter(n => n.lifecycle.is_alive)
 
-  // Birth check: married couples with fertility (one roll per couple per day — lower id is canonical)
+  // ── 0. Tick heartbreak cooldowns ──────────────────────────────────────────
+  for (const npc of living) {
+    if ((npc.lifecycle.heartbreak_cooldown ?? 0) > 0) {
+      npc.lifecycle.heartbreak_cooldown = Math.max(0, npc.lifecycle.heartbreak_cooldown - 24)
+    }
+  }
+
+  // ── 1. Birth check ────────────────────────────────────────────────────────
   for (const npc of living) {
     if (npc.lifecycle.spouse_id === null) continue
     const sid = npc.lifecycle.spouse_id
@@ -617,33 +681,119 @@ function checkLifecycleEvents(state: WorldState): void {
     }
   }
 
-  // Marriage check: single adults
-  const singles = living.filter(n =>
+  // ── 2. Romance accumulation ───────────────────────────────────────────────
+  // Each day, single adults who are not in heartbreak develop or deepen feelings
+  // toward eligible contacts in their strong_ties (proximity + compatibility).
+  const romanceCandidates = living.filter(n =>
     n.lifecycle.spouse_id === null &&
     n.age >= 18 &&
-    n.age <= 45,
+    n.age <= 55 &&
+    (n.lifecycle.heartbreak_cooldown ?? 0) === 0,
   )
-  for (const npc of singles) {
-    if (npc.lifecycle.spouse_id !== null) continue
-    // ~0.4% per single per day (~0.2–0.8 marriage attempts/day at N≈500; was 0.01%)
-    if (Math.random() > 0.004) continue
-    const candidate = singles.find(s =>
-      s.id !== npc.id &&
-      s.lifecycle.spouse_id === null &&
-      s.gender !== npc.gender &&
-      Math.abs(s.age - npc.age) <= 12 &&
-      npc.strong_ties.includes(s.id),
-    )
-    if (candidate) {
-      npc.lifecycle.spouse_id      = candidate.id
-      candidate.lifecycle.spouse_id = npc.id
-      npc.strong_ties              = [...new Set([...npc.strong_ties, candidate.id])]
-      candidate.strong_ties        = [...new Set([...candidate.strong_ties, npc.id])]
-      addChronicle(tf('engine.married', { a: npc.name, b: candidate.name }) as string, state.year, state.day, 'minor')
+  for (const npc of romanceCandidates) {
+    // Invalidate existing romance target if they've become unavailable
+    const currentTarget = npc.lifecycle.romance_target_id !== null
+      ? state.npcs[npc.lifecycle.romance_target_id]
+      : null
+    if (currentTarget) {
+      if (!currentTarget.lifecycle.is_alive || currentTarget.lifecycle.spouse_id !== null) {
+        // Target married someone else — heartbreak
+        const wasMarried = currentTarget.lifecycle.spouse_id !== null
+        if (wasMarried && npc.lifecycle.romance_score >= 20) {
+          applyHeartbreak(npc, state)
+        } else {
+          npc.lifecycle.romance_target_id = null
+          npc.lifecycle.romance_score     = 0
+        }
+        continue
+      }
     }
+
+    // Find eligible strong-tie partners (different gender, age-compatible, not blood-related, single)
+    const eligible = npc.strong_ties
+      .map(id => state.npcs[id])
+      .filter(s =>
+        s?.lifecycle.is_alive &&
+        s.lifecycle.spouse_id === null &&
+        s.gender !== npc.gender &&
+        s.age >= 18 &&
+        s.age <= 55 &&
+        (s.lifecycle.heartbreak_cooldown ?? 0) === 0 &&
+        Math.abs(s.age - npc.age) <= 20 &&
+        !isBloodRelation(npc, s),
+      ) as NPC[]
+
+    if (eligible.length === 0) continue
+
+    // Pick the most attractive candidate (by compatibility + same-zone proximity)
+    let best: NPC | null = null
+    let bestScore = -Infinity
+    for (const s of eligible) {
+      const compat   = coupleCompatibility(npc, s)
+      const sameZone = npc.zone === s.zone ? 0.25 : 0
+      const score    = compat + sameZone
+      if (score > bestScore) { bestScore = score; best = s }
+    }
+    if (!best) continue
+
+    // If no romance target yet, start developing feelings toward the best candidate
+    if (npc.lifecycle.romance_target_id === null) {
+      // Only start a new crush if both are happy enough (stress < 70 and happiness > 30)
+      if (npc.stress < 70 && npc.happiness > 30 && Math.random() < 0.08) {
+        npc.lifecycle.romance_target_id = best.id
+        npc.lifecycle.romance_score     = 5
+      }
+      continue
+    }
+
+    // Deepen existing feelings if still eligible
+    if (npc.lifecycle.romance_target_id !== best.id) continue
+    // Proximity + happiness drive attraction growth (0.5–2.0 per day)
+    const zoneBonus = npc.zone === best.zone ? 0.8 : 0
+    const happyBonus = npc.happiness > 60 ? 0.5 : npc.happiness > 40 ? 0.2 : 0
+    const growthRate = 0.5 + zoneBonus + happyBonus
+    npc.lifecycle.romance_score = clamp(npc.lifecycle.romance_score + growthRate, 0, 100)
   }
 
-  // Divorce check: high combined stress + low happiness
+  // ── 3. Mutual love → Marriage ─────────────────────────────────────────────
+  for (const npc of romanceCandidates) {
+    if (npc.lifecycle.spouse_id !== null) continue
+    if (npc.lifecycle.romance_target_id === null) continue
+    if (npc.lifecycle.romance_score < ROMANCE_THRESHOLD) continue
+
+    const target = state.npcs[npc.lifecycle.romance_target_id]
+    if (!target?.lifecycle.is_alive) continue
+    if (target.lifecycle.spouse_id !== null) continue
+    // Mutual love: both must have the other as their romance target
+    if (target.lifecycle.romance_target_id !== npc.id) continue
+    if (target.lifecycle.romance_score < ROMANCE_THRESHOLD) continue
+    if (npc.id > target.id) continue  // canonical — lower id processes
+
+    // Compatibility determines marriage probability: 0.2%–1.5% per day
+    const compat = coupleCompatibility(npc, target)
+    const marriageChance = clamp(0.002 + compat * 0.013, 0.002, 0.015)
+    if (Math.random() > marriageChance) continue
+
+    // They get married
+    npc.lifecycle.spouse_id    = target.id
+    target.lifecycle.spouse_id = npc.id
+    npc.lifecycle.romance_target_id    = null
+    target.lifecycle.romance_target_id = null
+    npc.lifecycle.romance_score    = 0
+    target.lifecycle.romance_score = 0
+    npc.strong_ties    = [...new Set([...npc.strong_ties,    target.id])]
+    target.strong_ties = [...new Set([...target.strong_ties, npc.id])]
+    // Marriage happiness boost
+    npc.happiness    = clamp(npc.happiness    + 12, 0, 100)
+    target.happiness = clamp(target.happiness + 12, 0, 100)
+
+    const msg = tf('engine.married', { a: npc.name, b: target.name }) as string
+    addChronicle(msg, state.year, state.day, 'minor')
+    addFeedRaw(msg, 'info', state.year, state.day)
+  }
+
+  // ── 4. Divorce check ─────────────────────────────────────────────────────
+  // Triggers on: high combined stress + low happiness OR large worldview divergence.
   for (const npc of living) {
     if (npc.lifecycle.spouse_id === null) continue
     if (npc.id > npc.lifecycle.spouse_id) continue  // avoid double-processing
@@ -652,17 +802,30 @@ function checkLifecycleEvents(state: WorldState): void {
       npc.lifecycle.spouse_id = null  // widowed — clear ref
       continue
     }
-    const avgStress    = (npc.stress + spouse.stress) / 2
+
+    const avgStress    = (npc.stress    + spouse.stress)    / 2
     const avgHappiness = (npc.happiness + spouse.happiness) / 2
-    // Chance ramps up sharply above stress=70, happiness<30
-    const divorceChance = Math.max(0, (avgStress - 70) / 100) * Math.max(0, (50 - avgHappiness) / 50) * 0.003
+
+    // Stress + unhappiness factor
+    const stressChance = Math.max(0, (avgStress - 70) / 100) * Math.max(0, (50 - avgHappiness) / 50) * 0.003
+
+    // Worldview divergence factor: large accumulated ideological gap → strain
+    const wvDivergence = 1 - worldviewSimilarity(npc, spouse)  // 0–1; 1 = opposites
+    const divergenceChance = Math.max(0, wvDivergence - 0.55) * 0.004  // only kicks in above 55% divergence
+
+    const divorceChance = stressChance + divergenceChance
     if (divorceChance > 0 && Math.random() < divorceChance) {
-      npc.lifecycle.spouse_id   = null
-      spouse.lifecycle.spouse_id = null
-      npc.grievance    = clamp(npc.grievance    + 20, 0, 100)
-      spouse.grievance = clamp(spouse.grievance + 20, 0, 100)
-      addChronicle(tf('engine.divorced', { a: npc.name, b: spouse.name }) as string, state.year, state.day, 'minor')
+      dissolveMarriage(npc, spouse, state, 'divorce')
     }
+  }
+
+  // ── 5. Network limit during heartbreak ───────────────────────────────────
+  // NPCs in heartbreak withdraw socially: cap strong_ties at 8 new connections.
+  for (const npc of living) {
+    if ((npc.lifecycle.heartbreak_cooldown ?? 0) <= 0) continue
+    if (npc.strong_ties.length <= 8) continue
+    // Keep the first 8 ties (oldest connections — don't cut long-standing friendships)
+    npc.strong_ties = npc.strong_ties.slice(0, 8)
   }
 }
 
