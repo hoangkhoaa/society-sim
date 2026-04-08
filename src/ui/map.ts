@@ -1,6 +1,6 @@
 import type { WorldState, Role } from '../types'
 import { ZONE_LABELS } from '../types'
-import { openSpotlight } from './spotlight'
+import { openSpotlight, close as closeSpotlight } from './spotlight'
 import type { AIConfig } from '../types'
 import { t } from '../i18n'
 
@@ -897,7 +897,11 @@ function drawSelectedNPCTies(
 ) {
   if (!ctx || selectedNPCId === null) return
   const npc = world.npcs.find(n => n.id === selectedNPCId)
-  if (!npc || !npc.lifecycle.is_alive) { selectedNPCId = null; return }
+  if (!npc || !npc.lifecycle.is_alive) {
+    selectedNPCId = null
+    closeSpotlight()
+    return
+  }
 
   const pos = posMap.get(npc.id)
   if (!pos) return
@@ -1439,6 +1443,7 @@ function onClick(e: MouseEvent) {
   } else {
     selectedNPCId = null
     _needsMapRedraw = true
+    closeSpotlight()
   }
 }
 
@@ -1446,5 +1451,6 @@ function onKeyDown(e: KeyboardEvent) {
   if (e.key === 'Escape' && selectedNPCId !== null) {
     selectedNPCId = null
     _needsMapRedraw = true
+    closeSpotlight()
   }
 }
