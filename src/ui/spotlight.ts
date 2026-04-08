@@ -59,9 +59,27 @@ function lifeStory(npc: NPC, state: WorldState): string {
   }
   if (npc.lifecycle.spouse_id !== null) {
     const spouse = state.npcs.find(n => n.id === npc.lifecycle.spouse_id)
-    if (spouse) lines.push(vi
-      ? `Đã kết hôn với ${spouse.name}, làm nghề ${spouse.occupation.toLowerCase()}.`
-      : `Married to ${spouse.name}, a ${spouse.occupation.toLowerCase()}.`)
+    if (spouse) {
+      lines.push(vi
+        ? `Đã kết hôn với ${spouse.name}, làm nghề ${spouse.occupation.toLowerCase()}.`
+        : `Married to ${spouse.name}, a ${spouse.occupation.toLowerCase()}.`)
+
+      // Compatibility with spouse
+      const compat = Math.round(coupleCompatibilityPublic(npc, spouse) * 100)
+      lines.push(vi
+        ? `Độ tương hợp với vợ/chồng: <strong>${compat}%</strong>${compat < 40 ? ' — mối quan hệ có nguy cơ rạn nứt.' : ''}`
+        : `Compatibility with spouse: <strong>${compat}%</strong>${compat < 40 ? ' — the relationship is under strain.' : ''}`)
+    }
+  } else if (npc.lifecycle.romance_target_id !== null) {
+    const target = state.npcs.find(n => n.id === npc.lifecycle.romance_target_id)
+    if (target) lines.push(vi
+      ? `❤ Đang có tình cảm với ${target.name} (độ hấp dẫn: ${Math.round(npc.lifecycle.romance_score ?? 0)}%).`
+      : `❤ Has feelings for ${target.name} (attraction: ${Math.round(npc.lifecycle.romance_score ?? 0)}%).`)
+  } else if ((npc.lifecycle.heartbreak_cooldown ?? 0) > 0) {
+    const days = Math.ceil((npc.lifecycle.heartbreak_cooldown ?? 0) / 24)
+    lines.push(vi
+      ? `💔 Đang đau khổ sau chia tay — cần thêm ${days} ngày để hồi phục.`
+      : `💔 Heartbroken — needs ${days} more days to heal.`)
   }
   if (npc.lifecycle.children_ids.length > 0) {
     const n = npc.lifecycle.children_ids.length
@@ -118,9 +136,22 @@ function lifeStory(npc: NPC, state: WorldState): string {
 function renderStatic(npc: NPC, state: WorldState): string {
   const trustGov        = npc.trust_in.government
   const compositeTrust  = Math.round((trustGov.competence + trustGov.intention) / 2 * 100)
-  const marital         = npc.lifecycle.spouse_id !== null
-    ? t('sp.married') : t('sp.single')
   const alive = npc.lifecycle.is_alive
+
+  // Marital / romance status label
+  let marital: string
+  if (npc.lifecycle.spouse_id !== null) {
+    marital = t('sp.married') as string
+  } else if (npc.lifecycle.romance_target_id !== null) {
+    const target = state.npcs.find(n => n.id === npc.lifecycle.romance_target_id)
+    marital = target
+      ? `${t('sp.in_love')} ${target.name}`
+      : t('sp.single') as string
+  } else if ((npc.lifecycle.heartbreak_cooldown ?? 0) > 0) {
+    marital = t('sp.heartbroken') as string
+  } else {
+    marital = t('sp.single') as string
+  }
 
   const genderLabel = npc.gender === 'male' ? t('sp.male') : t('sp.female')
 
@@ -130,6 +161,53 @@ function renderStatic(npc: NPC, state: WorldState): string {
     ? t('app.average') as string : t(`app.${npc.appearance.build}`) as string
   const hairLabel   = `${t('app.hair')} ${t(`hair.${npc.appearance.hair}`)}`
   const skinLabel   = `${t('skin.light')?.length ? '' : ''}${t(`skin.${npc.appearance.skin}`)}`
+
+  // Romance section: attraction bar + compatibility (only when in courtship)
+  const romanceSection = npc.lifecycle.romance_target_id !== null ? (() => {
+    const target = state.npcs.find(n => n.id === npc.lifecycle.romance_target_id)
+    if (!target) return ''
+    const attractionPct = Math.round(Math.min(100, npc.lifecycle.romance_score ?? 0))
+    const compatPct     = Math.round(coupleCompatibilityPublic(npc, target) * 100)
+    const mutualLove    = target.lifecycle.romance_target_id === npc.id
+    return `
+    <div class="sp-section">
+      <div class="sp-section-title">${t('sp.romance')}</div>
+      <div class="sp-row" style="margin-bottom:2px">
+        <span class="sp-label">${t('sp.attraction')}</span>
+        <span class="sp-value">${attractionPct}%</span>
+      </div>
+      <div class="sp-bar" style="margin-bottom:6px">
+        <div class="sp-bar-fill" style="width:${attractionPct}%;background:#e87ca0"></div>
+      </div>
+      <div class="sp-row" style="margin-bottom:2px">
+        <span class="sp-label">${t('sp.compat')}</span>
+        <span class="sp-value" style="color:${compatPct > 65 ? '#5dcaa5' : compatPct > 40 ? '#ef9f27' : '#e24b4b'}">${compatPct}%</span>
+      </div>
+      <div class="sp-bar" style="margin-bottom:6px">
+        <div class="sp-bar-fill" style="width:${compatPct}%;background:${compatPct > 65 ? '#5dcaa5' : compatPct > 40 ? '#ef9f27' : '#e24b4b'};opacity:.7"></div>
+      </div>
+      ${mutualLove ? `<div class="sp-row" style="color:#e87ca0">${t('sp.mutual_feelings')}</div>` : ''}
+    </div>`
+  })() : ''
+
+  // Heartbreak recovery bar
+  const heartbreakSection = (npc.lifecycle.heartbreak_cooldown ?? 0) > 0 ? (() => {
+    const totalCooldown = 30 * 24   // HEARTBREAK_COOLDOWN_TICKS
+    const remaining     = npc.lifecycle.heartbreak_cooldown ?? 0
+    const healedPct     = Math.round((1 - remaining / totalCooldown) * 100)
+    const daysLeft      = Math.ceil(remaining / 24)
+    return `
+    <div class="sp-section">
+      <div class="sp-section-title">${t('sp.heartbroken')}</div>
+      <div class="sp-row" style="margin-bottom:2px">
+        <span class="sp-label">${t('sp.healing')}</span>
+        <span class="sp-value">${healedPct}% · ${daysLeft} ${t('sp.heartbreak_recovery')}</span>
+      </div>
+      <div class="sp-bar" style="margin-bottom:6px">
+        <div class="sp-bar-fill" style="width:${healedPct}%;background:#7f77dd"></div>
+      </div>
+    </div>`
+  })() : ''
 
   return `
     <!-- Description -->
@@ -245,6 +323,9 @@ function renderStatic(npc: NPC, state: WorldState): string {
       ${npc.criminal_record ? `<div class="sp-row"><span class="sp-label" style="color:#e24b4b">⚠ ${t('sp.criminal_record')}</span></div>` : ''}
     </div>` : ''}
 
+    ${romanceSection}
+    ${heartbreakSection}
+
     ${lifeStory(npc, state)}
 
     <!-- Daily thought (LLM, filled async above) -->
@@ -265,6 +346,18 @@ function renderStatic(npc: NPC, state: WorldState): string {
 }
 
 // ── Bar helpers ────────────────────────────────────────────────────────────
+
+// Compatibility score (0–1) between two NPCs — mirrors engine logic, kept local to avoid circular imports.
+function coupleCompatibilityPublic(a: NPC, b: NPC): number {
+  const dims = ['collectivism', 'authority_trust', 'risk_tolerance', 'time_preference'] as const
+  const totalDiff = dims.reduce((s, d) => s + Math.abs(a.worldview[d] - b.worldview[d]), 0)
+  const wv   = 1 - totalDiff / dims.length
+  const age  = Math.max(0, 1 - Math.abs(a.age - b.age) / 30)
+  const minW = Math.min(a.wealth, b.wealth) + 1
+  const maxW = Math.max(a.wealth, b.wealth) + 1
+  const wlth = Math.max(0, 1 - Math.log(maxW / minW) / Math.log(50))
+  return Math.min(1, Math.max(0, wv * 0.55 + age * 0.25 + wlth * 0.20))
+}
 
 function statBar(label: string, value: number, color: string): string {
   const pct = Math.round(Math.min(100, Math.max(0, value)))

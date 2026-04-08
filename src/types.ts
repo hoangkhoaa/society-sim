@@ -51,6 +51,11 @@ export interface NPCLifecycle {
   children_ids: number[]
   fertility: number             // 0–1, decreases with age
   last_birth_tick: number | null  // sim tick of the most recent child birth (for spacing)
+
+  // ── Romance system ────────────────────────────────────────────────────────
+  romance_target_id: number | null  // id of NPC they currently have feelings for (courtship)
+  romance_score: number             // accumulated attraction 0–100; marriage triggers at high mutual score
+  heartbreak_cooldown: number       // ticks remaining where new romance is suppressed after a breakup
 }
 
 // ── Trust ──────────────────────────────────────────────────────────────────
