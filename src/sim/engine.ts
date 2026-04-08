@@ -602,7 +602,7 @@ function computeBirthChancePerDay(a: NPC, b: NPC, state: WorldState): number {
 
 // ── Romance / Marriage helpers ──────────────────────────────────────────────
 
-// Heartbreak cooldown length: 30 sim-days (720 ticks × 24 = 17 280 ticks)
+// Heartbreak cooldown length: 30 sim-days (30 days × 24 ticks/day = 720 ticks)
 const HEARTBREAK_COOLDOWN_TICKS = 30 * 24
 
 // Minimum romance score required before either partner can propose
@@ -640,7 +640,7 @@ function applyHeartbreak(npc: NPC, state: WorldState): void {
   npc.grievance  = clamp(npc.grievance  + 25, 0, 100)
   npc.isolation  = clamp(npc.isolation  + 20, 0, 100)
   // Memory entry for the heartbreak
-  npc.memory.push({ event_id: 'heartbreak_' + state.tick, type: 'trust_broken', emotional_weight: -35, tick: state.tick })
+  npc.memory.push({ event_id: `heartbreak_${state.tick}`, type: 'trust_broken', emotional_weight: -35, tick: state.tick })
   if (npc.memory.length > 10) npc.memory.shift()
 }
 

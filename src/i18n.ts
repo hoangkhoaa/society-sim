@@ -124,6 +124,8 @@ const translations = {
     'sp.compat':      'Compatibility',
     'sp.heartbreak_recovery': 'days until healed',
     'sp.romance':     'Romance',
+    'sp.healing':     'Healing',
+    'sp.mutual_feelings': '💑 Mutual feelings',
 
     // Spotlight — status bars
     'sp.stress':      'Stress',
@@ -413,6 +415,8 @@ const translations = {
     'sp.compat':      'Độ tương hợp',
     'sp.heartbreak_recovery': 'ngày để hồi phục',
     'sp.romance':     'Tình cảm',
+    'sp.healing':     'Hồi phục',
+    'sp.mutual_feelings': '💑 Tình cảm đôi chiều',
 
     // Spotlight — status bars
     'sp.stress':      'Căng thẳng',

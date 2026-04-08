@@ -186,7 +186,7 @@ function renderStatic(npc: NPC, state: WorldState): string {
       <div class="sp-bar" style="margin-bottom:6px">
         <div class="sp-bar-fill" style="width:${compatPct}%;background:${compatPct > 65 ? '#5dcaa5' : compatPct > 40 ? '#ef9f27' : '#e24b4b'};opacity:.7"></div>
       </div>
-      ${mutualLove ? `<div class="sp-row" style="color:#e87ca0">💑 Mutual feelings</div>` : ''}
+      ${mutualLove ? `<div class="sp-row" style="color:#e87ca0">${t('sp.mutual_feelings')}</div>` : ''}
     </div>`
   })() : ''
 
@@ -200,7 +200,7 @@ function renderStatic(npc: NPC, state: WorldState): string {
     <div class="sp-section">
       <div class="sp-section-title">${t('sp.heartbroken')}</div>
       <div class="sp-row" style="margin-bottom:2px">
-        <span class="sp-label">Healing</span>
+        <span class="sp-label">${t('sp.healing')}</span>
         <span class="sp-value">${healedPct}% · ${daysLeft} ${t('sp.heartbreak_recovery')}</span>
       </div>
       <div class="sp-bar" style="margin-bottom:6px">
