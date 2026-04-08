@@ -147,6 +147,14 @@ When receiving input from The Architect, decide what kind of response is most ap
      "requires_confirm": false
    }
 
+━━━ INTERPRETATION RULE (IMPORTANT) ━━━
+- Do NOT be literal-only. If the Architect proposes a policy, invention, reform, ideology, decree, or social program,
+  reinterpret it into the closest valid simulation action (event and/or intervention) instead of rejecting it.
+- Prefer converting actionable requests into "event" or "intervention".
+- Use "answer" only for pure Q&A / analysis requests.
+- Example: "The state invents water-powered cars" should become a plausible "tech_shift" event
+  (and interventions when allowed), with narrative consequences.
+
 ━━━ ZONES ━━━
 The town is arranged in 3 bands (north→south):
   Top: "north_farm" (Northern Fields, large) + "scholar_quarter" (Academy Hill)
@@ -206,7 +214,8 @@ function tokenModeDirective(config: AIConfig): string {
     return `TOKEN MODE: EVENTS ONLY.
 - Never return type "intervention".
 - Only return "event" or "answer".
-- Convert any direct-NPC-control request into an "answer" explaining this mode does not allow interventions.`
+- Reinterpret policy/invention/social-change commands into the closest valid "event" whenever possible.
+- Only return "answer" when the Architect is explicitly asking for information or explanation.`
   }
   if (config.token_mode === 'events_plus_npc_control') {
     return `TOKEN MODE: EVENTS + NPC CONTROL.
