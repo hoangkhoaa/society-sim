@@ -11,6 +11,7 @@ import { clamp, getSeason } from './constitution'
 import { addChronicle, addFeedRaw } from '../ui/feed'
 import { getLang } from '../i18n'
 import { NT } from '../local/narratives'
+import { showStoryCard } from '../ui/story-card'
 
 // ── Cooldown tracking ────────────────────────────────────────────────────────
 
@@ -332,6 +333,8 @@ export function checkNarrativeEvents(state: WorldState): void {
     if (story.feedSeverity) {
       addFeedRaw(text, story.feedSeverity, state.year, state.day)
     }
+    // Show cinematic story card for major/critical events
+    showStoryCard(text, story.severity === 'critical' ? '⚡' : '📜', story.severity)
   }
 }
 

@@ -179,6 +179,12 @@ const translations = {
     'sp.sick':            'Sick',
     'sp.days_remaining':  'days remaining',
     'sp.criminal_record': 'Criminal record',
+    'sp.burnout_risk':    'Burnout risk',
+    'sp.burnout_days':    'days of strain',
+    'sp.ideological_stab':'Ideological stability',
+    'sp.susceptible':     '⚠ Susceptible to radicalization',
+    'sp.class_solidarity':'Class solidarity',
+    'sp.on_strike':       '⚒ On strike',
 
     // Appearance labels
     'app.short': 'Short', 'app.average': 'Average', 'app.tall': 'Tall',
@@ -524,6 +530,12 @@ const translations = {
     'sp.sick':            'Bệnh',
     'sp.days_remaining':  'ngày còn lại',
     'sp.criminal_record': 'Tiền án',
+    'sp.burnout_risk':    'Nguy cơ kiệt sức',
+    'sp.burnout_days':    'ngày căng thẳng',
+    'sp.ideological_stab':'Ổn định tư tưởng',
+    'sp.susceptible':     '⚠ Dễ bị cực đoan hóa',
+    'sp.class_solidarity':'Đoàn kết giai cấp',
+    'sp.on_strike':       '⚒ Đang đình công',
 
     // Appearance labels
     'app.short': 'Thấp', 'app.average': 'Trung bình', 'app.tall': 'Cao',

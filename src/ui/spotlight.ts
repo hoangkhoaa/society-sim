@@ -255,7 +255,8 @@ function renderStatic(npc: NPC, state: WorldState): string {
         <span class="sp-label">${t('sp.work_motivation')}</span>
         <span class="sp-value" style="color:#c0a0ff">${t(`motiv.${npc.work_motivation}`)}</span>
       </div>
-      ${(npc.burnout_ticks ?? 0) >= 480 ? `<div class="sp-row" style="color:#e24b4b;font-weight:bold">${t('sp.burnout')}</div>` : ''}
+      ${burnoutBar(npc.burnout_ticks ?? 0)}
+      ${ideologicalStabilityBar(npc.dissonance_acc ?? 0, npc.susceptible ?? false)}
     </div>
 
     <!-- Worldview bars -->
@@ -313,6 +314,7 @@ function renderStatic(npc: NPC, state: WorldState): string {
         <span class="sp-label">${t('sp.community_group')}</span>
         <span class="sp-value" style="color:#5dcaa5">${t('sp.group')} #${npc.community_group}</span>
       </div>` : ''}
+      ${solidarityBar(npc.class_solidarity ?? 0, npc.on_strike ?? false)}
     </div>
 
     <!-- Status flags -->
@@ -326,6 +328,7 @@ function renderStatic(npc: NPC, state: WorldState): string {
     ${romanceSection}
     ${heartbreakSection}
 
+    ${memorySection(npc, state.tick)}
     ${lifeStory(npc, state)}
 
     <!-- Daily thought (LLM, filled async above) -->
@@ -372,6 +375,55 @@ function statBar(label: string, value: number, color: string): string {
   `
 }
 
+// Burnout progress — shown once strain reaches 25% (120/480 ticks)
+function burnoutBar(burnoutTicks: number): string {
+  if (burnoutTicks < 120) return ''
+  const pct  = Math.min(100, Math.round(burnoutTicks / 480 * 100))
+  const color = pct >= 100 ? '#e24b4b' : pct >= 60 ? '#ef9f27' : '#7f77dd'
+  const label = pct >= 100
+    ? `🔥 ${t('sp.burnout') as string}`
+    : `${t('sp.burnout_risk') as string}`
+  return `
+    <div class="sp-row" style="margin-bottom:2px">
+      <span class="sp-label" style="color:${color}">${label}</span>
+      <span class="sp-value" style="color:${color}">${pct}%</span>
+    </div>
+    <div class="sp-bar" style="margin-bottom:6px">
+      <div class="sp-bar-fill" style="width:${pct}%;background:${color}"></div>
+    </div>`
+}
+
+// Ideological stability — inverse of dissonance_acc; predicts radicalization
+function ideologicalStabilityBar(dissonance: number, susceptible: boolean): string {
+  if (dissonance < 5) return ''
+  const stability = Math.max(0, 100 - dissonance)
+  const color = stability > 60 ? '#5dcaa5' : stability > 35 ? '#ef9f27' : '#e24b4b'
+  return `
+    <div class="sp-row" style="margin-bottom:2px">
+      <span class="sp-label">${t('sp.ideological_stab') as string}</span>
+      <span class="sp-value" style="color:${color}">${stability}%</span>
+    </div>
+    <div class="sp-bar" style="margin-bottom:6px">
+      <div class="sp-bar-fill" style="width:${stability}%;background:${color};opacity:.8"></div>
+    </div>
+    ${susceptible ? `<div class="sp-row" style="margin-bottom:6px;color:#e24b4b;font-size:10px">${t('sp.susceptible') as string}</div>` : ''}`
+}
+
+// Class solidarity bar + on-strike indicator
+function solidarityBar(solidarity: number, onStrike: boolean): string {
+  const pct   = Math.round(Math.min(100, Math.max(0, solidarity)))
+  const color = pct > 72 ? '#e24b4b' : pct > 55 ? '#ef9f27' : '#888'
+  return `
+    <div class="sp-row" style="margin-bottom:2px">
+      <span class="sp-label">${t('sp.class_solidarity') as string}</span>
+      <span class="sp-value" style="color:${color}">${pct}%</span>
+    </div>
+    <div class="sp-bar" style="margin-bottom:${onStrike ? 2 : 6}px">
+      <div class="sp-bar-fill" style="width:${pct}%;background:${color};opacity:.75"></div>
+    </div>
+    ${onStrike ? `<div class="sp-row" style="margin-bottom:6px;color:#ef9f27;font-weight:600">${t('sp.on_strike') as string}</div>` : ''}`
+}
+
 function worldviewBar(label: string, value: number, color: string): string {
   const pct = Math.round(value * 100)
   return `
@@ -383,4 +435,65 @@ function worldviewBar(label: string, value: number, color: string): string {
       <div class="sp-bar-fill" style="width:${pct}%;background:${color};opacity:.7"></div>
     </div>
   `
+}
+
+// ── Full memory buffer (up to 10 entries) ─────────────────────────────────────
+
+const MEMORY_META: Record<string, { icon: string; label: string; sign: 1 | -1 }> = {
+  trust_broken: { icon: '🔪', label: 'Betrayal',   sign: -1 },
+  helped:       { icon: '🫱🏻‍🫲🏼', label: 'Helped',     sign:  1 },
+  harmed:       { icon: '💣', label: 'Harmed',     sign: -1 },
+  crisis:       { icon: '🚨', label: 'Crisis',     sign: -1 },
+  windfall:     { icon: '🏆', label: 'Windfall',   sign:  1 },
+  loss:         { icon: '🕳️', label: 'Loss',       sign: -1 },
+  illness:      { icon: '🦠', label: 'Illness',    sign: -1 },
+  crime:        { icon: '🕵️‍♂️', label: 'Crime',      sign: -1 },
+  accident:     { icon: '🚑', label: 'Accident',   sign: -1 },
+}
+
+function memorySection(npc: NPC, currentTick: number): string {
+  if (!npc.memory || npc.memory.length === 0) return ''
+  const vi = getLang() === 'vi'
+  const title = vi ? 'Ký ức' : 'Memory'
+
+  const rows = npc.memory.map(mem => {
+    const meta = MEMORY_META[mem.type] ?? { icon: '◆', label: mem.type, sign: 1 as const }
+    const w     = mem.emotional_weight          // -100 to +100
+    const isPos = w >= 0
+    const pct   = Math.min(100, Math.abs(w))
+    const color = isPos ? '#5dcaa5' : '#e24b4b'
+    const daysAgo = Math.floor((currentTick - mem.tick) / 24)
+    const ago   = daysAgo <= 0 ? (vi ? 'hôm nay' : 'today')
+                : daysAgo === 1 ? (vi ? '1 ngày trước' : '1 day ago')
+                : (vi ? `${daysAgo} ngày trước` : `${daysAgo}d ago`)
+    const label = vi
+      ? (MEMORY_META[mem.type]
+          ? { trust_broken:'Phản bội', helped:'Được giúp đỡ', harmed:'Bị tổn hại', crisis:'Khủng hoảng',
+              windfall:'May mắn', loss:'Mất mát', illness:'Bệnh tật', crime:'Tội ác', accident:'Tai nạn' }[mem.type] ?? meta.label
+          : meta.label)
+      : meta.label
+    return `
+      <div class="sp-mem-row">
+        <span class="sp-mem-icon">${meta.icon}</span>
+        <div class="sp-mem-body">
+          <div class="sp-mem-header">
+            <span class="sp-mem-label">${label}</span>
+            <span class="sp-mem-ago">${ago}</span>
+          </div>
+          <div class="sp-mem-track">
+            ${isPos
+              ? `<div class="sp-mem-fill" style="width:${pct / 2}%;margin-left:50%;background:${color}"></div>`
+              : `<div class="sp-mem-fill" style="width:${pct / 2}%;margin-left:${50 - pct / 2}%;background:${color}"></div>`
+            }
+            <div class="sp-mem-center"></div>
+          </div>
+        </div>
+      </div>`
+  }).join('')
+
+  return `
+    <div class="sp-section">
+      <div class="sp-section-title">${title}</div>
+      <div class="sp-mem-list">${rows}</div>
+    </div>`
 }
