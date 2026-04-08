@@ -73,7 +73,7 @@ interface ProviderDef {
   defaultModel: string
   url: (model: string, key: string, baseUrl: string) => string
   headers: (key: string) => Record<string, string>
-  buildBody: (system: string, user: string, model: string) => unknown
+  buildBody: (system: string, user: string, model: string, maxTokens: number) => unknown
   parseResponse: (json: unknown) => string
 }
 
@@ -84,10 +84,10 @@ const PROVIDERS: Record<AIProvider, ProviderDef> = {
     url: (model, key, _baseUrl) =>
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
     headers: () => ({ 'content-type': 'application/json' }),
-    buildBody: (system, user) => ({
+    buildBody: (system, user, _model, maxTokens) => ({
       system_instruction: { parts: [{ text: system }] },
       contents: [{ role: 'user', parts: [{ text: user }] }],
-      generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
+      generationConfig: { temperature: 0.7, maxOutputTokens: maxTokens },
     }),
     parseResponse: (json: unknown) => {
       const j = json as { candidates: { content: { parts: { text: string }[] } }[]; usageMetadata?: { totalTokenCount?: number } }
@@ -104,9 +104,9 @@ const PROVIDERS: Record<AIProvider, ProviderDef> = {
       'anthropic-version': '2023-06-01',
       'content-type': 'application/json',
     }),
-    buildBody: (system, user, model) => ({
+    buildBody: (system, user, model, maxTokens) => ({
       model,
-      max_tokens: 1024,
+      max_tokens: maxTokens,
       system,
       messages: [{ role: 'user', content: user }],
     }),
@@ -124,8 +124,9 @@ const PROVIDERS: Record<AIProvider, ProviderDef> = {
       Authorization: `Bearer ${key}`,
       'content-type': 'application/json',
     }),
-    buildBody: (system, user, model) => ({
+    buildBody: (system, user, model, maxTokens) => ({
       model,
+      max_tokens: maxTokens,
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: user },
@@ -142,9 +143,10 @@ const PROVIDERS: Record<AIProvider, ProviderDef> = {
     defaultModel: 'llama3.2:3b',
     url: (_model, _key, _baseUrl) => 'http://localhost:11434/v1/chat/completions',
     headers: () => ({ 'content-type': 'application/json' }),
-    buildBody: (system, user, model) => ({
+    buildBody: (system, user, model, maxTokens) => ({
       model,
       stream: false,
+      max_tokens: maxTokens,
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: user },
@@ -166,9 +168,10 @@ const PROVIDERS: Record<AIProvider, ProviderDef> = {
       Authorization: `Bearer ${key}`,
       'content-type': 'application/json',
     }),
-    buildBody: (system, user, model) => ({
+    buildBody: (system, user, model, maxTokens) => ({
       model,
       stream: false,
+      options: { num_predict: maxTokens },
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: user },
@@ -338,6 +341,7 @@ export async function callAI(
   config: AIConfig,
   systemPrompt: string,
   userMessage: string,
+  maxTokens = 512,
 ): Promise<string> {
   await waitForSlot(config.rpm_limit ?? 0)
 
@@ -346,7 +350,7 @@ export async function callAI(
   const model = requestedModel || p.defaultModel
   const url = p.url(model, config.key, config.base_url ?? '')
   const headers = p.headers(config.key)
-  const body = p.buildBody(systemPrompt, userMessage, model)
+  const body = p.buildBody(systemPrompt, userMessage, model, maxTokens)
 
   recordRequest()
 
