@@ -1,6 +1,23 @@
 // ── Enums & Literals ───────────────────────────────────────────────────────
 
 export type Role = 'farmer' | 'craftsman' | 'scholar' | 'merchant' | 'guard' | 'leader' | 'child'
+
+// ── Work Motivation ────────────────────────────────────────────────────────
+// survival   – works to meet basic needs (poverty-driven; productivity spikes when hungry)
+// coerced    – works under threat or force (fear-driven; output degrades under high fear)
+// mandatory  – works because duty or social norms require it (steady but uninspired)
+// happiness  – works for personal fulfillment (output strongly follows happiness)
+// achievement– works to prove competence and compete (skill-driven, competitive boost)
+// duty       – works out of loyalty or cultural obligation (stable, collectivism-linked)
+export type WorkMotivationType = 'survival' | 'coerced' | 'mandatory' | 'happiness' | 'achievement' | 'duty'
+
+// ── Work Schedule ──────────────────────────────────────────────────────────
+// Regime-level daily rhythm: how many days a week people work and when.
+export interface WorkSchedule {
+  work_days_per_week: number    // 1–7  (7 = no days off)
+  work_start_hour:   number    // 0–23 (regime/role baseline start)
+  work_end_hour:     number    // 0–23 (regime/role baseline end)
+}
 export type Gender = 'male' | 'female'
 export type ActionState = 'working' | 'resting' | 'socializing' | 'organizing' | 'fleeing' | 'complying' | 'confront'
 export type DeathCause = 'natural' | 'accident' | 'disease' | 'violence' | 'starvation'
@@ -142,6 +159,10 @@ export interface NPC {
   // Faction & Legacy
   faction_id: number | null     // political faction membership (null = independent)
   legendary: boolean            // marked as a historical figure
+
+  // Work rhythm & motivation
+  work_motivation: WorkMotivationType   // what drives this NPC to work (regime-aligned + individual noise)
+  bio_clock_offset: number              // individual biological clock offset in hours (−2 to +3)
 }
 
 // ── Constitution ───────────────────────────────────────────────────────────
@@ -180,6 +201,9 @@ export interface Constitution {
 
   // Short description (from God Agent setup conversation)
   description: string
+
+  // Regime work schedule (optional — derived from other params when absent)
+  work_schedule?: WorkSchedule
 }
 
 // ── Event ──────────────────────────────────────────────────────────────────

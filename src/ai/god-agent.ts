@@ -63,7 +63,8 @@ When the player confirms, return JSON in this exact format (MUST include "confir
     "network_cohesion": 0.0-1.0,
     "value_priority": ["security"|"equality"|"freedom"|"growth", ...4 elements],
     "role_ratios": { "farmer": 0.35, "craftsman": 0.20, "merchant": 0.15, "scholar": 0.10, "guard": 0.10, "leader": 0.10 },
-    "description": "short description of this society"
+    "description": "short description of this society",
+    "work_schedule": { "work_days_per_week": 5-7, "work_start_hour": 5-10, "work_end_hour": 14-22 }
   }
 }
 
@@ -263,6 +264,7 @@ export function applyPreset(
     individual_rights_floor: 0.70,
     value_priority: ['security', 'equality', 'freedom', 'growth'],
     description: 'preset.nordic_desc',
+    work_schedule: { work_days_per_week: 5, work_start_hour: 8, work_end_hour: 16 },
   }
 
   if (preset === 'capitalist') return {
@@ -272,6 +274,7 @@ export function applyPreset(
     individual_rights_floor: 0.50,
     value_priority: ['freedom', 'growth', 'security', 'equality'],
     description: 'preset.cap_desc',
+    work_schedule: { work_days_per_week: 6, work_start_hour: 7, work_end_hour: 19 },
   }
 
   if (preset === 'socialist') return {
@@ -281,6 +284,7 @@ export function applyPreset(
     individual_rights_floor: 0.25,
     value_priority: ['equality', 'security', 'growth', 'freedom'],
     description: 'preset.soc_desc',
+    work_schedule: { work_days_per_week: 6, work_start_hour: 6, work_end_hour: 16 },
   }
 
   // ━━ New presets ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -293,6 +297,7 @@ export function applyPreset(
     value_priority: ['security', 'equality', 'growth', 'freedom'],
     role_ratios: { farmer: 0.55, craftsman: 0.15, merchant: 0.08, scholar: 0.05, guard: 0.12, leader: 0.05 },
     description: 'preset.feudal_desc',
+    work_schedule: { work_days_per_week: 6, work_start_hour: 5, work_end_hour: 19 },
   }
 
   if (preset === 'theocracy') return {
@@ -303,6 +308,7 @@ export function applyPreset(
     value_priority: ['security', 'equality', 'growth', 'freedom'],
     role_ratios: { farmer: 0.40, craftsman: 0.18, merchant: 0.10, scholar: 0.18, guard: 0.08, leader: 0.06 },
     description: 'preset.theocracy_desc',
+    work_schedule: { work_days_per_week: 6, work_start_hour: 6, work_end_hour: 18 },
   }
 
   if (preset === 'technocracy') return {
@@ -313,6 +319,7 @@ export function applyPreset(
     value_priority: ['growth', 'security', 'freedom', 'equality'],
     role_ratios: { farmer: 0.20, craftsman: 0.25, merchant: 0.15, scholar: 0.28, guard: 0.06, leader: 0.06 },
     description: 'preset.technocracy_desc',
+    work_schedule: { work_days_per_week: 5, work_start_hour: 9, work_end_hour: 18 },
   }
 
   if (preset === 'warlord') return {
@@ -323,6 +330,7 @@ export function applyPreset(
     value_priority: ['security', 'growth', 'freedom', 'equality'],
     role_ratios: { farmer: 0.35, craftsman: 0.15, merchant: 0.10, scholar: 0.05, guard: 0.28, leader: 0.07 },
     description: 'preset.warlord_desc',
+    work_schedule: { work_days_per_week: 7, work_start_hour: 5, work_end_hour: 21 },
   }
 
   if (preset === 'marxist') return {
@@ -333,6 +341,7 @@ export function applyPreset(
     value_priority: ['equality', 'security', 'growth', 'freedom'],
     role_ratios: { farmer: 0.40, craftsman: 0.25, merchant: 0.04, scholar: 0.12, guard: 0.10, leader: 0.09 },
     description: 'preset.marxist_desc',
+    work_schedule: { work_days_per_week: 6, work_start_hour: 6, work_end_hour: 16 },
   }
 
   // commune (default fallback)
@@ -344,6 +353,7 @@ export function applyPreset(
     value_priority: ['equality', 'freedom', 'security', 'growth'],
     role_ratios: { farmer: 0.40, craftsman: 0.22, merchant: 0.08, scholar: 0.12, guard: 0.06, leader: 0.12 },
     description: 'preset.commune_desc',
+    work_schedule: { work_days_per_week: 6, work_start_hour: 7, work_end_hour: 17 },
   }
 }
 

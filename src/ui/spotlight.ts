@@ -173,6 +173,10 @@ function renderStatic(npc: NPC, state: WorldState): string {
       ${statBar(t('sp.hunger')     as string, npc.hunger,      '#e24b4b')}
       ${statBar(t('sp.exhaustion') as string, npc.exhaustion,  '#7f77dd')}
       ${statBar(t('sp.isolation')  as string, npc.isolation,   '#378add')}
+      <div class="sp-row">
+        <span class="sp-label">${t('sp.work_motivation')}</span>
+        <span class="sp-value" style="color:#c0a0ff">${t(`motiv.${npc.work_motivation}`)}</span>
+      </div>
       ${(npc.burnout_ticks ?? 0) >= 480 ? `<div class="sp-row" style="color:#e24b4b;font-weight:bold">${t('sp.burnout')}</div>` : ''}
     </div>
 
