@@ -338,6 +338,13 @@ let _pressBusy = false
 let _latestHeadlines: string[] = []
 export function getLatestHeadlines(): string[] { return _latestHeadlines }
 
+export function resetPressRuntimeState(): void {
+  _lastPressDay = -1
+  _pressBusy = false
+  _latestHeadlines = []
+  _lastScandalDay = -999
+}
+
 export async function runPressCycle(
   state: WorldState,
   config: AIConfig | null,

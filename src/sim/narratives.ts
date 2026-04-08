@@ -413,6 +413,11 @@ const RUMOR_TEMPLATES: Array<{
 
 let lastRumorTick = -9999
 
+export function resetNarrativeRuntimeState(): void {
+  lastRumorTick = -9999
+  _milestonesFired.clear()
+}
+
 export function checkRumors(state: WorldState): void {
   // Generate new rumor (15% daily chance, one at a time)
   if (state.tick - lastRumorTick > 72 && Math.random() < 0.15) {

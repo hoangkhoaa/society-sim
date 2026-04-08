@@ -465,11 +465,11 @@ export type TokenMode = 'events_only' | 'events_plus_npc_control' | 'unlimited'
 
 export interface AIConfig {
   provider: AIProvider
-  key: string
+  keys: string[]              // Array of API keys; first valid one is used, falls back to next on error
   model?: string
   token_mode: TokenMode
   base_url?: string
-  rpm_limit: number             // user-configured requests per minute (0 = unlimited)
+  rpm_limit: number           // user-configured requests per minute (0 = unlimited)
 }
 
 // ── NPC Intervention ───────────────────────────────────────────────────────

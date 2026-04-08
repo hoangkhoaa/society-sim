@@ -1,7 +1,7 @@
 import './css/main.css'
 import type { AIConfig, AIProvider, Constitution, WorldState } from './types'
 import { setupGreeting, setupChat, applyPreset, handlePlayerChat, resetInGameHistory, predictConsequences, generateConstitutionText } from './ai/god-agent'
-import { listAvailableModels, PROVIDER_MODELS, getAIUsage, getRemainingRPM, getWaitSeconds } from './ai/provider'
+import { listAvailableModels, PROVIDER_MODELS, getAIUsage, getRemainingRPM, getWaitSeconds, initKeyRing } from './ai/provider'
 import { addFeedRaw, addFeedThinking, setFeedFilter, setChronicleFilter, refreshChronicleTimestamps } from './ui/feed'
 import { showConfirm, showInfo, showPolicyChoice, type PolicyDisplayCard } from './ui/modal'
 import { initWorld, tick, spawnEvent, applyInterventions, applyInstantEventDeaths } from './sim/engine'
@@ -15,7 +15,8 @@ import {
 } from './i18n'
 import { initMap, setMapPaused, setMapLegendVisible } from './ui/map'
 import { runGovernmentCycle, detectRegime, type GovernmentPolicyAI } from './sim/government'
-import { checkPressTrigger } from './sim/press'
+import { checkPressTrigger, resetPressRuntimeState } from './sim/press'
+import { resetNarrativeRuntimeState } from './sim/narratives'
 
 // ── App state ──────────────────────────────────────────────────────────────
 
@@ -57,12 +58,110 @@ function showScreen(id: string) {
   document.getElementById(id)!.classList.add('active')
 }
 
+function initOnboardingNetworkBackground() {
+  const canvas = document.getElementById('onboarding-network-bg') as HTMLCanvasElement | null
+  const host = document.getElementById('screen-onboarding')
+  if (!canvas || !host) return
+
+  type NetNode = { x: number; y: number; vx: number; vy: number; r: number }
+  const nodes: NetNode[] = []
+  const linksDistance = 135
+  const nodeCount = window.innerWidth < 900 ? 24 : 42
+
+  const resize = () => {
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1))
+    const w = host.clientWidth
+    const h = host.clientHeight
+    canvas.width = Math.floor(w * dpr)
+    canvas.height = Math.floor(h * dpr)
+    canvas.style.width = `${w}px`
+    canvas.style.height = `${h}px`
+    const ctx = canvas.getContext('2d')
+    if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  }
+
+  const seedNodes = () => {
+    nodes.length = 0
+    const w = host.clientWidth
+    const h = host.clientHeight
+    for (let i = 0; i < nodeCount; i++) {
+      nodes.push({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        vx: (Math.random() - 0.5) * 0.45,
+        vy: (Math.random() - 0.5) * 0.45,
+        r: 1.4 + Math.random() * 1.9,
+      })
+    }
+  }
+
+  const draw = () => {
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const w = host.clientWidth
+    const h = host.clientHeight
+    ctx.clearRect(0, 0, w, h)
+
+    if (!host.classList.contains('active')) {
+      requestAnimationFrame(draw)
+      return
+    }
+
+    const theme = document.body.dataset.theme === 'light' ? 'light' : 'dark'
+    const lineColor = theme === 'light' ? '55, 97, 146' : '116, 167, 230'
+    const dotColor = theme === 'light' ? '38, 78, 124' : '189, 225, 255'
+
+    for (let i = 0; i < nodes.length; i++) {
+      const a = nodes[i]
+      a.x += a.vx
+      a.y += a.vy
+      if (a.x < 0 || a.x > w) a.vx *= -1
+      if (a.y < 0 || a.y > h) a.vy *= -1
+      a.x = Math.max(0, Math.min(w, a.x))
+      a.y = Math.max(0, Math.min(h, a.y))
+
+      for (let j = i + 1; j < nodes.length; j++) {
+        const b = nodes[j]
+        const dx = a.x - b.x
+        const dy = a.y - b.y
+        const dist = Math.hypot(dx, dy)
+        if (dist > linksDistance) continue
+        const alpha = (1 - dist / linksDistance) * (theme === 'light' ? 0.18 : 0.22)
+        ctx.strokeStyle = `rgba(${lineColor}, ${alpha.toFixed(3)})`
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        ctx.moveTo(a.x, a.y)
+        ctx.lineTo(b.x, b.y)
+        ctx.stroke()
+      }
+    }
+
+    for (const n of nodes) {
+      ctx.fillStyle = `rgba(${dotColor}, ${theme === 'light' ? 0.72 : 0.82})`
+      ctx.beginPath()
+      ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    requestAnimationFrame(draw)
+  }
+
+  resize()
+  seedNodes()
+  window.addEventListener('resize', () => {
+    resize()
+    seedNodes()
+  })
+  requestAnimationFrame(draw)
+}
+
 // ── Onboarding ─────────────────────────────────────────────────────────────
 
 const btnStart       = document.getElementById('btn-start')!
 const btnListModels  = document.getElementById('btn-list-models') as HTMLButtonElement
-const apiKeyInput    = document.getElementById('api-key-input') as HTMLInputElement
 const apiKeyRow      = document.getElementById('api-key-row')!
+const apiKeysContainer = document.getElementById('api-keys-container')!
+const btnAddApiKey   = document.getElementById('btn-add-api-key') as HTMLButtonElement
 const baseUrlInput   = document.getElementById('base-url-input') as HTMLInputElement
 const baseUrlRow     = document.getElementById('base-url-row')!
 const providerSelect = document.getElementById('provider-select') as HTMLSelectElement
@@ -72,6 +171,32 @@ const rpmLimitInput  = document.getElementById('rpm-limit-input') as HTMLInputEl
 const onboardingErr  = document.getElementById('onboarding-error')!
 
 let onboardingModelsReady = false
+
+initOnboardingNetworkBackground()
+
+function parseApiKeys(raw: string): string[] {
+  return raw
+    .split(',')
+    .map(key => key.trim())
+    .filter(key => key.length > 0)
+}
+
+function getAllApiKeys(): string[] {
+  const all: string[] = []
+  apiKeysContainer.querySelectorAll<HTMLInputElement>('.api-key-input')
+    .forEach(inp => parseApiKeys(inp.value).forEach(k => all.push(k)))
+  return all
+}
+
+function updateApiKeyRemoveButtons() {
+  const rows = apiKeysContainer.querySelectorAll<HTMLElement>('.api-key-input-row')
+  rows.forEach(row => {
+    const btn = row.querySelector<HTMLButtonElement>('.btn-api-key-remove')!
+    if (!btn) return
+    btn.disabled = rows.length <= 1
+    btn.style.opacity = rows.length <= 1 ? '0.3' : '1'
+  })
+}
 
 function resetModelSelect() {
   onboardingModelsReady = false
@@ -110,9 +235,12 @@ function updateProviderFieldLabels() {
   baseUrlInput.placeholder = isCloud
     ? (t('onboarding.base_url_cloud_ph') as string)
     : (t('onboarding.base_url_ph') as string)
-  apiKeyInput.placeholder = isCloud
-    ? (t('onboarding.api_key_cloud_ph') as string)
-    : (t('onboarding.api_key_ph') as string)
+  const firstKeyInput = apiKeysContainer.querySelector<HTMLInputElement>('.api-key-input')
+  if (firstKeyInput) {
+    firstKeyInput.placeholder = isCloud
+      ? (t('onboarding.api_key_cloud_ph') as string)
+      : (t('onboarding.api_key_ph') as string)
+  }
 }
 
 function syncProviderFields() {
@@ -149,6 +277,38 @@ function initLanguageSelect() {
 initLanguageSelect()
 syncProviderFields()
 
+// ── API Key Rows ────────────────────────────────────────────────────────────
+apiKeysContainer.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.btn-api-key-remove')
+  if (!btn) return
+  const row = btn.closest('.api-key-input-row')
+  if (!row || apiKeysContainer.querySelectorAll('.api-key-input-row').length <= 1) return
+  row.remove()
+  updateApiKeyRemoveButtons()
+})
+
+btnAddApiKey.addEventListener('click', () => {
+  const row = document.createElement('div')
+  row.className = 'api-key-input-row'
+  const inp = document.createElement('input')
+  inp.type = 'password'
+  inp.className = 'api-key-input'
+  inp.autocomplete = 'off'
+  inp.placeholder = 'API key'
+  const rmBtn = document.createElement('button')
+  rmBtn.type = 'button'
+  rmBtn.className = 'btn-api-key-remove'
+  rmBtn.title = 'Remove'
+  rmBtn.textContent = '−'
+  row.appendChild(inp)
+  row.appendChild(rmBtn)
+  apiKeysContainer.appendChild(row)
+  updateApiKeyRemoveButtons()
+  inp.focus()
+})
+
+updateApiKeyRemoveButtons()
+
 function fillModelSelect(ids: string[]) {
   modelSelect.innerHTML = ''
   for (const id of ids) {
@@ -165,10 +325,10 @@ function fillModelSelect(ids: string[]) {
 btnListModels.addEventListener('click', async () => {
   const provider = providerSelect.value as AIProvider
   const isLocal = provider === 'ollama'
-  const key = apiKeyInput.value.trim()
+  const keys = getAllApiKeys()
   const baseUrl = baseUrlInput.value.trim()
 
-  if (!isLocal && !key) {
+  if (!isLocal && keys.length === 0) {
     showError(t('onboarding.err_no_key') as string)
     return
   }
@@ -182,7 +342,7 @@ btnListModels.addEventListener('click', async () => {
   try {
     const models = await listAvailableModels({
       provider,
-      key,
+      keys,
       base_url: baseUrl || undefined,
     })
     if (models.length === 0) throw new Error('empty')
@@ -198,9 +358,9 @@ btnListModels.addEventListener('click', async () => {
 
 btnStart.addEventListener('click', async () => {
   const isLocal = providerSelect.value === 'ollama'
-  const key = apiKeyInput.value.trim()
+  const keys = getAllApiKeys()
   const baseUrl = baseUrlInput.value.trim()
-  if (!isLocal && !key) {
+  if (!isLocal && keys.length === 0) {
     showError(t('onboarding.err_no_key') as string)
     return
   }
@@ -213,10 +373,13 @@ btnStart.addEventListener('click', async () => {
     provider: providerSelect.value as AIConfig['provider'],
     model: modelSelect.value,
     token_mode: tokenModeSelect.value as AIConfig['token_mode'],
-    key,
+    keys,
     base_url: baseUrl || undefined,
     rpm_limit: Math.max(0, parseInt(rpmLimitInput.value, 10) || 0),
   }
+
+  // Initialize the API key ring for health-aware round-robin
+  initKeyRing(keys)
 
   btnStart.textContent = t('onboarding.connecting') as string
   btnStart.setAttribute('disabled', 'true')
@@ -333,6 +496,8 @@ function replaceLastMsg(text: string) {
 async function startGame(constitution: Constitution) {
   resetInGameHistory()
   lastGovernmentPeriod = -1  // reset government cycle tracker for new game
+  resetNarrativeRuntimeState()
+  resetPressRuntimeState()
 
   // Show the game screen immediately so the user sees the UI rather than a frozen setup screen
   showScreen('screen-game')

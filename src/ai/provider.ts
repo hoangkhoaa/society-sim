@@ -222,119 +222,237 @@ export const PROVIDER_MODELS: Record<AIProvider, string[]> = {
 
 export interface ListModelsInput {
   provider: AIProvider
-  key: string
+  keys: string[]
   base_url?: string
 }
 
 /** Fetch model ids from the provider API when supported; otherwise static list. */
 export async function listAvailableModels(input: ListModelsInput): Promise<string[]> {
-  const { provider, key, base_url } = input
-
-  if (provider === 'gemini') {
-    const out: string[] = []
-    let pageToken: string | undefined
-    do {
-      const url = new URL('https://generativelanguage.googleapis.com/v1beta/models')
-      url.searchParams.set('key', key)
-      url.searchParams.set('pageSize', '100')
-      if (pageToken) url.searchParams.set('pageToken', pageToken)
-      const res = await fetch(url.toString())
-      if (!res.ok) {
-        const t = await res.text()
-        throw new Error(`ListModels ${res.status}: ${t.slice(0, 240)}`)
-      }
-      const json = (await res.json()) as {
-        models?: Array<{
-          name?: string
-          supportedGenerationMethods?: string[]
-          supported_generation_methods?: string[]
-        }>
-        nextPageToken?: string
-      }
-      for (const m of json.models ?? []) {
-        const methods = m.supportedGenerationMethods ?? m.supported_generation_methods ?? []
-        if (!methods.includes('generateContent')) continue
-        const raw = m.name ?? ''
-        const id = raw.replace(/^models\//, '')
-        if (id) out.push(id)
-      }
-      pageToken = json.nextPageToken
-    } while (pageToken)
-    return [...new Set(out)].sort()
+  const { provider, keys } = input
+  
+  // Return static list if no keys provided (Ollama local)
+  if (keys.length === 0) {
+    return PROVIDER_MODELS[provider] ?? []
   }
-
-  if (provider === 'openai') {
-    const res = await fetch('https://api.openai.com/v1/models', {
-      headers: { Authorization: `Bearer ${key}` },
-    })
-    if (!res.ok) {
-      const t = await res.text()
-      throw new Error(`ListModels ${res.status}: ${t.slice(0, 240)}`)
+  
+  // Try each key until one works for listing models
+  let lastError: Error | null = null
+  
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i]
+    try {
+      if (provider === 'gemini') {
+        const out: string[] = []
+        let pageToken: string | undefined
+        do {
+          const url = new URL('https://generativelanguage.googleapis.com/v1beta/models')
+          url.searchParams.set('key', key)
+          url.searchParams.set('pageSize', '100')
+          if (pageToken) url.searchParams.set('pageToken', pageToken)
+          const res = await fetch(url.toString())
+          if (!res.ok) {
+            const t = await res.text()
+            lastError = new Error(`ListModels ${res.status}: ${t.slice(0, 240)}`)
+            break
+          }
+          const json = (await res.json()) as {
+            models?: Array<{
+              name?: string
+              supportedGenerationMethods?: string[]
+              supported_generation_methods?: string[]
+            }>
+            nextPageToken?: string
+          }
+          for (const m of json.models ?? []) {
+            const methods = m.supportedGenerationMethods ?? m.supported_generation_methods ?? []
+            if (!methods.includes('generateContent')) continue
+            const raw = m.name ?? ''
+            const id = raw.replace(/^models\//, '')
+            if (id) out.push(id)
+          }
+          pageToken = json.nextPageToken
+        } while (pageToken)
+        if (out.length > 0) {
+          if (i > 0) console.log(`[AI] Key ${i + 1}/${keys.length} working ✓`)
+          return [...new Set(out)].sort()
+        }
+      } else if (provider === 'openai') {
+        const res = await fetch('https://api.openai.com/v1/models', {
+          headers: { Authorization: `Bearer ${key}` },
+        })
+        if (!res.ok) {
+          const t = await res.text()
+          lastError = new Error(`ListModels ${res.status}: ${t.slice(0, 240)}`)
+          if (i < keys.length - 1) console.warn(`[AI] Key ${i + 1}/${keys.length} failed, trying next...`)
+          continue
+        }
+        const json = (await res.json()) as { data?: { id: string }[] }
+        const skip = /embedding|whisper|dall-e|tts|moderation|davinci|babbage|curie|ada|realtime|transcribe|speech|image|audio|video/i
+        const ids = (json.data ?? [])
+          .map(d => d.id)
+          .filter(id => id && !skip.test(id))
+        if (ids.length > 0) {
+          if (i > 0) console.log(`[AI] Key ${i + 1}/${keys.length} working ✓`)
+          return [...new Set(ids)].sort()
+        }
+      } else if (provider === 'anthropic') {
+        const out: string[] = []
+        let after: string | undefined
+        let success = false
+        for (;;) {
+          const url = new URL('https://api.anthropic.com/v1/models')
+          url.searchParams.set('limit', '100')
+          if (after) url.searchParams.set('after_id', after)
+          const res = await fetch(url.toString(), {
+            headers: {
+              'x-api-key': key,
+              'anthropic-version': '2023-06-01',
+            },
+          })
+          if (!res.ok) {
+            const t = await res.text()
+            lastError = new Error(`ListModels ${res.status}: ${t.slice(0, 240)}`)
+            break
+          }
+          success = true
+          const json = (await res.json()) as {
+            data?: { id: string }[]
+            has_more?: boolean
+            last_id?: string
+          }
+          for (const row of json.data ?? []) {
+            if (row.id) out.push(row.id)
+          }
+          if (!json.has_more || !json.last_id) break
+          after = json.last_id
+        }
+        if (success && out.length > 0) {
+          if (i > 0) console.log(`[AI] Key ${i + 1}/${keys.length} working ✓`)
+          return [...new Set(out)].sort()
+        }
+      }
+      
+      if (i < keys.length - 1) {
+        console.warn(`[AI] Key ${i + 1}/${keys.length} failed, trying next...`)
+      }
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err))
+      if (i < keys.length - 1) {
+        console.warn(`[AI] Key ${i + 1}/${keys.length} failed: ${lastError.message.slice(0, 80)}, trying next...`)
+      }
     }
-    const json = (await res.json()) as { data?: { id: string }[] }
-    const skip = /embedding|whisper|dall-e|tts|moderation|davinci|babbage|curie|ada|realtime|transcribe|speech|image|audio|video/i
-    const ids = (json.data ?? [])
-      .map(d => d.id)
-      .filter(id => id && !skip.test(id))
-    return [...new Set(ids)].sort()
   }
 
-  if (provider === 'anthropic') {
-    const out: string[] = []
-    let after: string | undefined
-    for (;;) {
-      const url = new URL('https://api.anthropic.com/v1/models')
-      url.searchParams.set('limit', '100')
-      if (after) url.searchParams.set('after_id', after)
-      const res = await fetch(url.toString(), {
-        headers: {
-          'x-api-key': key,
-          'anthropic-version': '2023-06-01',
-        },
-      })
-      if (!res.ok) {
-        const t = await res.text()
-        throw new Error(`ListModels ${res.status}: ${t.slice(0, 240)}`)
+  // All keys failed, return static list as fallback
+  console.error(`[AI] All keys failed for ${provider}, using static model list`)
+  return PROVIDER_MODELS[provider] ?? []
+}
+
+// ── Professional API Key Management (Ring Buffer + Health Tracking) ──────
+interface KeyHealth {
+  key: string
+  successCount: number
+  failureCount: number
+  consecutiveFailures: number
+  lastUsed: number
+  lastError?: string
+  isHealthy: boolean
+}
+
+class APIKeyRing {
+  private ring: KeyHealth[] = []
+  private currentIndex = 0
+  private readonly CONSECUTIVE_FAILURE_THRESHOLD = 3
+  private readonly COOLDOWN_MS = 30000  // 30 seconds cooldown for failed keys
+
+  init(keys: string[]) {
+    this.ring = keys.map(key => ({
+      key,
+      successCount: 0,
+      failureCount: 0,
+      consecutiveFailures: 0,
+      lastUsed: 0,
+      isHealthy: true,
+    }))
+    this.currentIndex = 0
+  }
+
+  /**
+   * Get next key using health-aware round-robin:
+   * - Prefers healthy keys
+   * - Rotates through the ring
+   * - Respects cooldown periods for failed keys
+   */
+  getNextKey(): { key: string; index: number } | null {
+    if (this.ring.length === 0) return null
+
+    const now = Date.now()
+    let attempts = 0
+    const maxAttempts = this.ring.length * 2  // Allow extra cycles to find healthy key
+
+    while (attempts < maxAttempts) {
+      const health = this.ring[this.currentIndex]
+      this.currentIndex = (this.currentIndex + 1) % this.ring.length
+
+      // Check if key is in cooldown
+      if (!health.isHealthy && now - health.lastUsed < this.COOLDOWN_MS) {
+        attempts++
+        continue
       }
-      const json = (await res.json()) as {
-        data?: { id: string }[]
-        has_more?: boolean
-        last_id?: string
-      }
-      for (const row of json.data ?? []) {
-        if (row.id) out.push(row.id)
-      }
-      if (!json.has_more || !json.last_id) break
-      after = json.last_id
+
+      return { key: health.key, index: this.currentIndex - 1 }
     }
-    return [...new Set(out)].sort()
+
+    // Fallback: return first key even if unhealthy (cooldown expired)
+    return { key: this.ring[0].key, index: 0 }
   }
 
-  if (provider === 'ollama') {
-    const ollamaRoot = 'http://localhost:11434'
-    const res = await fetch(`${ollamaRoot}/api/tags`)
-    if (!res.ok) {
-      const t = await res.text()
-      throw new Error(`Ollama tags ${res.status}: ${t.slice(0, 240)}`)
+  recordSuccess(index: number) {
+    if (index < 0 || index >= this.ring.length) return
+    const health = this.ring[index]
+    health.successCount++
+    health.consecutiveFailures = 0
+    health.isHealthy = true
+    health.lastUsed = Date.now()
+  }
+
+  recordFailure(index: number, error: string) {
+    if (index < 0 || index >= this.ring.length) return
+    const health = this.ring[index]
+    health.failureCount++
+    health.consecutiveFailures++
+    health.lastError = error
+    health.lastUsed = Date.now()
+
+    if (health.consecutiveFailures >= this.CONSECUTIVE_FAILURE_THRESHOLD) {
+      health.isHealthy = false
     }
-    const json = (await res.json()) as { models?: { name: string }[] }
-    return (json.models ?? []).map(m => m.name).filter(Boolean).sort()
   }
 
-  // ollama_cloud — same /api/tags shape as local; host defaults to https://ollama.com
-  const ollamaRoot = resolveOllamaCloudRoot(base_url)
-  if (!key.trim()) {
-    throw new Error('Ollama Cloud requires an API key (ollama.com/settings/keys).')
+  getStats() {
+    return this.ring.map((h, idx) => ({
+      index: idx + 1,
+      status: h.isHealthy ? '✓' : '✗',
+      success: h.successCount,
+      failure: h.failureCount,
+      consecutive_fails: h.consecutiveFailures,
+      key_preview: `${h.key.slice(0, 8)}...`,
+    }))
   }
-  const headers: Record<string, string> = { Authorization: `Bearer ${key.trim()}` }
 
-  const res = await fetch(`${ollamaRoot}/api/tags`, { headers })
-  if (!res.ok) {
-    const t = await res.text()
-    throw new Error(`Ollama tags ${res.status}: ${t.slice(0, 240)}`)
+  formatKeyPreview(key: string): string {
+    return `[${key.slice(0, 4)}...${key.slice(-4)}]`
   }
-  const json = (await res.json()) as { models?: { name: string }[] }
-  return (json.models ?? []).map(m => m.name).filter(Boolean).sort()
+}
+
+const _keyRing = new APIKeyRing()
+
+export function initKeyRing(keys: string[]) {
+  _keyRing.init(keys)
+}
+
+export function getKeyRingStats() {
+  return _keyRing.getStats()
 }
 
 export async function callAI(
@@ -345,29 +463,102 @@ export async function callAI(
 ): Promise<string> {
   await waitForSlot(config.rpm_limit ?? 0)
 
+  if (config.keys.length === 0) {
+    throw new Error('No API keys provided')
+  }
+
+  // Initialize ring on first use
+  if (_keyRing.getStats().length === 0) {
+    _keyRing.init(config.keys)
+  }
+
   const p = PROVIDERS[config.provider]
   const requestedModel = config.model?.trim()
   const model = requestedModel || p.defaultModel
-  const url = p.url(model, config.key, config.base_url ?? '')
-  const headers = p.headers(config.key)
-  const body = p.buildBody(systemPrompt, userMessage, model, maxTokens)
+  const baseUrl = config.base_url ?? ''
+  const maxRetriesPerKey = config.keys.length
 
-  recordRequest()
+  let lastError: Error | null = null
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-  })
+  // Try keys from the ring, respecting health status
+  for (let attempt = 0; attempt < config.keys.length; attempt++) {
+    const next = _keyRing.getNextKey()
+    if (!next) break
 
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`AI error ${res.status}: ${err.slice(0, 200)}`)
+    const { key, index } = next
+    const keyPreview = _keyRing.formatKeyPreview(key)
+    let keyRetries = 0
+
+    // Retry this specific key up to maxRetriesPerKey times
+    while (keyRetries < maxRetriesPerKey) {
+      try {
+        const url = p.url(model, key, baseUrl)
+        const headers = p.headers(key)
+        const body = p.buildBody(systemPrompt, userMessage, model, maxTokens)
+
+        recordRequest()
+
+        const res = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+        })
+
+        if (!res.ok) {
+          const err = await res.text()
+          const errMsg = `${res.status}: ${err.slice(0, 100)}`
+          lastError = new Error(`AI error ${errMsg}`)
+          keyRetries++
+          _keyRing.recordFailure(index, errMsg)
+
+          if (keyRetries < maxRetriesPerKey) {
+            console.warn(
+              `[AI] Key ${index + 1}/${config.keys.length} ${keyPreview} retry ${keyRetries}/${maxRetriesPerKey}...`
+            )
+          } else {
+            console.warn(
+              `[AI] Key ${index + 1}/${config.keys.length} ${keyPreview} exhausted, rotating...`
+            )
+          }
+          continue
+        }
+
+        // Success!
+        const json = await res.json()
+        _totalRequests++
+        _keyRing.recordSuccess(index)
+
+        if (attempt > 0 || keyRetries > 0) {
+          console.log(
+            `[AI] Key ${index + 1}/${config.keys.length} ${keyPreview} working ✓ (after ${attempt} rotations)`
+          )
+        }
+
+        return p.parseResponse(json)
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message.slice(0, 100) : String(err)
+        lastError = err instanceof Error ? err : new Error(String(err))
+        keyRetries++
+        _keyRing.recordFailure(index, errMsg)
+
+        if (keyRetries < maxRetriesPerKey) {
+          console.warn(
+            `[AI] Key ${index + 1}/${config.keys.length} ${keyPreview} error: ${errMsg}, retry ${keyRetries}/${maxRetriesPerKey}...`
+          )
+        } else {
+          console.warn(
+            `[AI] Key ${index + 1}/${config.keys.length} ${keyPreview} exhausted, rotating...`
+          )
+        }
+      }
+    }
   }
 
-  const json = await res.json()
-  _totalRequests++
-  return p.parseResponse(json)
+  // All keys exhausted - log stats
+  console.error(
+    `[AI] All keys exhausted. Stats: ${JSON.stringify(_keyRing.getStats())}`
+  )
+  throw lastError || new Error('All API keys failed')
 }
 
 // Extract JSON object from LLM response (handles markdown fences and extra text)

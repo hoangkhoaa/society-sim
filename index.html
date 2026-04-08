@@ -10,9 +10,13 @@
 
   <!-- ── ONBOARDING ─────────────────────────────── -->
   <div id="screen-onboarding" class="screen active">
+    <canvas id="onboarding-network-bg" aria-hidden="true"></canvas>
     <div class="onboarding-box">
-      <div class="onboarding-title">Society Sim</div>
-      <div class="onboarding-sub" data-i18n="onboarding.sub">A living world. You talk to it.</div>
+      <header class="onboarding-header">
+        <div class="onboarding-kicker">Simulation Control</div>
+        <div class="onboarding-title">Society Sim</div>
+        <div class="onboarding-sub" data-i18n="onboarding.sub">A living world. You talk to it.</div>
+      </header>
 
       <div class="onboarding-form">
         <div class="form-row">
@@ -34,13 +38,19 @@
           <input type="text" id="base-url-input" autocomplete="url" placeholder="">
         </div>
         <div class="form-row" id="api-key-row">
-          <label data-i18n="onboarding.api_key">API Key</label>
-          <input type="password" id="api-key-input" autocomplete="off" placeholder="">
+          <label data-i18n="onboarding.api_key">API Key(s)</label>
+          <div id="api-keys-container">
+            <div class="api-key-input-row">
+              <input type="password" class="api-key-input" autocomplete="off" placeholder="key1, key2, ...">
+              <button type="button" class="btn-api-key-remove" title="Remove" aria-label="Remove key">−</button>
+            </div>
+          </div>
+          <button type="button" id="btn-add-api-key" class="btn-api-key-add">+ Add key</button>
         </div>
         <p id="onboarding-key-hint-row" class="onboarding-security-hint" data-i18n="onboarding.api_key_security_hint">
-          Tip: create your own API key with your provider, set spending or rate limits there, then paste it here. For extra safety, use a dedicated key and revoke or delete it as soon as you finish playing.
+          Tip: You can enter multiple API keys separated by commas. If one fails or hits rate limit, the system will automatically use the next one.
         </p>
-        <div class="form-row">
+        <div class="form-row" id="list-models-row">
           <button type="button" id="btn-list-models" class="btn-ghost" style="width:100%" data-i18n="onboarding.btn_list_models">List available models</button>
         </div>
         <div class="form-row">
@@ -55,7 +65,7 @@
             <option value="unlimited">3) Unlimited — max capability</option>
           </select>
         </div>
-        <div class="form-row">
+        <div class="form-row" id="rpm-row">
           <label data-i18n="onboarding.rpm_limit">Rate limit (RPM)</label>
           <input type="number" id="rpm-limit-input" min="0" max="999" value="15"
             data-i18n-ph="onboarding.rpm_limit_ph"
@@ -66,9 +76,9 @@
         <button id="btn-start" class="btn-primary" data-i18n="onboarding.btn_start">Begin →</button>
         <button id="btn-start-no-api" class="btn-ghost" style="width:100%" data-i18n="onboarding.btn_no_api_key">Play without API Key</button>
         <div id="onboarding-error" class="error-msg hidden"></div>
+        </div>
       </div>
     </div>
-  </div>
 
   <!-- ── SETUP CONVERSATION ──────────────────────── -->
   <div id="screen-setup" class="screen">
