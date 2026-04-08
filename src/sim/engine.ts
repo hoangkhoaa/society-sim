@@ -20,6 +20,11 @@ let lastSeason = 'spring'
 // Prevents spam: at most one event per group per 10 sim-days (240 ticks).
 const groupCollectiveActionTick = new Map<number, number>()
 
+// ── New social-dynamics cooldowns ────────────────────────────────────────
+let lastSchismTick = -9999
+let lastOpinionFeedTick = -9999
+let lastCrisisTick = -9999
+
 // ── World Initialization ────────────────────────────────────────────────────
 
 const POPULATION = 500          // Phase 2 starting size; bump to 10k after testing
@@ -69,6 +74,7 @@ export async function initWorld(constitution: Constitution): Promise<WorldState>
     energy: 50,
     literacy: 50,
     labor_unrest: 0,
+    polarization: 15,
   }
   const macro = computeMacroStats({
     tick: 0,
@@ -218,8 +224,13 @@ export function tick(state: WorldState): void {
 
     // Network maintenance: prune dead links daily, organic tie formation daily
     maintainNetworkLinks(state)
+    applyMentorshipDynamics(state)
+    applyOpinionLeaderDynamics(state)
+    propagateCrossZoneOrganizing(state)
+    applyCrisisBonding(state)
     formOrganicStrongTies(state)
     computeBridgeScores(state)
+    checkIdeologicalSchism(state)
 
     // Info tie refresh: every 30 sim-days (720 ticks)
     if (state.day % 30 === 0) {
@@ -483,6 +494,10 @@ export function computeMacroStats(state: WorldState): WorldState['macro'] {
   let stressSum = 0
   let workerCount = 0
   let solidaritySum = 0
+  let collectivismSum = 0
+  let authorityTrustSum = 0
+  let collectivismSqSum = 0
+  let authoritySqSum = 0
 
   for (const npc of state.npcs) {
     if (!npc.lifecycle.is_alive) continue
@@ -491,6 +506,10 @@ export function computeMacroStats(state: WorldState): WorldState['macro'] {
     trustSum += npc.trust_in.government.intention
     trustGovSum += (npc.trust_in.government.competence + npc.trust_in.government.intention) / 2
     stressSum += npc.stress
+    collectivismSum += npc.worldview.collectivism
+    authorityTrustSum += npc.worldview.authority_trust
+    collectivismSqSum += npc.worldview.collectivism * npc.worldview.collectivism
+    authoritySqSum += npc.worldview.authority_trust * npc.worldview.authority_trust
 
     const prod = computeProductivity(npc, state)
     if (npc.role === 'farmer') farmerProd += prod
@@ -519,13 +538,14 @@ export function computeMacroStats(state: WorldState): WorldState['macro'] {
 
   // Food production — each farmer at average productivity feeds ~3-4 people
   const dailyProduction = farmerProd * 4 * scarcityFactor * seasonFactor * techBonuses.foodMult
-  const dailyConsumption = n * 0.5
+  const dailyConsumption = n * 0.8
   state.food_stock = clamp((state.food_stock ?? 0) + dailyProduction - dailyConsumption, 0, 999999)
   const food = clamp(state.food_stock / (n * 30) * 100, 0, 100)
 
-  // Natural resources — craftsmen and farmers extract resources; slow natural regeneration
+  // Natural resources — craftsmen and farmers extract resources; natural regeneration
+  // Regen rate 0.00015 balances extraction at ~25k equilibrium (was 0.00002, too low)
   const extractionRate = (craftsmanProd * 0.3 + farmerProd * 0.1) * scarcityFactor
-  const regenRate = (state.natural_resources ?? 50000) * 0.00002
+  const regenRate = (state.natural_resources ?? 50000) * 0.00015
   state.natural_resources = clamp(
     (state.natural_resources ?? 50000) + regenRate - extractionRate,
     0, 100000,
@@ -565,7 +585,28 @@ export function computeMacroStats(state: WorldState): WorldState['macro'] {
   const avgSolidarity = workerCount > 0 ? solidaritySum / workerCount : 0
   const labor_unrest = clamp(avgSolidarity * (0.4 + gini * 0.6), 0, 100)
 
-  return { food, gini, political_pressure: politicalPressure, trust, stability, natural_resources, energy, literacy, labor_unrest }
+  // Polarization index (0–100): variance in ideology + distance from center.
+  const meanCollectivism = collectivismSum / n
+  const meanAuthority = authorityTrustSum / n
+  const varCollectivism = Math.max(0, collectivismSqSum / n - meanCollectivism * meanCollectivism)
+  const varAuthority = Math.max(0, authoritySqSum / n - meanAuthority * meanAuthority)
+  const stdCollectivism = Math.sqrt(varCollectivism)
+  const stdAuthority = Math.sqrt(varAuthority)
+  const centerDrift = Math.abs(meanCollectivism - 0.5) + Math.abs(meanAuthority - 0.5)
+  const polarization = clamp(stdCollectivism * 90 + stdAuthority * 90 + centerDrift * 40, 0, 100)
+
+  return {
+    food,
+    gini,
+    political_pressure: politicalPressure,
+    trust,
+    stability,
+    natural_resources,
+    energy,
+    literacy,
+    labor_unrest,
+    polarization,
+  }
 }
 
 function computeGini(sorted: number[]): number {
@@ -673,12 +714,11 @@ function computeBirthChancePerDay(a: NPC, b: NPC, state: WorldState): number {
   const trustFactor = clamp(0.75 + avgTrustGov * 0.35, 0.75, 1.1)
   const foodFactor = clamp(0.55 + state.macro.food / 150, 0.55, 1.2)
 
-  // Base rate of 0.0008/day gives ~0.29 births/year per couple when all factors are at baseline (~1.0).
-  // This matches a pre-modern TFR of ~3.5 over a ~12-year average fertile window per couple,
-  // assuming factors combine to ~1.0 on average (good conditions) across the fertile years.
-  // With all factors maximally favorable the cap is 0.003/day (~1.1/year).
+  // Base rate of 0.00015/day gives ~5 births/year at population 500 with ~125 couples,
+  // producing ~1% annual growth (pre-modern realistic). Was 0.0008 which caused 16% growth.
+  // With all factors maximally favorable the cap is 0.0006/day.
   // Spacing and max-children limits (maxChildrenPerCouple) ensure realistic lifetime family sizes.
-  const chance = 0.0008 * baseFertility
+  const chance = 0.00015 * baseFertility
     * happinessFactor
     * stressFactor
     * fearFactor
@@ -687,7 +727,7 @@ function computeBirthChancePerDay(a: NPC, b: NPC, state: WorldState): number {
     * trustFactor
     * foodFactor
 
-  return clamp(chance, 0, 0.003)
+  return clamp(chance, 0, 0.0006)
 }
 
 // ── Romance / Marriage helpers ──────────────────────────────────────────────
@@ -931,6 +971,7 @@ function spawnBirth(state: WorldState, parent: NPC): void {
     ? parent.zone : RESIDENTIAL_ZONES[Math.floor(Math.random() * RESIDENTIAL_ZONES.length)]
   baby.lifecycle.fertility    = 0
   baby.lifecycle.children_ids = []
+  baby.mentor_id = parent.id
 
   parent.lifecycle.children_ids.push(newId)
   parent.lifecycle.last_birth_tick = state.tick
@@ -1283,6 +1324,254 @@ function computeBridgeScores(state: WorldState): void {
     const strongCentrality  = npc.strong_ties.length / maxDegree
     npc.influence_score = clamp(strongCentrality * 0.6 + npc.bridge_score * 0.4, 0, 1)
   }
+}
+
+// ── Mentorship Dynamics ─────────────────────────────────────────────────────
+// Youth and early-career NPCs learn faster when paired with a trusted mentor.
+
+function applyMentorshipDynamics(state: WorldState): void {
+  const living = state.npcs.filter(n => n.lifecycle.is_alive)
+
+  for (const npc of living) {
+    // Resolve invalid mentors (dead / no longer a strong tie)
+    if (npc.mentor_id !== null) {
+      const mentor = state.npcs[npc.mentor_id]
+      if (!mentor?.lifecycle.is_alive || !npc.strong_ties.includes(mentor.id)) {
+        npc.mentor_id = null
+      }
+    }
+
+    // Assign mentor for youths and early-career adults
+    const needsMentor = npc.age >= 14 && npc.age <= 25 && npc.mentor_id === null
+    if (needsMentor) {
+      const candidates = npc.strong_ties
+        .map(id => state.npcs[id])
+        .filter((m): m is NPC => !!m && m.lifecycle.is_alive && m.age >= 25 && m.role !== 'child')
+        .sort((a, b) => b.influence_score - a.influence_score)
+
+      const mentor = candidates[0]
+      if (mentor && mentor.influence_score > 0.25) {
+        npc.mentor_id = mentor.id
+      }
+    }
+
+    if (npc.mentor_id === null) continue
+    const mentor = state.npcs[npc.mentor_id]
+    if (!mentor?.lifecycle.is_alive) continue
+
+    // Skill transfer and emotional buffering
+    const mentorshipStrength = clamp(mentor.influence_score * 0.8 + (mentor.happiness / 100) * 0.2, 0.1, 1)
+    npc.base_skill = clamp(npc.base_skill + 0.0006 * mentorshipStrength, 0.2, 1.2)
+    npc.stress = clamp(npc.stress - 0.25 * mentorshipStrength, 0, 100)
+
+    // Ideological apprenticeship (gentle pull, not hard indoctrination)
+    npc.worldview.collectivism = clamp(
+      npc.worldview.collectivism + (mentor.worldview.collectivism - npc.worldview.collectivism) * 0.0012,
+      0,
+      1,
+    )
+    npc.worldview.authority_trust = clamp(
+      npc.worldview.authority_trust + (mentor.worldview.authority_trust - npc.worldview.authority_trust) * 0.0012,
+      0,
+      1,
+    )
+  }
+}
+
+// ── Opinion Leaders / Propaganda Dynamics ─────────────────────────────────
+// High-influence NPCs shape public trust and grievance through info networks.
+
+function applyOpinionLeaderDynamics(state: WorldState): void {
+  const living = state.npcs.filter(n => n.lifecycle.is_alive)
+  if (living.length === 0) return
+
+  const leaders = [...living]
+    .filter(n => n.influence_score > 0.60 && n.info_ties.length >= 8)
+    .sort((a, b) => b.influence_score - a.influence_score)
+    .slice(0, 12)
+
+  if (leaders.length === 0) return
+
+  let proGov = 0
+  let antiGov = 0
+
+  for (const leader of leaders) {
+    const govTrust = (leader.trust_in.government.intention + leader.trust_in.government.competence) / 2
+    const isProGov = govTrust > 0.62 && leader.grievance < 45
+    const isAntiGov = govTrust < 0.35 || leader.grievance > 65
+    if (!isProGov && !isAntiGov) continue
+
+    if (isProGov) proGov++
+    if (isAntiGov) antiGov++
+
+    for (const tid of leader.info_ties.slice(0, 16)) {
+      const follower = state.npcs[tid]
+      if (!follower?.lifecycle.is_alive) continue
+
+      if (isProGov) {
+        follower.trust_in.government.intention = clamp(follower.trust_in.government.intention + 0.0035, 0, 1)
+        follower.grievance = clamp(follower.grievance - 0.25, 0, 100)
+      } else if (isAntiGov) {
+        follower.trust_in.government.intention = clamp(follower.trust_in.government.intention - 0.0035, 0, 1)
+        follower.grievance = clamp(follower.grievance + 0.3, 0, 100)
+      }
+    }
+  }
+
+  if (state.tick - lastOpinionFeedTick > 15 * 24 && (proGov + antiGov) >= 2) {
+    lastOpinionFeedTick = state.tick
+    if (antiGov > proGov) {
+      addFeedRaw('Influential voices are turning against the regime and amplifying dissent across districts.', 'political', state.year, state.day)
+      addChronicle('Opinion leaders coordinated anti-government narratives through information networks.', state.year, state.day, 'major')
+    } else if (proGov > antiGov) {
+      addFeedRaw('High-profile voices are defending the regime and calming public anger.', 'political', state.year, state.day)
+      addChronicle('Opinion leaders rallied support for institutional stability.', state.year, state.day, 'major')
+    }
+  }
+}
+
+// ── Cross-zone Organizing via Info Network ────────────────────────────────
+// Organizing in one zone can spill into other zones through info ties.
+
+function propagateCrossZoneOrganizing(state: WorldState): void {
+  const living = state.npcs.filter(n => n.lifecycle.is_alive)
+  if (living.length === 0) return
+
+  const byZone = new Map<string, NPC[]>()
+  for (const npc of living) {
+    const arr = byZone.get(npc.zone)
+    if (arr) arr.push(npc)
+    else byZone.set(npc.zone, [npc])
+  }
+
+  const hotZones = new Set<string>()
+  for (const [zone, group] of byZone) {
+    const organizingRate = group.filter(n => n.action_state === 'organizing' || n.action_state === 'confront').length / Math.max(group.length, 1)
+    if (organizingRate > 0.15) hotZones.add(zone)
+  }
+  if (hotZones.size === 0) return
+
+  for (const npc of living) {
+    if (hotZones.has(npc.zone)) continue
+    if (npc.action_state === 'organizing' || npc.action_state === 'confront') continue
+
+    let signal = 0
+    for (const tid of npc.info_ties.slice(0, 20)) {
+      const other = state.npcs[tid]
+      if (!other?.lifecycle.is_alive) continue
+      if (!hotZones.has(other.zone)) continue
+      if (other.action_state === 'organizing' || other.action_state === 'confront') {
+        signal += 1 + other.influence_score * 0.6
+      }
+    }
+
+    if (signal <= 0) continue
+    npc.grievance = clamp(npc.grievance + Math.min(signal * 0.18, 2.5), 0, 100)
+    npc.dissonance_acc = clamp(npc.dissonance_acc + Math.min(signal * 0.12, 2.0), 0, 100)
+
+    const joinChance = clamp(signal / 45, 0, 0.22)
+    if (npc.grievance > 45 && Math.random() < joinChance) {
+      npc.action_state = 'organizing'
+    }
+  }
+}
+
+// ── Crisis Bonding & Network Contraction ──────────────────────────────────
+// Shared danger builds local solidarity, while fear contracts weak ties.
+
+function applyCrisisBonding(state: WorldState): void {
+  const inCrisis = state.active_events.length > 0 || state.macro.stability < 35 || state.macro.food < 25
+  if (inCrisis) lastCrisisTick = state.tick
+
+  const living = state.npcs.filter(n => n.lifecycle.is_alive)
+  if (living.length === 0) return
+
+  // Fear-driven contraction: high-fear NPCs drop peripheral weak ties.
+  for (const npc of living) {
+    if (npc.fear <= 70 || npc.weak_ties.length < 12) continue
+    const dropCount = 1 + Math.floor((npc.fear - 70) / 20)
+    for (let i = 0; i < dropCount && npc.weak_ties.length > 8; i++) {
+      const idx = Math.floor(Math.random() * npc.weak_ties.length)
+      const removed = npc.weak_ties.splice(idx, 1)[0]
+      state.network.weak.get(npc.id)?.delete(removed)
+      state.network.weak.get(removed)?.delete(npc.id)
+      const other = state.npcs[removed]
+      if (other) other.weak_ties = other.weak_ties.filter(id => id !== npc.id)
+    }
+  }
+
+  // Shared-trauma bonding: while crisis is active, survivors in same zone can form new ties faster.
+  const zoneMap = new Map<string, NPC[]>()
+  for (const npc of living) {
+    const arr = zoneMap.get(npc.zone)
+    if (arr) arr.push(npc)
+    else zoneMap.set(npc.zone, [npc])
+  }
+
+  for (const group of zoneMap.values()) {
+    if (group.length < 2) continue
+    const attempts = Math.min(group.length, 10)
+    for (let i = 0; i < attempts; i++) {
+      const a = group[i]
+      const b = group[Math.floor(Math.random() * group.length)]
+      if (a.id === b.id) continue
+      if (a.strong_ties.includes(b.id)) continue
+      if (a.strong_ties.length >= MAX_STRONG_TIES || b.strong_ties.length >= MAX_STRONG_TIES) continue
+
+      const bothUnderStress = a.fear > 45 && b.fear > 45
+      const tieChance = inCrisis
+        ? (bothUnderStress ? 0.05 : 0.02)
+        : (state.tick - lastCrisisTick < 20 * 24 ? 0.02 : 0.01)
+      if (Math.random() >= tieChance) continue
+
+      a.strong_ties.push(b.id)
+      b.strong_ties.push(a.id)
+      state.network.strong.get(a.id)?.add(b.id)
+      state.network.strong.get(b.id)?.add(a.id)
+    }
+  }
+}
+
+// ── Ideological Schism Event ───────────────────────────────────────────────
+// High polarization can fracture society into antagonistic camps.
+
+function checkIdeologicalSchism(state: WorldState): void {
+  if (state.macro.polarization < 65) return
+  if (state.tick - lastSchismTick < 45 * 24) return
+  if (Math.random() > 0.18) return
+
+  const living = state.npcs.filter(n => n.lifecycle.is_alive)
+  if (living.length < 40) return
+
+  lastSchismTick = state.tick
+
+  const campA = living.filter(n => n.worldview.collectivism >= 0.55)
+  const campB = living.filter(n => n.worldview.collectivism < 0.45)
+  if (campA.length < 15 || campB.length < 15) return
+
+  // Cut a fraction of cross-camp info ties and weaken social trust.
+  for (const npc of living) {
+    npc.info_ties = npc.info_ties.filter(id => {
+      const other = state.npcs[id]
+      if (!other?.lifecycle.is_alive) return false
+      const crossCamp = (npc.worldview.collectivism >= 0.55 && other.worldview.collectivism < 0.45)
+        || (npc.worldview.collectivism < 0.45 && other.worldview.collectivism >= 0.55)
+      if (!crossCamp) return true
+      return Math.random() > 0.30
+    })
+    state.network.info.set(npc.id, new Set(npc.info_ties))
+  }
+
+  for (const npc of living) {
+    if (npc.worldview.collectivism >= 0.55 || npc.worldview.collectivism < 0.45) {
+      npc.grievance = clamp(npc.grievance + 6, 0, 100)
+      npc.fear = clamp(npc.fear + 5, 0, 100)
+    }
+  }
+
+  state.drift_score = clamp(state.drift_score + 0.08, 0, 1)
+  addChronicle('Ideological schism: information bridges collapsed as society split into rival camps.', state.year, state.day, 'critical')
+  addFeedRaw('Society fractures into opposing camps as polarization crosses a critical threshold.', 'critical', state.year, state.day)
 }
 
 // ── Season Transition ────────────────────────────────────────────────────────

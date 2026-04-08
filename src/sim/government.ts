@@ -610,6 +610,7 @@ export async function runGovernmentCycle(
       `  Energy/productivity: ${Math.round(state.macro.energy)}%`,
       `  Literacy: ${Math.round(state.macro.literacy)}%`,
       `  Labor unrest: ${Math.round(state.macro.labor_unrest ?? 0)}%`,
+      `  Polarization: ${Math.round(state.macro.polarization ?? 0)}%`,
       ...(state.active_strikes?.length ? [`  Active strikes: ${state.active_strikes.map(s => `${s.role} (demand: ${s.demand})`).join(', ')}`] : []),
       ...eventsBlock,
       ...pressBlock,

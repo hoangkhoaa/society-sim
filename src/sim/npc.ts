@@ -53,8 +53,8 @@ function ageExhaustionModifier(age: number): number {
   if (age < 22)  return 0.85   // youthful energy
   if (age < 42)  return 1.00   // prime years
   if (age < 56)  return 1.15   // slight mid-life increase
-  if (age < 66)  return 1.35   // noticeable
-  return 1.60                   // elderly — significant fatigue
+  if (age < 66)  return 1.30   // noticeable
+  return 1.30                   // elderly — capped to avoid guaranteed burnout
 }
 
 // ── Age-based rest recovery modifier ───────────────────────────────────────
@@ -64,7 +64,7 @@ function ageRestModifier(age: number): number {
   if (age < 30)  return 1.10   // youthful bounce-back
   if (age < 50)  return 1.00   // baseline
   if (age < 65)  return 0.85   // slower recovery
-  return 0.70                   // elderly — much slower recovery
+  return 0.80                   // elderly — slower recovery (was 0.70)
 }
 
 // ── Work Schedule Inference ────────────────────────────────────────────────
@@ -360,6 +360,7 @@ export function createNPC(idx: number, total: number, constitution: Constitution
     ),
     on_strike: false,
     bridge_score: 0,
+    mentor_id: null,
   }
 
   return {
@@ -588,7 +589,7 @@ function decayNeeds(npc: NPC, state: WorldState): void {
   const scarcityPenalty = foodLevel < 30 ? (30 - foodLevel) / 100 * 0.9 : 0
   npc.hunger    += hungerBase + scarcityPenalty
   npc.isolation += 0.2
-  npc.fear      += violenceActive ? 2.0 : -0.3
+  npc.fear      += violenceActive ? 1.2 : -0.5
 
   // ── Exhaustion: role-based gain + age modifier ──────────────────────────
   // Base metabolic cost always applies (+0.15/hr). Activity cost varies by
@@ -621,15 +622,15 @@ function decayNeeds(npc: NPC, state: WorldState): void {
   }
 
   // Graduated food recovery when working: more food → better hunger reduction
-  // food > 60: full recovery; food 30–60: reduced; food < 10: none
-  const hungerRecovery = foodLevel > 60 ? 2.0
-    : foodLevel > 30 ? 1.4
-    : foodLevel > 10 ? 0.7
+  // Rates rebalanced to avoid binary feast/famine oscillation (was 4× asymmetric)
+  const hungerRecovery = foodLevel > 60 ? 0.8
+    : foodLevel > 30 ? 0.55
+    : foodLevel > 10 ? 0.25
     : 0
   if (npc.action_state === 'working' && hungerRecovery > 0) npc.hunger -= hungerRecovery
   if (npc.action_state === 'socializing') {
-    npc.isolation -= 2.5
-    if (npc.strong_ties.length < 3) npc.isolation += 1.0
+    npc.isolation -= 0.5
+    if (npc.strong_ties.length < 3) npc.isolation += 0.3
   }
 
   // Social ostracism: neighbors gradually distance themselves from known criminals
@@ -637,7 +638,7 @@ function decayNeeds(npc: NPC, state: WorldState): void {
 
   // Community group: belonging reduces isolation even when not actively socializing
   if (npc.community_group !== null) {
-    npc.isolation -= 0.4
+    npc.isolation -= 0.15
     // In winter, community provides mutual support against cold/fear
     if (isWinter) npc.fear = clamp(npc.fear - 0.5, 0, 100)
   }
@@ -661,15 +662,16 @@ function decayNeeds(npc: NPC, state: WorldState): void {
 // ── Stress ─────────────────────────────────────────────────────────────────
 
 function computeStress(npc: NPC): number {
-  const h = Math.pow(npc.hunger     / 100, 1.6) * 0.35
-  const e = Math.pow(npc.exhaustion / 100, 1.3) * 0.20
-  const i = Math.pow(npc.isolation  / 100, 1.4) * 0.20
-  const f = Math.pow(npc.fear       / 100, 1.8) * 0.25
+  const h = Math.pow(npc.hunger     / 100, 1.3) * 0.30
+  const e = Math.pow(npc.exhaustion / 100, 1.2) * 0.15
+  const i = Math.pow(npc.isolation  / 100, 1.2) * 0.18
+  const f = Math.pow(npc.fear       / 100, 1.5) * 0.22
 
   const roleExpected = ROLE_WEALTH_EXPECTATION[npc.role]
   const identity = Math.max(0, (roleExpected - npc.wealth) / roleExpected) * 0.10
+  const socialBuffer = Math.min(npc.strong_ties.length, 12) / 12 * 0.08
 
-  return clamp((h + e + i + f + identity) * 100, 0, 100)
+  return clamp((h + e + i + f + identity - socialBuffer) * 100, 0, 100)
 }
 
 // ── Happiness ──────────────────────────────────────────────────────────────
@@ -817,6 +819,15 @@ function selectAction(npc: NPC, state: WorldState): ActionState {
     confront:    Math.max(0, w.risk_tolerance * (1 - govTrust) * perceivedRisk * (npc.stress / 100)),
   }
 
+  // Macro-sensitive behavior: collapse conditions shift behavior to collective action/fleeing.
+  const instability = clamp((35 - state.macro.stability) / 35, 0, 1)
+  const pressure = state.macro.political_pressure / 100
+  const polarization = state.macro.polarization / 100
+  weights.organizing *= 1 + instability * 0.5 + pressure * 0.4 + polarization * 0.2
+  weights.confront *= 1 + pressure * 0.35 + polarization * 0.25
+  weights.fleeing *= 1 + instability * 0.45
+  weights.complying *= 1 - Math.min(0.45, instability * 0.35 + pressure * 0.25)
+
   // value_priority biases: societal values shape how stressed NPCs respond.
   // pm(val) → 1.24 when val is top priority (rank 0), 1.00 when rank 3.
   const vp = state.constitution.value_priority
@@ -897,6 +908,9 @@ function updateGrievance(npc: NPC, state: WorldState): void {
 function updateWorldview(npc: NPC, state: WorldState): void {
   let dDelta = 0
   if (npc.stress > npc.stress_threshold) dDelta += (npc.stress - npc.stress_threshold) * 0.08
+  if (state.macro.stability < 35) dDelta += (35 - state.macro.stability) * 0.12
+  if (state.macro.political_pressure > 55) dDelta += (state.macro.political_pressure - 55) * 0.06
+  if (state.macro.polarization > 60) dDelta += (state.macro.polarization - 60) * 0.05
   if (npc.memory.some(m => m.type === 'trust_broken' && state.tick - m.tick < 168)) dDelta += 10
   if (npc.memory.some(m => m.type === 'windfall'     && state.tick - m.tick < 72))  dDelta -= 4
   dDelta -= (npc.strong_ties.length / 15) * 2
@@ -1000,8 +1014,8 @@ export function computeProductivity(npc: NPC, state: WorldState): number {
   const fairness      = clamp(npc.wealth / Math.max(expected, 1), 0, 2.0)
   // Below expectation → penalty (under-resourced, unmotivated); above → no bonus (incentive satisfied)
   const fairnessPenalty = fairness < 1.0 ? (1.0 - fairness) * 0.18 : 0
-  const stressPenalty   = npc.stress / 120   // was /200; stress 100 → 0.83 penalty
-  const sickPenalty     = npc.sick ? 0.5 : 0
+  const stressPenalty   = Math.min(npc.stress / 120, 0.65)   // capped at 65% to prevent death spiral
+  const sickPenalty     = npc.sick ? 0.40 : 0
   const ageFactor       = ageProductivityFactor(npc.age)
   // Craftsmen can't work without raw materials
   const resourcePenalty = (npc.role === 'craftsman' && state.macro.natural_resources < 20)
@@ -1015,7 +1029,7 @@ export function computeProductivity(npc: NPC, state: WorldState): number {
   const burnoutPenalty = (npc.burnout_ticks ?? 0) >= 480 ? 0.50 : 0
   // Strike: participating workers produce nothing
   if (npc.on_strike) return 0
-  return Math.max(0,
+  return Math.max(0.08,
     npc.base_skill * motivation * ageFactor
     * (1 - fairnessPenalty)
     * (1 - stressPenalty)
@@ -1158,7 +1172,7 @@ export type IndividualEvent = { type: 'accident' | 'illness' | 'recovery' | 'cri
 function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[]): void {
   // Natural death by age
   if (npc.age > 70) {
-    const deathChance = (npc.age - 70) * 0.0001   // per tick
+    const deathChance = (npc.age - 70) * 0.0006   // per tick — Gompertz-like curve
     if (Math.random() < deathChance) {
       npc.lifecycle.is_alive   = false
       npc.lifecycle.death_cause = 'natural'
@@ -1196,7 +1210,7 @@ function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[])
   // ★ Random illness onset — elderly get sick more often
   if (!npc.sick) {
     const medicineMult = (state.discoveries ?? []).some(d => d.id === 'medicine') ? 0.50 : 1.0
-    const sicknessP = 0.0002
+    const sicknessP = 0.00006
       * ageIllnessMult(npc.age)
       * medicineMult
       * (1 + npc.exhaustion / 80)
@@ -1226,10 +1240,10 @@ function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[])
   // ★ Accident (risk scales with fear, exhaustion, fleeing/confront action)
   if (state.tick % 3 === npc.id % 3) {   // stagger checks: every 3 ticks per NPC
     const dangerMod = npc.action_state === 'fleeing' || npc.action_state === 'confront' ? 3 : 1
+    const rawMult = (1 + npc.exhaustion / 100) * (1 + npc.fear / 100)
     const accP = 0.00005
       * dangerMod
-      * (1 + npc.exhaustion / 100)
-      * (1 + npc.fear / 100)
+      * Math.min(rawMult, 2.5)   // cap multiplier to prevent crisis explosion
     if (Math.random() < accP) {
       const fatal = Math.random() < 0.15   // 15% of accidents are fatal
       if (fatal) {
@@ -1300,10 +1314,15 @@ function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[])
   // High rights → due process makes arbitrary arrest harder
   // Low rights  → suspects can be arrested on little evidence
   if (npc.criminal_record && state.tick % 24 === npc.id % 24) {
+    // Natural desistance: criminals with low grievance can reform over time
+    if (npc.grievance < 30 && Math.random() < 0.001) {
+      npc.criminal_record = false
+    }
+
     const guardInst = state.institutions.find(i => i.id === 'guard')
     const rights     = state.constitution.individual_rights_floor
     // High rights = harder to catch (legal protections); low rights = arbitrary enforcement
-    const detectionP = (guardInst?.power ?? 0.3) * 0.02 * (1 - rights * 0.55)
+    const detectionP = (guardInst?.power ?? 0.3) * 0.04 * (1 - rights * 0.55)
     if (Math.random() < detectionP) {
       // Low rights = brutal punishment; high rights = lighter fine + due process
       const fearDelta  = Math.round(15 + (1 - rights) * 25)   // 15–40

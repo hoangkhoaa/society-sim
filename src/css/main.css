@@ -170,7 +170,8 @@ body[data-theme='light'] #map-container { background: #eef3f8; }
 body[data-theme='light'] #right-sidebar,
 body[data-theme='light'] #feed-panel,
 body[data-theme='light'] #chatbar,
-body[data-theme='light'] #demographics { background: #f8fbff; border-color: #dbe5ef; }
+body[data-theme='light'] #demographics,
+body[data-theme='light'] #rumors-panel { background: #f8fbff; border-color: #dbe5ef; }
 body[data-theme='light'] #chronicle-panel { background: #f2f7fd; border-top-color: #dbe5ef; }
 body[data-theme='light'] #chronicle-resizer {
   background: #e7eef7;
@@ -420,6 +421,19 @@ body[data-theme='light'] .map-note-btn {
   bottom: 8px;
   left: 8px;
   width: 164px;
+  background: #0f0f0f;
+  border: 1px solid #1e1e1e;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 11px;
+  z-index: 5;
+}
+
+#rumors-panel {
+  position: absolute;
+  bottom: 8px;
+  left: 180px;
+  width: 236px;
   background: #0f0f0f;
   border: 1px solid #1e1e1e;
   border-radius: 6px;
@@ -991,8 +1005,25 @@ body[data-theme='light'] #crisis-banner { background: rgba(180,30,30,0.88); }
   transition: border-color .15s, background .15s;
 }
 .policy-card:hover { border-color: #555; background: #1a1a1a; }
-.policy-card.critical { border-color: rgba(226,75,75,0.4); }
+.policy-card.critical { 
+  border-color: #e24b4b; 
+  border-width: 2px;
+  background: rgba(226,75,75,0.08);
+  box-shadow: inset 0 0 0 2px rgba(226,75,75,0.15);
+}
 .policy-card.important { border-color: rgba(239,159,39,0.3); }
+.policy-card-badge {
+  font-size: 9px;
+  font-weight: 700;
+  color: #e24b4b;
+  background: rgba(226,75,75,0.15);
+  padding: 4px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-bottom: 6px;
+  text-align: center;
+}
 .policy-card-label {
   font-size: 9px;
   font-weight: 700;
@@ -1087,6 +1118,37 @@ body[data-theme='light'] #regime-label { color: #9aacbe; }
 .rumor-effect { font-size: 10px; flex-shrink: 0; }
 .rumor-text  { font-size: 10px; color: #aaa; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rumor-reach { font-size: 9px; color: #666; flex-shrink: 0; }
+.rumor-text-marquee {
+  display: block;
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+.rumor-track {
+  display: inline-flex;
+  width: max-content;
+  white-space: nowrap;
+  transform: translateX(0);
+  will-change: transform;
+}
+.rumor-copy {
+  display: inline-block;
+}
+.rumor-gap {
+  display: inline-block;
+  padding: 0 18px;
+}
+.rumor-row:hover .rumor-text-marquee .rumor-track,
+.rumor-text-marquee:hover .rumor-track {
+  animation: rumor-marquee var(--rumor-dur, 12s) linear infinite;
+}
+@keyframes rumor-marquee {
+  0%, 14% { transform: translateX(0); }
+  86%, 100% { transform: translateX(-50%); }
+}
 body[data-theme='light'] .rumor-title { color: #8a9bb0; }
 body[data-theme='light'] .rumor-text  { color: #446; }
 body[data-theme='light'] .rumor-reach { color: #9aacbe; }
@@ -1096,6 +1158,14 @@ body[data-theme='light'] #chronicle-rumors {
 }
 body[data-theme='light'] .chronicle-subheader {
   color: #7a8ea4;
+}
+
+@media (max-width: 1100px) {
+  #rumors-panel {
+    width: 164px;
+    left: 8px;
+    bottom: 232px;
+  }
 }
 
 /* ── Responsive (mobile/tablet) ─────────────────────────────────────────── */

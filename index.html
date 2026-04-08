@@ -116,6 +116,7 @@
       <button class="btn-top" id="btn-pause">⏸</button>
       <button class="btn-top" id="btn-speed">1×</button>
       <button class="btn-top" id="btn-toggle-demo" title="Toggle demographics panel">👥</button>
+      <button class="btn-top" id="btn-toggle-rumors" title="Toggle rumors panel">🗣</button>
       <button class="btn-top" id="btn-toggle-legend" title="Toggle network legend">🕸</button>
       <button class="btn-top" id="btn-theme" title="Toggle light/dark mode">🌙</button>
       <button class="btn-top" id="btn-constitution" data-i18n="topbar.constitution">📜 Constitution</button>
@@ -149,7 +150,12 @@
           </div>
           <div class="demo-ages" id="d-ages"></div>
           <div id="d-labor"></div>
-          <div id="d-rumors"></div>
+        </div>
+
+        <!-- Rumors panel — bottom-left overlay, next to demographics -->
+        <div id="rumors-panel">
+          <div class="demo-title">🗣 Rumors</div>
+          <div id="rumors-overlay-log"></div>
         </div>
 
         <!-- NPC Spotlight Panel — opened on NPC click -->

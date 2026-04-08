@@ -758,33 +758,57 @@ const RUMOR_EFFECT_ICONS: Record<string, string> = {
   grievance_up:  '😡',
 }
 
+function escapeHtml(text: string): string {
+  return text
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
+function buildRumorRows(active: WorldState['rumors'], totalNpcs: number, tickNow: number): string {
+  return active.map(r => {
+    const icon = RUMOR_EFFECT_ICONS[r.effect] ?? '💬'
+    const reachPct = Math.round(Math.min(100, (r.reach / totalNpcs) * 100))
+    const daysLeft = Math.max(0, Math.ceil((r.expires_tick - tickNow) / 24))
+    const safeText = escapeHtml(r.content)
+    const longText = r.content.length > 52
+    const duration = Math.max(8, Math.min(24, r.content.length / 5))
+
+    const textHtml = longText
+      ? `<span class="rumor-text rumor-text-marquee" title="${safeText}" style="--rumor-dur:${duration}s"><span class="rumor-track"><span class="rumor-copy">${safeText}</span><span class="rumor-gap">•</span><span class="rumor-copy">${safeText}</span></span></span>`
+      : `<span class="rumor-text" title="${safeText}">${safeText}</span>`
+
+    return `<div class="rumor-row">
+      <span class="rumor-effect">${icon}</span>
+      ${textHtml}
+      <span class="rumor-reach">${reachPct}% · ${daysLeft}d</span>
+    </div>`
+  }).join('')
+}
+
 function updateRumors() {
   if (!world) return
-  const panel = document.getElementById('chronicle-rumors')
-  const el = document.getElementById('rumor-log')
-  if (!el || !panel) return
+  const chroniclePanel = document.getElementById('chronicle-rumors')
+  const chronicleLog = document.getElementById('rumor-log')
+  const overlayLog = document.getElementById('rumors-overlay-log')
+  if (!chronicleLog || !chroniclePanel || !overlayLog) return
+
   const active = world.rumors.filter(r => r.expires_tick > world!.tick)
-  panel.classList.remove('hidden')
+  chroniclePanel.classList.remove('hidden')
   if (active.length === 0) {
-    el.innerHTML = `<div class="rumor-empty">${t('rumors.empty') as string}</div>`
+    const emptyHtml = `<div class="rumor-empty">${t('rumors.empty') as string}</div>`
+    chronicleLog.innerHTML = emptyHtml
+    overlayLog.innerHTML = emptyHtml
     return
   }
 
   const totalNpcs = world.npcs.filter(n => n.lifecycle.is_alive).length || 1
-
-  const rows = active.map(r => {
-    const icon = RUMOR_EFFECT_ICONS[r.effect] ?? '💬'
-    const reachPct = Math.round(Math.min(100, (r.reach / totalNpcs) * 100))
-    const daysLeft = Math.max(0, Math.ceil((r.expires_tick - world!.tick) / 24))
-    const text = r.content.length > 42 ? r.content.slice(0, 42) + '…' : r.content
-    return `<div class="rumor-row">
-      <span class="rumor-effect">${icon}</span>
-      <span class="rumor-text" title="${r.content}">${text}</span>
-      <span class="rumor-reach">${reachPct}% · ${daysLeft}d</span>
-    </div>`
-  }).join('')
-
-  el.innerHTML = `<div class="rumor-title">${tf('rumors.title', { count: active.length })}</div>${rows}`
+  const rows = buildRumorRows(active, totalNpcs, world.tick)
+  const title = `<div class="rumor-title">${tf('rumors.title', { count: active.length })}</div>`
+  chronicleLog.innerHTML = `${title}${rows}`
+  overlayLog.innerHTML = `${title}${rows}`
 }
 
 // ── Consequence scheduler ──────────────────────────────────────────────────
@@ -824,29 +848,42 @@ let simInterval: ReturnType<typeof setInterval> | null = null
 let peakPopulation = 0
 const btnPause = document.getElementById('btn-pause')!
 const btnToggleDemo = document.getElementById('btn-toggle-demo') as HTMLButtonElement
+const btnToggleRumors = document.getElementById('btn-toggle-rumors') as HTMLButtonElement
 const btnToggleLegend = document.getElementById('btn-toggle-legend') as HTMLButtonElement
 const btnTheme = document.getElementById('btn-theme')!
 btnTheme.addEventListener('click', toggleTheme)
 const demographicsPanel = document.getElementById('demographics') as HTMLElement
+const rumorsPanel = document.getElementById('rumors-panel') as HTMLElement
 
 const DEMO_VISIBLE_KEY = 'ui_demographics_visible'
+const RUMORS_VISIBLE_KEY = 'ui_rumors_visible'
 const LEGEND_VISIBLE_KEY = 'ui_legend_visible'
 let demographicsVisible = localStorage.getItem(DEMO_VISIBLE_KEY) !== '0'
+let rumorsVisible = localStorage.getItem(RUMORS_VISIBLE_KEY) !== '0'
 let legendVisible = localStorage.getItem(LEGEND_VISIBLE_KEY) !== '0'
 
 function applyOverlayVisibility() {
   demographicsPanel.classList.toggle('hidden', !demographicsVisible)
+  rumorsPanel.classList.toggle('hidden', !rumorsVisible)
   setMapLegendVisible(legendVisible)
 
   btnToggleDemo.classList.toggle('off', !demographicsVisible)
+  btnToggleRumors.classList.toggle('off', !rumorsVisible)
   btnToggleLegend.classList.toggle('off', !legendVisible)
   btnToggleDemo.title = demographicsVisible ? 'Hide demographics panel' : 'Show demographics panel'
+  btnToggleRumors.title = rumorsVisible ? 'Hide rumors panel' : 'Show rumors panel'
   btnToggleLegend.title = legendVisible ? 'Hide network legend' : 'Show network legend'
 }
 
 btnToggleDemo.addEventListener('click', () => {
   demographicsVisible = !demographicsVisible
   localStorage.setItem(DEMO_VISIBLE_KEY, demographicsVisible ? '1' : '0')
+  applyOverlayVisibility()
+})
+
+btnToggleRumors.addEventListener('click', () => {
+  rumorsVisible = !rumorsVisible
+  localStorage.setItem(RUMORS_VISIBLE_KEY, rumorsVisible ? '1' : '0')
   applyOverlayVisibility()
 })
 
@@ -907,7 +944,12 @@ function buildPolicyCard(p: GovernmentPolicyAI): PolicyDisplayCard {
 }
 
 async function govPolicyCallback(opts: [GovernmentPolicyAI, GovernmentPolicyAI]): Promise<GovernmentPolicyAI> {
-  const idx = await showPolicyChoice(buildPolicyCard(opts[0]), buildPolicyCard(opts[1]))
+  const idx = await showPolicyChoice(
+    buildPolicyCard(opts[0]),
+    buildPolicyCard(opts[1]),
+    () => setPaused(true),
+    () => setPaused(false)
+  )
   return opts[idx]
 }
 
@@ -1045,8 +1087,10 @@ document.getElementById('btn-pause')!.addEventListener('click', function () {
 })
 
 document.getElementById('btn-speed')!.addEventListener('click', function () {
+  const SPEED_STEPS = [1, 3, 12, 24] as const
   const prevSpeed = speed
-  speed = speed === 1 ? 3 : speed === 3 ? 10 : 1
+  const idx = SPEED_STEPS.indexOf(speed as typeof SPEED_STEPS[number])
+  speed = SPEED_STEPS[(idx + 1) % SPEED_STEPS.length]
   this.textContent = `${speed}×`
 
   if (aiConfig && speed > prevSpeed) {
@@ -1054,7 +1098,7 @@ document.getElementById('btn-speed')!.addEventListener('click', function () {
     if (rpm > 0) {
       // At faster speeds sim-days pass faster → more government + press cycles per real minute.
       // At 1×: 1 real sec = 1 sim-hour → 1 sim-day ≈ 24s → ~2.5 days/min
-      // At 3×: ~7.5 days/min  At 10×: ~25 days/min
+      // At 3×: ~7.5 days/min  At 12×: ~30 days/min  At 24×: ~60 days/min
       const daysPerMin = (speed * 60) / 24
       const govCallsPerMin = daysPerMin / 15
       const pressCallsPerMin = aiConfig.token_mode === 'unlimited' ? daysPerMin / 5 : 0

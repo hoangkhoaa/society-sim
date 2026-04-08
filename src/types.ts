@@ -182,6 +182,10 @@ export interface NPC {
   // Betweenness centrality proxy: fraction of distinct zone-clusters in weak_ties.
   // High bridge_score = NPC bridges separate communities → higher influence.
   bridge_score: number           // 0–1
+
+  // ── Mentorship ───────────────────────────────────────────────────────────
+  // Youth and early-career NPCs can learn from a social mentor.
+  mentor_id: number | null       // strong-tie adult mentor; null when unassigned
 }
 
 // ── Constitution ───────────────────────────────────────────────────────────
@@ -396,6 +400,7 @@ export interface MacroStats {
   energy: number                // 0–100 (society's productive energy output)
   literacy: number              // 0–100 (driven by scholar output; boosts economy & info spread)
   labor_unrest: number          // 0–100 (avg class_solidarity × gini; triggers govt alert ≥65)
+  polarization: number          // 0–100 (ideological split from worldview variance)
 }
 
 // ── Labor Strike ───────────────────────────────────────────────────────────

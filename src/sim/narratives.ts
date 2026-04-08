@@ -434,12 +434,16 @@ export function checkRumors(state: WorldState): void {
     }
   }
 
-  // Spread rumors through info_ties
+  // Spread rumors through info_ties plus face-to-face relays.
   const living = state.npcs.filter(n => n.lifecycle.is_alive)
   for (const rumor of state.rumors) {
-    // Each day, susceptible NPCs who share info_ties with many others spread the rumor
-    const spreaders = living.filter(n => n.info_ties.length > 15 && n.dissonance_acc > 25)
-    const newReach  = Math.floor(spreaders.length * 0.08)
+    // Opinion leaders and socially central NPCs spread faster.
+    const spreaders = living.filter(n =>
+      (n.info_ties.length > 15 || n.strong_ties.length > 10) &&
+      (n.dissonance_acc > 25 || n.influence_score > 0.55),
+    )
+    const leaderBonus = spreaders.filter(n => n.influence_score > 0.65).length * 0.6
+    const newReach  = Math.floor(spreaders.length * 0.08 + leaderBonus)
     rumor.reach = Math.min(rumor.reach + newReach, living.length)
 
     // Apply effect when rumor has reached enough people (threshold: 20% of pop)
@@ -519,6 +523,8 @@ export function checkMilestones(state: WorldState): void {
     record('trust_collapse', '💔', NT.milestone.trustCollapse(getLang(), state.year, state.macro.trust))
   if (state.macro.stability < 10)
     record('near_collapse', '⚡', NT.milestone.nearCollapse(getLang(), state.year))
+  if (state.macro.polarization > 70)
+    record('ideological_schism', '🧭', `Year ${state.year}: Ideological polarization crossed ${Math.round(state.macro.polarization)}%, splitting public discourse.`)
 
   // First cure breakthrough
   if (state.discoveries.length === 0 && state.research_points > 1200)

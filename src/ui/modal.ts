@@ -48,6 +48,8 @@ export function showConfirm(opts: ConfirmOptions) {
 export function showPolicyChoice(
   cardA: PolicyDisplayCard,
   cardB: PolicyDisplayCard,
+  onPause?: () => void,
+  onResume?: () => void,
 ): Promise<0 | 1> {
   // If overlay already in use, auto-select option A without blocking
   if (!overlay.classList.contains('hidden')) return Promise.resolve(0)
@@ -65,6 +67,7 @@ export function showPolicyChoice(
     modalActs.style.display = 'none'
     modalBox.classList.add('policy-mode')
     overlay.classList.remove('hidden')
+    onPause?.()
 
     let done = false
     let remaining = 20
@@ -80,6 +83,7 @@ export function showPolicyChoice(
       btnConfirm.replaceWith(btnConfirm.cloneNode(true))
       btnCancel.replaceWith(btnCancel.cloneNode(true))
       document.getElementById('modal-cancel')!.classList.remove('hidden')
+      onResume?.()
       resolve(idx)
     }
 
@@ -97,9 +101,11 @@ export function showPolicyChoice(
 
 function renderPolicyCard(card: PolicyDisplayCard, slot: 'a' | 'b', uid: string): string {
   const btnLabel = slot === 'a' ? t('modal.policy_btn_a') as string : t('modal.policy_btn_b') as string
-  const btnClass = card.severity === 'critical' ? 'btn-primary' : 'btn-ghost'
+  const btnClass = 'btn-primary'
+  const criticalBadge = card.severity === 'critical' ? '<div class="policy-card-badge">⚠ CRITICAL</div>' : ''
   return `
     <div class="policy-card ${card.severity}">
+      ${criticalBadge}
       <div class="policy-card-label">${card.label}</div>
       <div class="policy-card-name">${card.name}</div>
       <div class="policy-card-desc">${card.desc}</div>
