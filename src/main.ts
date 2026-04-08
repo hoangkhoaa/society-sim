@@ -318,7 +318,7 @@ async function startGame(constitution: Constitution) {
   try {
   // initWorld is now async — it yields every 50 NPCs so the UI stays responsive
   world = await initWorld(constitution)
-  peakPopulation = world.npcs.filter(n => n.lifecycle.is_alive).length
+  peakPopulation = countLivingNpcs(world)
 
   updateTopbar()
   updateDemographics()
@@ -419,6 +419,14 @@ function setStat(valueId: string, value: number, statId: string, warnAt: number,
   else if (value <= warnAt) parent.classList.add('warn')
 }
 
+function countLivingNpcs(w: WorldState): number {
+  let c = 0
+  for (const n of w.npcs) {
+    if (n.lifecycle.is_alive) c++
+  }
+  return c
+}
+
 // ── Demographics panel ─────────────────────────────────────────────────────
 
 const AGE_GROUPS = [
@@ -431,14 +439,32 @@ const AGE_GROUPS = [
 
 function updateDemographics() {
   if (!world) return
-  const living = world.npcs.filter(n => n.lifecycle.is_alive)
-  const dead   = world.npcs.length - living.length
-  const males  = living.filter(n => n.gender === 'male').length
-  const leaving = living.filter(n => n.action_state === 'fleeing').length
 
-  document.getElementById('d-pop')!.textContent    = `${living.length}`
+  let pop = 0
+  let males = 0
+  let leaving = 0
+  const ageCounts = [0, 0, 0, 0, 0]
+
+  for (const n of world.npcs) {
+    if (!n.lifecycle.is_alive) continue
+    pop++
+    if (n.gender === 'male') males++
+    if (n.action_state === 'fleeing') leaving++
+    const a = n.age
+    for (let i = 0; i < AGE_GROUPS.length; i++) {
+      const g = AGE_GROUPS[i]
+      if (a >= g.min && a <= g.max) {
+        ageCounts[i]++
+        break
+      }
+    }
+  }
+
+  const dead = world.npcs.length - pop
+
+  document.getElementById('d-pop')!.textContent    = `${pop}`
   document.getElementById('d-male')!.textContent   = `${males}`
-  document.getElementById('d-female')!.textContent = `${living.length - males}`
+  document.getElementById('d-female')!.textContent = `${pop - males}`
   document.getElementById('d-deaths')!.textContent = `${dead}`
   document.getElementById('d-leaving')!.textContent = `${leaving}`
   document.getElementById('d-born')!.textContent = `${world.births_total ?? 0}`
@@ -459,9 +485,10 @@ function updateDemographics() {
     }
   }
 
-  const total = living.length || 1
-  for (const g of AGE_GROUPS) {
-    const count = living.filter(n => n.age >= g.min && n.age <= g.max).length
+  const total = pop || 1
+  for (let i = 0; i < AGE_GROUPS.length; i++) {
+    const g = AGE_GROUPS[i]
+    const count = ageCounts[i]
     const pct = Math.round(count / total * 100)
     const fill = container.querySelector<HTMLElement>(`.age-fill[data-age="${g.key}"]`)
     const pctEl = container.querySelector<HTMLElement>(`.age-pct[data-age-pct="${g.key}"]`)
@@ -575,7 +602,7 @@ function startSimLoop() {
         addFeedRaw(`✅ Event ended.`, 'info', world.year, world.day)
       }
     }
-    const living = world.npcs.filter(n => n.lifecycle.is_alive).length
+    const living = countLivingNpcs(world)
     if (living > peakPopulation) peakPopulation = living
     updateTopbar()
     if (world.tick % 24 === 0) {

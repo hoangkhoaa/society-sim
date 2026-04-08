@@ -370,7 +370,14 @@ export function createNPC(idx: number, total: number, constitution: Constitution
 
 // ── Per-tick NPC update ────────────────────────────────────────────────────
 
-export function tickNPC(npc: NPC, state: WorldState, events?: IndividualEvent[]): void {
+/** Precomputed once per sim tick from active_events — avoids O(NPCs × events) .some() calls. */
+export interface TickEventFlags {
+  epidemic: boolean
+  external_threat: boolean
+  blockade: boolean
+}
+
+export function tickNPC(npc: NPC, state: WorldState, events: IndividualEvent[] | undefined, eventFlags: TickEventFlags): void {
   if (!npc.lifecycle.is_alive) return
   const wasBelowBurnoutThreshold = (npc.burnout_ticks ?? 0) < 480
   decayNeeds(npc, state)
@@ -382,7 +389,7 @@ export function tickNPC(npc: NPC, state: WorldState, events?: IndividualEvent[])
   npc.happiness = computeHappiness(npc, state)
   updateGrievance(npc, state)
   updateWorldview(npc, state)
-  applyResistanceBehavior(npc, state)
+  applyResistanceBehavior(npc, state, eventFlags)
   npc.action_state = selectAction(npc, state)
   updateZone(npc, state)
   wealthTick(npc, state)
@@ -394,14 +401,13 @@ export function tickNPC(npc: NPC, state: WorldState, events?: IndividualEvent[])
 // Each behavior fires only when a specific condition is met and is weighted
 // by the NPC's worldview so identical crises produce heterogeneous responses.
 
-function applyResistanceBehavior(npc: NPC, state: WorldState): void {
+function applyResistanceBehavior(npc: NPC, state: WorldState, flags: TickEventFlags): void {
   if (npc.role === 'child') return
   const m = state.macro
   const c = state.constitution
 
   // Epidemic → self-isolation: reduce social activity desire
-  const epidemicActive = state.active_events.some(e => e.type === 'epidemic')
-  if (epidemicActive) {
+  if (flags.epidemic) {
     const caution = 1 - npc.worldview.risk_tolerance
     npc.isolation += caution * 0.8
     npc.fear += caution * 0.4
@@ -449,15 +455,13 @@ function applyResistanceBehavior(npc: NPC, state: WorldState): void {
   }
 
   // External threat → rally-around-the-flag (temporary trust boost for obedient NPCs)
-  const threatActive = state.active_events.some(e => e.type === 'external_threat')
-  if (threatActive && npc.worldview.authority_trust > 0.5) {
+  if (flags.external_threat && npc.worldview.authority_trust > 0.5) {
     npc.trust_in.government.intention = clamp(npc.trust_in.government.intention + 0.003, 0, 1)
     npc.fear = clamp(npc.fear + 0.3, 0, 100)
   }
 
   // Blockade → merchants suffer most (trade halted), farmers hoard
-  const blockadeActive = state.active_events.some(e => e.type === 'blockade')
-  if (blockadeActive) {
+  if (flags.blockade) {
     if (npc.role === 'merchant') {
       npc.grievance = clamp(npc.grievance + 0.6, 0, 100)
       npc.stress    = clamp(npc.stress    + 0.4, 0, 100)

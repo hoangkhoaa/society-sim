@@ -1,6 +1,6 @@
 import type { WorldState, Constitution, NPC, SimEvent, NarrativeEntry, NPCIntervention, ActiveStrike } from '../types'
 import { createNPC, tickNPC, computeProductivity, RESIDENTIAL_ZONES } from './npc'
-import type { IndividualEvent } from './npc'
+import type { IndividualEvent, TickEventFlags } from './npc'
 import { buildNetwork, MAX_STRONG_TIES, MAX_WEAK_TIES, MAX_INFO_TIES } from './network'
 import { initInstitutions, clamp, getSeason, getSeasonFactor, SEASON_LABELS, ZONE_ADJACENCY } from './constitution'
 import { addFeedRaw, addChronicle } from '../ui/feed'
@@ -116,6 +116,19 @@ export async function initWorld(constitution: Constitution): Promise<WorldState>
 
 // ── Tick ────────────────────────────────────────────────────────────────────
 
+function buildTickEventFlags(active: WorldState['active_events']): TickEventFlags {
+  let epidemic = false
+  let external_threat = false
+  let blockade = false
+  for (const e of active) {
+    if (e.type === 'epidemic') epidemic = true
+    else if (e.type === 'external_threat') external_threat = true
+    else if (e.type === 'blockade') blockade = true
+    if (epidemic && external_threat && blockade) break
+  }
+  return { epidemic, external_threat, blockade }
+}
+
 export function tick(state: WorldState): void {
   state.tick++
 
@@ -128,10 +141,12 @@ export function tick(state: WorldState): void {
     }
   }
 
+  const eventFlags = buildTickEventFlags(state.active_events)
+
   // Tick all living NPCs, collecting individual life events
   const indivEvents: IndividualEvent[] = []
   for (const npc of state.npcs) {
-    if (npc.lifecycle.is_alive) tickNPC(npc, state, indivEvents)
+    if (npc.lifecycle.is_alive) tickNPC(npc, state, indivEvents, eventFlags)
   }
 
   // Chronicle individual events (at most 3 per tick to avoid spam)
@@ -247,18 +262,17 @@ function tickEvents(state: WorldState): void {
       }
     }
 
-    // Apply per-tick effects to NPCs in affected zones
-    const affectedNPCs = state.npcs.filter(
-      n => n.lifecycle.is_alive && (ev.zones.length === 0 || ev.zones.includes(n.zone)),
-    )
-
+    // Apply per-tick effects to NPCs in affected zones (scan npcs once per event, no filter alloc)
     // Epidemic uses a higher mortality multiplier calibrated to give ~30% deaths at intensity=1
     // over a default 7-day event (168 ticks): per-tick rate ≈ intensity * 0.0024
     const mortalityPerTick = ev.type === 'epidemic'
       ? ev.effects_per_tick.displacement_chance * 0.006
       : ev.effects_per_tick.displacement_chance * 0.002
 
-    for (const npc of affectedNPCs) {
+    for (const npc of state.npcs) {
+      if (!npc.lifecycle.is_alive) continue
+      if (ev.zones.length > 0 && !ev.zones.includes(npc.zone)) continue
+
       npc.hunger     = clamp(npc.hunger     + ev.effects_per_tick.stress_delta * 0.3, 0, 100)
       npc.fear       = clamp(npc.fear       + ev.effects_per_tick.stress_delta * 0.5, 0, 100)
       npc.trust_in.government.intention = clamp(
@@ -450,78 +464,94 @@ function applyInterventionToNPC(npc: NPC, iv: NPCIntervention, state: WorldState
 
 
 export function computeMacroStats(state: WorldState): WorldState['macro'] {
-  const npcs = state.npcs.filter(n => n.lifecycle.is_alive)
-  if (npcs.length === 0) return state.macro
-
-  // Food production — each farmer at average productivity feeds ~3-4 people
-  // Multiplied by seasonal factor: autumn harvest peaks, winter drops sharply
-  const farmers = npcs.filter(n => n.role === 'farmer')
   const scarcityFactor = 1 - state.constitution.resource_scarcity * 0.5
   const seasonFactor = getSeasonFactor(state.day)
   const techBonuses = getDiscoveryBonuses(state.discoveries ?? [])
-  const dailyProduction = farmers.reduce((s, n) => s + computeProductivity(n, state), 0) * 4 * scarcityFactor * seasonFactor * techBonuses.foodMult
-  const dailyConsumption = npcs.length * 0.5
+  const maxScholarRatio = Math.max(state.constitution.role_ratios.scholar, 0.01)
+
+  let n = 0
+  let farmerProd = 0
+  let craftsmanProd = 0
+  let scholarProd = 0
+  const wealths: number[] = []
+  let workforce = 0
+  let activeProdSum = 0
+  let politicalCount = 0
+  let trustSum = 0
+  let trustGovSum = 0
+  let fleeingCount = 0
+  let stressSum = 0
+  let workerCount = 0
+  let solidaritySum = 0
+
+  for (const npc of state.npcs) {
+    if (!npc.lifecycle.is_alive) continue
+    n++
+    wealths.push(npc.wealth)
+    trustSum += npc.trust_in.government.intention
+    trustGovSum += (npc.trust_in.government.competence + npc.trust_in.government.intention) / 2
+    stressSum += npc.stress
+
+    const prod = computeProductivity(npc, state)
+    if (npc.role === 'farmer') farmerProd += prod
+    if (npc.role === 'craftsman') craftsmanProd += prod
+    if (npc.role === 'scholar') scholarProd += prod
+
+    if (npc.role !== 'child') {
+      workforce++
+      if (npc.action_state !== 'fleeing' && npc.action_state !== 'confront' && npc.action_state !== 'organizing') {
+        activeProdSum += prod
+      }
+    }
+
+    if (npc.action_state === 'organizing' || npc.action_state === 'confront' || npc.action_state === 'fleeing') {
+      politicalCount++
+    }
+    if (npc.action_state === 'fleeing') fleeingCount++
+
+    if (npc.role !== 'leader' && npc.role !== 'guard' && npc.role !== 'child') {
+      workerCount++
+      solidaritySum += npc.class_solidarity
+    }
+  }
+
+  if (n === 0) return state.macro
+
+  // Food production — each farmer at average productivity feeds ~3-4 people
+  const dailyProduction = farmerProd * 4 * scarcityFactor * seasonFactor * techBonuses.foodMult
+  const dailyConsumption = n * 0.5
   state.food_stock = clamp((state.food_stock ?? 0) + dailyProduction - dailyConsumption, 0, 999999)
-  const food = clamp(state.food_stock / (npcs.length * 30) * 100, 0, 100)
+  const food = clamp(state.food_stock / (n * 30) * 100, 0, 100)
 
   // Natural resources — craftsmen and farmers extract resources; slow natural regeneration
-  const craftsmen = npcs.filter(n => n.role === 'craftsman')
-  const extractionRate = (
-    craftsmen.reduce((s, n) => s + computeProductivity(n, state), 0) * 0.3 +
-    farmers.reduce((s, n) => s + computeProductivity(n, state), 0) * 0.1
-  ) * scarcityFactor
-  const regenRate = (state.natural_resources ?? 50000) * 0.00002  // 0.002% per tick
+  const extractionRate = (craftsmanProd * 0.3 + farmerProd * 0.1) * scarcityFactor
+  const regenRate = (state.natural_resources ?? 50000) * 0.00002
   state.natural_resources = clamp(
     (state.natural_resources ?? 50000) + regenRate - extractionRate,
     0, 100000,
   )
   const natural_resources = clamp(state.natural_resources / 1000, 0, 100)
 
-  // Literacy — scholar output normalized to their role share of population
-  const scholars = npcs.filter(n => n.role === 'scholar')
-  const scholarOutput = scholars.reduce((s, n) => s + computeProductivity(n, state), 0)
-  const maxScholarOutput = npcs.length * Math.max(state.constitution.role_ratios.scholar, 0.01)
-  const literacy = clamp(scholarOutput / maxScholarOutput * 100 + (techBonuses?.literacyBonus ?? 0), 0, 100)
+  const maxScholarOutput = n * maxScholarRatio
+  const literacy = clamp(scholarProd / maxScholarOutput * 100 + (techBonuses?.literacyBonus ?? 0), 0, 100)
 
-  // Energy index — society's daily productive capacity, with literacy bonus.
-  // Energy is a daily aggregate — all non-disrupted workers contribute, including
-  // those currently resting (they work during daytime hours). Only truly disrupted
-  // NPCs (fleeing, confronting, organizing) reduce the energy stat.
-  // High literacy boosts economy up to +12% (knowledge economy effect)
-  const workforce = npcs.filter(n => n.role !== 'child')
-  const activeWorkforce = workforce.filter(
-    n => n.action_state !== 'fleeing' && n.action_state !== 'confront' && n.action_state !== 'organizing',
-  )
-  const totalProductivity = activeWorkforce.reduce((s, n) => s + computeProductivity(n, state), 0)
-  const maxPossibleProductivity = workforce.length * 1.0
+  const maxPossibleProductivity = workforce * 1.0
   const literacyBonus = 1 + (Math.min(literacy + techBonuses.literacyBonus, 100) / 100) * 0.12
-  // Food-Energy nexus: workers need food to sustain productivity.
-  // Adequate food (>60) grants full energy; food <60 progressively limits output.
   const foodEnergyMod = food > 60 ? 1.0
-    : food > 30 ? 0.70 + (food - 30) / 30 * 0.30    // 0.70–1.00
-    : food > 10 ? 0.40 + (food - 10) / 20 * 0.30     // 0.40–0.70
-    : 0.20 + (food / 10) * 0.20                        // 0.20–0.40 (famine)
-  const rawEnergy = totalProductivity / Math.max(maxPossibleProductivity, 1) * 100 * literacyBonus
+    : food > 30 ? 0.70 + (food - 30) / 30 * 0.30
+    : food > 10 ? 0.40 + (food - 10) / 20 * 0.30
+    : 0.20 + (food / 10) * 0.20
+  const rawEnergy = activeProdSum / Math.max(maxPossibleProductivity, 1) * 100 * literacyBonus
   const energy = clamp(rawEnergy * foodEnergyMod, 0, 100)
 
-  // Gini
-  const wealths = npcs.map(n => n.wealth).sort((a, b) => a - b)
+  wealths.sort((a, b) => a - b)
   const gini = computeGini(wealths)
 
-  // Political pressure
-  const politicalPressure = clamp(
-    npcs.filter(n => ['organizing', 'confront', 'fleeing'].includes(n.action_state)).length / npcs.length * 200,
-    0, 100,
-  )
-
-  // Trust (avg government intention)
-  const trust = npcs.reduce((s, n) => s + n.trust_in.government.intention, 0) / npcs.length * 100
-
-  // Stability
-  const avgTrustGov = npcs.reduce((s, n) =>
-    s + (n.trust_in.government.competence + n.trust_in.government.intention) / 2, 0) / npcs.length
-  const cohesion = 1 - npcs.filter(n => n.action_state === 'fleeing').length / npcs.length
-  const avgStress = npcs.reduce((s, n) => s + n.stress, 0) / npcs.length
+  const politicalPressure = clamp(politicalCount / n * 200, 0, 100)
+  const trust = trustSum / n * 100
+  const avgTrustGov = trustGovSum / n
+  const cohesion = 1 - fleeingCount / n
+  const avgStress = stressSum / n
 
   const stability = clamp(
     avgTrustGov * 30 +
@@ -532,11 +562,7 @@ export function computeMacroStats(state: WorldState): WorldState['macro'] {
     0, 100,
   )
 
-  // Labor unrest: avg class_solidarity of workers weighted by inequality
-  const workers = npcs.filter(n => n.role !== 'leader' && n.role !== 'guard' && n.role !== 'child')
-  const avgSolidarity = workers.length > 0
-    ? workers.reduce((s, n) => s + n.class_solidarity, 0) / workers.length
-    : 0
+  const avgSolidarity = workerCount > 0 ? solidaritySum / workerCount : 0
   const labor_unrest = clamp(avgSolidarity * (0.4 + gini * 0.6), 0, 100)
 
   return { food, gini, political_pressure: politicalPressure, trust, stability, natural_resources, energy, literacy, labor_unrest }

@@ -318,12 +318,18 @@ let animFrame: number | null = null
 let hoveredNPCId: number | null = null
 let frameCount = 0
 let _mapPaused = false
+/** When sim is paused, skip most frames unless user moved mouse / resized / tab visible again. */
+let _needsMapRedraw = true
+let _visibilityListenerAttached = false
 
 // ── Selection state ───────────────────────────────────────────────────────────
 let selectedNPCId: number | null = null
 function isLightTheme(): boolean { return document.body.dataset.theme === 'light' }
 
-export function setMapPaused(value: boolean) { _mapPaused = value }
+export function setMapPaused(value: boolean) {
+  _mapPaused = value
+  if (!value) _needsMapRedraw = true
+}
 
 // ── NPC visual state (separate from sim data) ──────────────────────────────
 
@@ -498,6 +504,15 @@ export function initMap(
   window.addEventListener('keydown', onKeyDown)
 
   if (animFrame !== null) cancelAnimationFrame(animFrame)
+
+  if (!_visibilityListenerAttached) {
+    _visibilityListenerAttached = true
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') _needsMapRedraw = true
+    })
+  }
+
+  _needsMapRedraw = true
   drawLoop()
 }
 
@@ -509,6 +524,7 @@ function resizeCanvas() {
   canvas.height = container.clientHeight
   _islandPath = null
   _zpW = 0; _zpH = 0
+  _needsMapRedraw = true
 }
 
 // ── Drawing constants ────────────────────────────────────────────────────────
@@ -520,10 +536,30 @@ const INFO_TIE_MAX_DRAW_PX = 280
 const INFO_TIE_BASE_ALPHA = 0.12
 const INFO_TIE_PULSE_ALPHA = 0.10
 
+// Cap weather particles so canvas stays cheap at high intensity / large viewports
+const MAX_RAIN_DROPS = 220
+const MAX_SNOW_FLAKES = 160
+const MAX_SMOKE_PLUMES = 28
+
+// When paused, redraw ~5fps unless _needsMapRedraw (hover, resize, visibility)
+const PAUSED_FRAME_SKIP = 12
+
 // ── Draw loop ──────────────────────────────────────────────────────────────
 
 function drawLoop() {
   frameCount++
+
+  if (document.visibilityState === 'hidden') {
+    animFrame = requestAnimationFrame(drawLoop)
+    return
+  }
+
+  if (_mapPaused && !_needsMapRedraw && frameCount % PAUSED_FRAME_SKIP !== 0) {
+    animFrame = requestAnimationFrame(drawLoop)
+    return
+  }
+  _needsMapRedraw = false
+
   draw()
   animFrame = requestAnimationFrame(drawLoop)
 }
@@ -598,7 +634,7 @@ function computeWeather(world: WorldState): { rain: number; snow: number; dryFog
 
 function drawRain(W: number, H: number, intensity: number) {
   if (!ctx) return
-  const drops = Math.floor(120 + intensity * 260)
+  const drops = Math.min(MAX_RAIN_DROPS, Math.floor(120 + intensity * 260))
   ctx.save()
   ctx.strokeStyle = `rgba(130,180,255,${0.12 + intensity * 0.2})`
   ctx.lineWidth = 1
@@ -616,7 +652,7 @@ function drawRain(W: number, H: number, intensity: number) {
 
 function drawSnow(W: number, H: number, intensity: number) {
   if (!ctx) return
-  const flakes = Math.floor(70 + intensity * 150)
+  const flakes = Math.min(MAX_SNOW_FLAKES, Math.floor(70 + intensity * 150))
   ctx.save()
   ctx.fillStyle = `rgba(240,245,255,${0.2 + intensity * 0.3})`
   for (let i = 0; i < flakes; i++) {
@@ -643,7 +679,7 @@ function drawDryFog(W: number, H: number, intensity: number) {
 
 function drawSmoke(W: number, H: number, intensity: number) {
   if (!ctx) return
-  const plumes = Math.floor(10 + intensity * 20)
+  const plumes = Math.min(MAX_SMOKE_PLUMES, Math.floor(10 + intensity * 20))
   ctx.save()
   ctx.fillStyle = `rgba(80,80,85,${0.05 + intensity * 0.08})`
   for (let i = 0; i < plumes; i++) {
@@ -1261,7 +1297,11 @@ function onMouseMove(e: MouseEvent) {
   const mx = e.clientX - rect.left
   const my = e.clientY - rect.top
 
-  hoveredNPCId = getNPCAtPosition(world, mx, my)
+  const nextHover = getNPCAtPosition(world, mx, my)
+  if (nextHover !== hoveredNPCId) {
+    hoveredNPCId = nextHover
+    _needsMapRedraw = true
+  }
   canvas.style.cursor = hoveredNPCId !== null ? 'pointer' : 'default'
 }
 
@@ -1280,13 +1320,18 @@ function onClick(e: MouseEvent) {
     const npc = world.npcs.find(n => n.id === npcId)
     if (npc) {
       selectedNPCId = npcId
+      _needsMapRedraw = true
       openSpotlight(npc, world, config ?? null)
     }
   } else {
     selectedNPCId = null
+    _needsMapRedraw = true
   }
 }
 
 function onKeyDown(e: KeyboardEvent) {
-  if (e.key === 'Escape') selectedNPCId = null
+  if (e.key === 'Escape' && selectedNPCId !== null) {
+    selectedNPCId = null
+    _needsMapRedraw = true
+  }
 }
