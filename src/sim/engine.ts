@@ -27,13 +27,14 @@ let lastCrisisTick = -9999
 
 // ── World Initialization ────────────────────────────────────────────────────
 
-const POPULATION = 500          // Phase 2 starting size; bump to 10k after testing
+export const MIN_NPC_COUNT = 500
 const MAX_NPC_MEMORIES = 10     // Circular memory buffer size per NPC
 
-export async function initWorld(constitution: Constitution): Promise<WorldState> {
+export async function initWorld(constitution: Constitution, npcCount: number = MIN_NPC_COUNT): Promise<WorldState> {
+  const population = Math.max(MIN_NPC_COUNT, Math.round(npcCount))
   const npcs: NPC[] = []
-  for (let i = 0; i < POPULATION; i++) {
-    npcs.push(createNPC(i, POPULATION, constitution))
+  for (let i = 0; i < population; i++) {
+    npcs.push(createNPC(i, population, constitution))
     // Yield to the browser event loop every 50 NPCs to keep the UI responsive
     if (i % 50 === 49) await new Promise<void>(resolve => setTimeout(resolve, 0))
   }
@@ -87,7 +88,7 @@ export async function initWorld(constitution: Constitution): Promise<WorldState>
     npcs,
     institutions,
     active_events: [],
-    food_stock: POPULATION * 30,
+    food_stock: population * 30,
     natural_resources: naturalResourcesInit,
     macro: macroStub,
     narrative_log: [],
@@ -106,7 +107,7 @@ export async function initWorld(constitution: Constitution): Promise<WorldState>
     active_events: [],
     network: { strong, weak, info, clusters },
     macro,
-    food_stock: POPULATION * 30,
+    food_stock: population * 30,
     natural_resources: naturalResourcesInit,
     narrative_log: [],
     drift_score: 0,
