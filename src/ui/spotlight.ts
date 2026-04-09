@@ -90,7 +90,7 @@ function renderNPCChatThread(history: NPCChatTurn[], npcName: string, root: Pare
   const thread = root.querySelector('#sp-chat-thread')
   if (!thread) return
   if (history.length === 0) {
-    thread.innerHTML = `<div class="sp-chat-empty">No conversation yet.</div>`
+    thread.innerHTML = `<div class="sp-chat-empty">${t('sp.chat.empty') as string}</div>`
   } else {
     thread.innerHTML = history.map(turn =>
       turn.speaker === 'player'
@@ -102,11 +102,11 @@ function renderNPCChatThread(history: NPCChatTurn[], npcName: string, root: Pare
 }
 
 function getFallbackResponse(npc: NPC): string {
-  if (npc.fear > 70)      return "I... I don't want any trouble. Please leave me alone."
-  if (npc.grievance > 75) return "What do you want? We're barely surviving as it is."
-  if (npc.stress > 70)    return "I'm too exhausted to talk right now."
-  if (npc.happiness > 65) return "Good day! Things are going well enough, can't complain."
-  return "Hmm. I'm not sure what to say to you."
+  if (npc.fear > 70)      return t('sp.chat.fallback.fear') as string
+  if (npc.grievance > 75) return t('sp.chat.fallback.grievance') as string
+  if (npc.stress > 70)    return t('sp.chat.fallback.stress') as string
+  if (npc.happiness > 65) return t('sp.chat.fallback.happy') as string
+  return t('sp.chat.fallback.neutral') as string
 }
 
 /** Sync a range + number pair and call onChange with the new value. */
@@ -183,11 +183,11 @@ function wireStatsEditor(npc: NPC, root: ParentNode): void {
 function renderChatPanel(npc: NPC): string {
   return `
     <div class="sp-section sp-chat-section">
-      <div class="sp-section-title">💬 Talk to ${npc.name}</div>
+      <div class="sp-section-title">${tf('sp.chat.title', { name: npc.name })}</div>
       <div class="sp-chat-thread" id="sp-chat-thread"></div>
       <div class="sp-chat-input-row">
-        <button id="sp-chat-ai-toggle" class="btn-icon sp-chat-ai-btn" title="Toggle AI responses">🤖 <span class="sp-ai-label">AI ON</span></button>
-        <input type="text" id="sp-chat-input" class="sp-chat-input" placeholder="Say something..." maxlength="200" />
+        <button id="sp-chat-ai-toggle" class="btn-icon sp-chat-ai-btn" title="${t('sp.chat.ai_toggle') as string}">🤖 AI</button>
+        <input type="text" id="sp-chat-input" class="sp-chat-input" placeholder="${t('sp.chat.input_ph') as string}" maxlength="200" />
         <button id="sp-chat-send" class="btn-icon sp-chat-send-btn">→</button>
       </div>
     </div>
@@ -263,12 +263,12 @@ export async function openSpotlight(npc: NPC, state: WorldState, config: AIConfi
   })
 
   openEditBtn?.addEventListener('click', () => {
-    openSubPanel(`Edit Stats · ${npc.name}`, renderEditPanel(npc))
+    openSubPanel(tf('sp.edit.title', { name: npc.name }), renderEditPanel(npc))
     wireStatsEditor(npc, sideBody)
   })
 
   openChatBtn?.addEventListener('click', () => {
-    openSubPanel(`Chat · ${npc.name}`, renderChatPanel(npc))
+    openSubPanel(tf('sp.chat.panel_title', { name: npc.name }), renderChatPanel(npc))
     const history = npcChatHistories.get(npc.id) ?? []
     renderNPCChatThread(history, npc.name, sideBody)
 
@@ -279,8 +279,10 @@ export async function openSpotlight(npc: NPC, state: WorldState, config: AIConfi
 
     const updateAIToggle = () => {
       if (!aiToggle) return
-      aiToggle.innerHTML = _useAI ? '🤖 <span class="sp-ai-label">AI ON</span>' : '💬 <span class="sp-ai-label">AI OFF</span>'
-      aiToggle.title = _useAI ? 'AI responses ON — click to use scripted replies' : 'AI responses OFF — click to use AI'
+      aiToggle.textContent = _useAI ? '🤖 AI' : '💬 AI'
+      aiToggle.title = _useAI
+        ? t('sp.chat.ai_on_title') as string
+        : t('sp.chat.ai_off_title') as string
       aiToggle.classList.toggle('sp-chat-ai-off', !_useAI)
     }
     updateAIToggle()
@@ -311,10 +313,10 @@ export async function openSpotlight(npc: NPC, state: WorldState, config: AIConfi
         // If NPC is sleeping, respond without AI
         if (_chatNpc.action_state === 'resting') {
           const sleepResponses = [
-            `*mumbles sleepily* ...${_chatNpc.name} is fast asleep.`,
-            `*no response* — ${_chatNpc.name} is sleeping.`,
-            `*groans* ...let me sleep...`,
-            `*turns over* Zzz...`,
+            tf('sp.chat.sleeping_1', { name: _chatNpc.name }),
+            tf('sp.chat.sleeping_2', { name: _chatNpc.name }),
+            t('sp.chat.sleeping_3') as string,
+            t('sp.chat.sleeping_4') as string,
           ]
           const replyText = sleepResponses[Math.floor(Math.random() * sleepResponses.length)]
           turns.push({ speaker: 'npc', text: replyText })
@@ -592,7 +594,7 @@ function renderStatic(npc: NPC, state: WorldState): string {
         const em    = actionEmoji[actionState] ?? '❓'
         const color = actionColor[actionState] ?? '#aaa'
         return `<div class="sp-row">
-          <span class="sp-label">Current activity</span>
+          <span class="sp-label">${t('sp.current_activity') as string}</span>
           <span class="sp-value" style="color:${color}">${em} ${actionState}</span>
         </div>`
       })()}
@@ -705,10 +707,10 @@ function renderStatic(npc: NPC, state: WorldState): string {
     ${lifeStory(npc, state)}
 
     <div class="sp-section">
-      <div class="sp-section-title">Actions</div>
+      <div class="sp-section-title">${t('sp.actions') as string}</div>
       <div class="sp-actions">
-        <button class="sp-action-btn" id="sp-open-chat">💬 Start Chat</button>
-        <button class="sp-action-btn" id="sp-open-edit">✏️ Edit Stats</button>
+        <button class="sp-action-btn" id="sp-open-chat">${t('sp.action_start_chat') as string}</button>
+        <button class="sp-action-btn" id="sp-open-edit">${t('sp.action_edit_stats') as string}</button>
       </div>
     </div>
 

@@ -133,7 +133,12 @@ Scales: food_stock ~500 = 1 day for 500 pop, ~15000 = a season; natural_resource
 "answer":"brief","requires_confirm":true|false}
 
 RULES:
-- Convert policies/reforms/inventions into the most appropriate type; use "answer" only for pure Q&A.
+- ALWAYS interpret commands as actions. NEVER explain why you can't — always find the closest event/intervention type and execute it.
+- Inventions, discoveries, innovations → "tech_shift" event (high intensity for major breakthroughs). Narrate the discovery in "narrative_open". NEVER set instant_kill_rate for tech_shift or any positive/beneficial event.
+- Natural disasters, wars, plagues → appropriate event type. Social unrest, rebellions → intervention + optional event.
+- Policies, laws, reforms → constitution change (type:"intervention" + "constitution" field) or world_delta.
+- "answer" type is ONLY for pure informational questions ("what is gini?", "how many people?"). Never use "answer" for action commands.
+- Convert ANY command — no matter how creative or fictional — into the most fitting response type. If in doubt, use "tech_shift" or "intervention".
 - To kill an exact percentage: use intervention with kill:true + kill_pct:<0-100>. Example: kill_pct:99 kills 99% of targeted NPCs.
 - To kill specific people (assassination, execution): intervention with kill:true + target:"id_list" or target:"role".
 - For events: use effects_per_tick.instant_kill_rate to override default kill fraction (e.g. 0.99 for 99% instant death).
@@ -152,8 +157,9 @@ function tokenModeDirective(config: AIConfig): string {
     return `TOKEN MODE: EVENTS ONLY.
 - Never return type "intervention".
 - Only return "event" or "answer".
-- Reinterpret policy/invention/social-change commands into the closest valid "event" whenever possible.
-- Only return "answer" when the Architect is explicitly asking for information or explanation.`
+- ALWAYS map any command (invention, policy, disaster, social change) to the closest valid "event" type. Never refuse or explain.
+- Inventions/discoveries → "tech_shift". Weather/nature → matching disaster. Social unrest → "charismatic_npc" or "martyr".
+- Only return "answer" when the Architect is explicitly asking a direct question (not issuing a command).`
   }
   if (config.token_mode === 'events_plus_npc_control') {
     return `TOKEN MODE: EVENTS + NPC CONTROL.

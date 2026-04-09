@@ -58,6 +58,8 @@
   text-transform: uppercase;
   color: #444;
   margin-bottom: 8px;
+  padding-left: 4px;
+  padding-right: 4px;
 }
 .sp-actions {
   display: flex;
@@ -223,7 +225,7 @@ body[data-theme='light'] .sp-edit-check-label:hover { color: #333; }
 .sp-chat-input-row {
   display: flex;
   gap: 5px;
-  padding: 4px 12px 2px;
+  padding: 0px 12px 2px;
 }
 .sp-chat-input {
   flex: 1;
@@ -237,9 +239,8 @@ body[data-theme='light'] .sp-edit-check-label:hover { color: #333; }
 }
 .sp-chat-input:focus { outline: none; border-color: #444; }
 .sp-chat-input:disabled { opacity: 0.4; }
-.sp-chat-send-btn { padding: 4px 10px; font-size: 13px; }
-.sp-chat-ai-btn { padding: 4px 8px; font-size: 13px; opacity: 0.85; display: flex; align-items: center; gap: 4px; }
-.sp-chat-ai-btn .sp-ai-label { font-size: 11px; font-weight: 600; letter-spacing: 0.3px; }
+.sp-chat-send-btn { font-size: 13px; }
+.sp-chat-ai-btn { font-size: 13px; opacity: 0.85; white-space: nowrap; }
 .sp-chat-ai-btn.sp-chat-ai-off { opacity: 0.45; filter: grayscale(1); }
 /* NPC name links (spouse / romance target) */
 .sp-npc-link {

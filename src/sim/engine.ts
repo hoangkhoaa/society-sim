@@ -347,7 +347,13 @@ export function spawnEvent(state: WorldState, partial: Partial<SimEvent>): SimEv
  * Apply immediate zone-targeted deaths when a catastrophic event spawns.
  * Uses the event's `instant_kill_rate` field. Returns the number of NPCs killed.
  */
+// Positive event types that should NEVER kill NPCs regardless of what AI returns
+const NON_LETHAL_EVENT_TYPES = new Set([
+  'resource_boom', 'trade_offer', 'tech_shift', 'charismatic_npc', 'ideology_import',
+])
+
 export function applyInstantEventDeaths(state: WorldState, ev: SimEvent): number {
+  if (NON_LETHAL_EVENT_TYPES.has(ev.type)) return 0
   const rate = ev.effects_per_tick.instant_kill_rate ?? 0
   if (rate <= 0) return 0
 
@@ -1557,11 +1563,11 @@ function applyOpinionLeaderDynamics(state: WorldState): void {
   if (state.tick - lastOpinionFeedTick > 15 * 24 && (proGov + antiGov) >= 2) {
     lastOpinionFeedTick = state.tick
     if (antiGov > proGov) {
-      addFeedRaw('Influential voices are turning against the regime and amplifying dissent across districts.', 'political', state.year, state.day)
-      addChronicle('Opinion leaders coordinated anti-government narratives through information networks.', state.year, state.day, 'major')
+      addFeedRaw(t('engine.opinion_anti_feed') as string, 'political', state.year, state.day)
+      addChronicle(t('engine.opinion_anti_chronicle') as string, state.year, state.day, 'major')
     } else if (proGov > antiGov) {
-      addFeedRaw('High-profile voices are defending the regime and calming public anger.', 'political', state.year, state.day)
-      addChronicle('Opinion leaders rallied support for institutional stability.', state.year, state.day, 'major')
+      addFeedRaw(t('engine.opinion_pro_feed') as string, 'political', state.year, state.day)
+      addChronicle(t('engine.opinion_pro_chronicle') as string, state.year, state.day, 'major')
     }
   }
 }
@@ -1706,8 +1712,8 @@ function checkIdeologicalSchism(state: WorldState): void {
   }
 
   state.drift_score = clamp(state.drift_score + 0.08, 0, 1)
-  addChronicle('Ideological schism: information bridges collapsed as society split into rival camps.', state.year, state.day, 'critical')
-  addFeedRaw('Society fractures into opposing camps as polarization crosses a critical threshold.', 'critical', state.year, state.day)
+  addChronicle(t('engine.schism_chronicle') as string, state.year, state.day, 'critical')
+  addFeedRaw(t('engine.schism_feed') as string, 'critical', state.year, state.day)
 }
 
 // ── Season Transition ────────────────────────────────────────────────────────
@@ -1718,13 +1724,7 @@ function checkSeasonTransition(state: WorldState): void {
   lastSeason = current
 
   const label = SEASON_LABELS[current]
-  const descriptions: Record<string, string> = {
-    spring: `${label} — farmers return to the fields. Food stores running low.`,
-    summer: `${label} — crops are growing. The society settles into its rhythm.`,
-    autumn: `${label} — harvest season. Food production at its peak.`,
-    winter: `${label} — cold sets in. Food production drops sharply; hunger rises.`,
-  }
-  const text = descriptions[current]
+  const text = tf(`engine.season.${current}`, { season: label }) as string
   addChronicle(text, state.year, state.day, 'minor')
   addFeedRaw(text, 'info', state.year, state.day)
 }
@@ -1753,7 +1753,8 @@ function checkCommunityGroups(state: WorldState): void {
 
     groupCollectiveActionTick.set(groupId, state.tick)
     const zone = members[0].zone
-    const text = `A community group in the ${zone.replace(/_/g, ' ')} has mobilized — ${members.length} members marching together.`
+    const zoneLabel = t(`zone.${zone}`) as string
+    const text = tf('engine.community_mobilized', { zone: zoneLabel, n: members.length }) as string
     addChronicle(text, state.year, state.day, 'major')
     addFeedRaw(text, 'warning', state.year, state.day)
 
@@ -1843,7 +1844,7 @@ function checkOrganizingOutcome(state: WorldState): void {
 
     // High rights (>0.75) block violent suppression — legal protections hold
     if (rights > 0.75) {
-      const text = `Suppression attempted but legal protections hold — government forced to negotiate (rights floor: ${Math.round(rights * 100)}%).`
+      const text = tf('engine.unrest.suppression_blocked', { rights: Math.round(rights * 100) }) as string
       addChronicle(text, state.year, state.day, 'major')
       addFeedRaw(text, 'political', state.year, state.day)
       // Fall through to negotiation below
@@ -1854,7 +1855,7 @@ function checkOrganizingOutcome(state: WorldState): void {
       const grievanceDelta = Math.round(8  + (1 - rights) * 18)   // 8–26
       const trustLoss      = 0.05 + (1 - rights) * 0.07           // 0.05–0.12
 
-      const text = `Authorities suppress unrest — ${pct}% mobilizing. Rights floor: ${Math.round(rights * 100)}%.`
+      const text = tf('engine.unrest.suppressed', { pct, rights: Math.round(rights * 100) }) as string
       addChronicle(text, state.year, state.day, 'critical')
       addFeedRaw(text, 'critical', state.year, state.day)
 
@@ -1872,7 +1873,7 @@ function checkOrganizingOutcome(state: WorldState): void {
 
   if (govTrust > 0.35 || state.constitution.state_power < 0.45) {
     // Negotiation: government opens dialogue
-    const text = `Government opens dialogue — ${pct}% of population organizing.`
+    const text = tf('engine.unrest.dialogue', { pct }) as string
     addChronicle(text, state.year, state.day, 'major')
     addFeedRaw(text, 'political', state.year, state.day)
 
@@ -1886,7 +1887,7 @@ function checkOrganizingOutcome(state: WorldState): void {
   }
 
   // Standoff: government can neither suppress nor negotiate
-  const text = `Standoff: ${pct}% of citizens in open dissent — government cannot suppress or negotiate.`
+  const text = tf('engine.unrest.standoff', { pct }) as string
   addChronicle(text, state.year, state.day, 'critical')
   addFeedRaw(text, 'critical', state.year, state.day)
   state.drift_score = clamp(state.drift_score + 0.10, 0, 1)
@@ -2184,7 +2185,7 @@ function spendTaxRevenue(state: WorldState): void {
         npc.happiness  = clamp(npc.happiness  + 3, 0, 100)
         npc.wealth     = clamp(npc.wealth + perNPC * 0.5, 0, 50000)
       }
-      feedMsg = `Government invests ${Math.round(spendAmount)} coins in infrastructure — worker productivity rises.`
+      feedMsg = tf('engine.tax_spend.infrastructure', { amount: Math.round(spendAmount) }) as string
       break
     }
     case 'research': {
@@ -2197,7 +2198,7 @@ function spendTaxRevenue(state: WorldState): void {
       for (const npc of living) {
         npc.happiness = clamp(npc.happiness + 1, 0, 100)
       }
-      feedMsg = `Research investment of ${Math.round(spendAmount)} coins: scholars receive funding, literacy improves.`
+      feedMsg = tf('engine.tax_spend.research', { amount: Math.round(spendAmount) }) as string
       break
     }
     case 'military': {
@@ -2210,7 +2211,7 @@ function spendTaxRevenue(state: WorldState): void {
       for (const npc of living.filter(n => n.role !== 'guard' && n.role !== 'leader')) {
         npc.fear = clamp(npc.fear + 2, 0, 100)
       }
-      feedMsg = `${Math.round(spendAmount)} coins allocated to military and enforcement — security forces are bolstered.`
+      feedMsg = tf('engine.tax_spend.military', { amount: Math.round(spendAmount) }) as string
       break
     }
     case 'welfare': {
@@ -2223,7 +2224,7 @@ function spendTaxRevenue(state: WorldState): void {
         npc.happiness = clamp(npc.happiness + 5, 0, 100)
         npc.trust_in.government.intention = clamp(npc.trust_in.government.intention + 0.015, 0, 1)
       }
-      feedMsg = `${Math.round(spendAmount)} coins distributed as welfare — the poorest 50% receive direct aid.`
+      feedMsg = tf('engine.tax_spend.welfare', { amount: Math.round(spendAmount) }) as string
       break
     }
     case 'temples': {
@@ -2235,7 +2236,7 @@ function spendTaxRevenue(state: WorldState): void {
           npc.trust_in.government.intention = clamp(npc.trust_in.government.intention + 0.01, 0, 1)
         }
       }
-      feedMsg = `${Math.round(spendAmount)} coins invested in civic and religious projects — community cohesion strengthens.`
+      feedMsg = tf('engine.tax_spend.temples', { amount: Math.round(spendAmount) }) as string
       break
     }
     case 'balanced': {
@@ -2244,7 +2245,7 @@ function spendTaxRevenue(state: WorldState): void {
         npc.wealth    = clamp(npc.wealth + perNPC * 0.8, 0, 50000)
         npc.happiness = clamp(npc.happiness + 2, 0, 100)
       }
-      feedMsg = `${Math.round(spendAmount)} coins in balanced public spending — modest gains for all citizens.`
+      feedMsg = tf('engine.tax_spend.balanced', { amount: Math.round(spendAmount) }) as string
       break
     }
   }
@@ -2364,7 +2365,7 @@ function checkRegimeEvents(state: WorldState): void {
     const mInst = state.institutions.find(i => i.id === 'market')
     if (mInst) mInst.legitimacy = clamp(mInst.legitimacy - 0.10, 0, 1)
 
-    const text = `Market crash — the speculative bubble has burst. Merchants and investors lose fortunes overnight.`
+    const text = t('engine.market_crash') as string
     addChronicle(text, state.year, state.day, 'critical')
     addFeedRaw(text, 'critical', state.year, state.day)
   }
@@ -2390,7 +2391,7 @@ function checkRegimeEvents(state: WorldState): void {
       if (govInst) govInst.legitimacy = clamp(govInst.legitimacy - 0.07, 0, 1)
 
       const pct  = Math.round(revolters.length / Math.max(farmers.length, 1) * 100)
-      const text = `Peasant levy revolt — ${pct}% of farmers refuse tribute and take to the streets.`
+      const text = tf('engine.peasant_revolt', { pct }) as string
       addChronicle(text, state.year, state.day, 'critical')
       addFeedRaw(text, 'critical', state.year, state.day)
     }
@@ -2417,7 +2418,7 @@ function checkRegimeEvents(state: WorldState): void {
           npc.trust_in.government.intention + 0.015 * c.state_power, 0, 1,
         )
       }
-      const text = `Emergency rationing declared — the state draws on strategic reserves to feed ${hungry.length} hungry citizens.`
+      const text = tf('engine.rationing_emergency', { n: hungry.length }) as string
       addChronicle(text, state.year, state.day, 'major')
       addFeedRaw(text, 'warning', state.year, state.day)
     } else {
@@ -2430,7 +2431,7 @@ function checkRegimeEvents(state: WorldState): void {
       const govInst = state.institutions.find(i => i.id === 'government')
       if (govInst) govInst.legitimacy = clamp(govInst.legitimacy - 0.12, 0, 1)
 
-      const text = `Rationing crisis — state reserves exhausted. Citizens receive nothing; government legitimacy collapses.`
+      const text = t('engine.rationing_crisis') as string
       addChronicle(text, state.year, state.day, 'critical')
       addFeedRaw(text, 'critical', state.year, state.day)
     }
@@ -2624,14 +2625,14 @@ function checkShadowEconomy(state: WorldState): void {
 
     if (raidCount > 0) {
       lastShadowRaidTick = state.tick
-      const text = `Guard raids the underground market — ${raidCount} shadow traders apprehended, assets seized.`
+      const text = tf('engine.shadow_raid', { n: raidCount }) as string
       addFeedRaw(text, 'warning', state.year, state.day)
       addChronicle(text, state.year, state.day, 'major')
     } else if (Math.random() < 0.04) {
       // Ambient news: market thriving under the state's nose
       const pct = Math.round(criminals.length / living.length * 100)
       addFeedRaw(
-        `Shadow market thrives in the dark — ${pct}% of citizens trade outside state oversight.`,
+        tf('engine.shadow_thrives', { pct }) as string,
         'info', state.year, state.day,
       )
     }
@@ -2668,19 +2669,19 @@ function checkReferendum(state: WorldState): void {
   if (m.food < 28 && c.safety_net < 0.70) {
     field    = 'safety_net'
     proposed = clamp(c.safety_net + 0.20, 0, 1)
-    proposal_text = `Emergency food relief act — raise safety net from ${Math.round(c.safety_net * 100)}% to ${Math.round(proposed * 100)}%`
+    proposal_text = tf('engine.referendum.proposal.food_relief', { from: Math.round(c.safety_net * 100), to: Math.round(proposed * 100) }) as string
   } else if (m.gini > 0.55 && c.safety_net < 0.65) {
     field    = 'safety_net'
     proposed = clamp(c.safety_net + 0.15, 0, 1)
-    proposal_text = `Wealth redistribution reform — safety net from ${Math.round(c.safety_net * 100)}% → ${Math.round(proposed * 100)}%`
+    proposal_text = tf('engine.referendum.proposal.redistribution', { from: Math.round(c.safety_net * 100), to: Math.round(proposed * 100) }) as string
   } else if (m.trust < 28 && c.individual_rights_floor < 0.60) {
     field    = 'individual_rights_floor'
     proposed = clamp(c.individual_rights_floor + 0.20, 0, 1)
-    proposal_text = `Democratic rights reform — raise individual rights floor from ${Math.round(c.individual_rights_floor * 100)}% to ${Math.round(proposed * 100)}%`
+    proposal_text = tf('engine.referendum.proposal.rights', { from: Math.round(c.individual_rights_floor * 100), to: Math.round(proposed * 100) }) as string
   } else if (m.political_pressure > 75 && c.market_freedom < 0.70) {
     field    = 'market_freedom'
     proposed = clamp(c.market_freedom + 0.15, 0, 1)
-    proposal_text = `Economic liberalization — market freedom from ${Math.round(c.market_freedom * 100)}% → ${Math.round(proposed * 100)}%`
+    proposal_text = tf('engine.referendum.proposal.market', { from: Math.round(c.market_freedom * 100), to: Math.round(proposed * 100) }) as string
   } else {
     return  // no clear crisis to propose on
   }
@@ -2693,7 +2694,7 @@ function checkReferendum(state: WorldState): void {
     expires_tick: state.tick + 168,  // 7 days
   }
 
-  const text = `🗳️ Referendum proposed: "${proposal_text}". Citizens will vote over the next 7 days.`
+  const text = tf('engine.referendum.proposed', { proposal: proposal_text }) as string
   addChronicle(text, state.year, state.day, 'critical')
   addFeedRaw(text, 'political', state.year, state.day)
 }
@@ -2730,7 +2731,7 @@ function resolveReferendum(state: WorldState): void {
   if (approved) {
     // Amend the constitution
     ;(state.constitution as unknown as Record<string, number>)[ref.field] = ref.proposed_value
-    const text = `✅ Referendum passed (${supportPct}% support): "${ref.proposal_text}" — constitution amended.`
+    const text = tf('engine.referendum.passed', { pct: supportPct, proposal: ref.proposal_text }) as string
     addChronicle(text, state.year, state.day, 'critical')
     addFeedRaw(text, 'political', state.year, state.day)
     // Trust boost from successful democratic process
@@ -2738,7 +2739,7 @@ function resolveReferendum(state: WorldState): void {
       npc.trust_in.government.intention = clamp(npc.trust_in.government.intention + 0.03, 0, 1)
     }
   } else {
-    const text = `❌ Referendum rejected (${supportPct}% support): "${ref.proposal_text}" — no change.`
+    const text = tf('engine.referendum.rejected', { pct: supportPct, proposal: ref.proposal_text }) as string
     addChronicle(text, state.year, state.day, 'major')
     addFeedRaw(text, 'political', state.year, state.day)
     // Disappointment among supporters
@@ -2791,7 +2792,8 @@ function checkEpidemicIntelligence(state: WorldState): void {
     const newQuarantines = epidemic.zones.filter(z => !state.quarantine_zones.includes(z))
     if (newQuarantines.length > 0) {
       state.quarantine_zones = [...state.quarantine_zones, ...newQuarantines]
-      const text = `🔒 Guard quarantines ${newQuarantines.join(', ')} — movement restricted to contain the epidemic.`
+      const zoneLabels = newQuarantines.map(z => t(`zone.${z}`) as string).join(', ')
+      const text = tf('engine.epidemic_quarantine', { zones: zoneLabels }) as string
       addChronicle(text, state.year, state.day, 'major')
       addFeedRaw(text, 'warning', state.year, state.day)
     }
@@ -2806,8 +2808,8 @@ function checkEpidemicIntelligence(state: WorldState): void {
     cureProgress.value = 0
 
     const topScholar = scholars.sort((a, b) => b.influence_score - a.influence_score)[0]
-    const heroName   = topScholar?.name ?? 'the scholars'
-    const text = `💊 Cure breakthrough! ${heroName} has developed a treatment — epidemic intensity halved.`
+    const heroName   = topScholar?.name ?? (t('engine.scholars_collective') as string)
+    const text = tf('engine.cure_breakthrough', { name: heroName }) as string
     addChronicle(text, state.year, state.day, 'critical')
     addFeedRaw(text, 'info', state.year, state.day)
 

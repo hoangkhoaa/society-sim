@@ -91,7 +91,7 @@ btnClose.addEventListener('click', closeSettingsPanel)
 // Close on overlay click (click outside panel)
 document.addEventListener('click', (e) => {
   if (!panel.classList.contains('hidden')
-      && !panel.contains(e.target as Node)
+      && !e.composedPath().includes(panel)
       && (e.target as HTMLElement).id !== 'btn-settings') {
     closeSettingsPanel()
   }
@@ -108,11 +108,9 @@ function pct(v: number): string { return `${Math.round(v * 100)}%` }
 function renderRestrictionRow(icon: string, label: string, value: string, severity: 'low' | 'med' | 'high' | 'ok'): string {
   const color = severity === 'high' ? '#c44' : severity === 'med' ? '#b80' : severity === 'ok' ? '#4a4' : '#888'
   return `
-    <div class="stg-row" style="padding:4px 0">
-      <div class="stg-row-info">
-        <div class="stg-row-label" style="font-size:11px">${icon} ${label}</div>
-      </div>
-      <div style="font-size:11px;font-weight:600;color:${color};min-width:60px;text-align:right">${value}</div>
+    <div class="stg-restriction-row">
+      <span class="stg-restriction-label">${icon} ${label}</span>
+      <span class="stg-restriction-value" style="color:${color}">${value}</span>
     </div>`
 }
 
@@ -132,14 +130,14 @@ function renderRegimeTab(lang: Lang): string {
   const label = settingsRegimeLabels(lang)
 
   return `
-    <div style="font-size:10px;color:#888;margin-bottom:6px">${settingsRegimeNote(lang)}</div>
-    <div class="stg-section-label" style="font-size:10px;color:#777;margin:4px 0 2px">${settingsRegimeSectionInfo(lang)}</div>
+    <div style="font-size:10px;color:#888;margin:4px 12px 6px">${settingsRegimeNote(lang)}</div>
+    <div class="stg-section-label">${settingsRegimeSectionInfo(lang)}</div>
     ${renderRestrictionRow('📢', label.info,   pct(r.info_spread_mult), infoSev)}
     ${renderRestrictionRow('🔗', label.ties,   pct(r.info_ties_cap),   tiesSev)}
     ${renderRestrictionRow('🔇', label.cens,   pct(r.censorship_prob), censSev)}
-    <div class="stg-section-label" style="font-size:10px;color:#777;margin:6px 0 2px">${settingsRegimeSectionConnections(lang)}</div>
+    <div class="stg-section-label">${settingsRegimeSectionConnections(lang)}</div>
     ${renderRestrictionRow('🗺', label.travel, r.cross_zone_ties ? settingsRegimeCrossZoneAllowed(lang) : settingsRegimeCrossZoneLocked(lang), travelSev)}
-    <div class="stg-section-label" style="font-size:10px;color:#777;margin:6px 0 2px">${settingsRegimeSectionEconomy(lang)}</div>
+    <div class="stg-section-label">${settingsRegimeSectionEconomy(lang)}</div>
     ${renderRestrictionRow('🏪', label.trade,  pct(r.trade_mult),      tradeSev)}
     ${renderRestrictionRow('🏠', label.rent,   r.rent_market     ? settingsRegimeMarketAllowed(lang) : settingsRegimeMarketBanned(lang), rentSev)}
     ${renderRestrictionRow('🏦', label.lend,   r.private_lending ? settingsRegimeMarketAllowed(lang) : settingsRegimeMarketBanned(lang), lendSev)}`
@@ -159,7 +157,7 @@ function renderPanel(): void {
     ${regimeLabel}
     <div class="stg-tabs">
       <button class="stg-tab ${_activeTab === 'ai_driven' ? 'active' : ''}" data-tab="ai_driven">
-        🤖 AI-Driven
+        ${t('settings.tab_ai') as string}
       </button>
       <button class="stg-tab ${_activeTab === 'regime' ? 'active' : ''}" data-tab="regime">
         ${settingsTabRegime(lang)}

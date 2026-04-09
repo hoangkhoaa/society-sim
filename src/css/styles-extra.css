@@ -42,6 +42,36 @@ body[data-theme='light'] .stg-tab { color: #8899aa; }
 
 .stg-tab-content { padding: 6px 0 4px; }
 
+.stg-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: #666;
+  padding: 6px 12px 2px;
+}
+body[data-theme='light'] .stg-section-label { color: #8899aa; }
+
+.stg-restriction-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 12px;
+  gap: 8px;
+}
+.stg-restriction-label {
+  font-size: 11px;
+  color: #888;
+  flex: 1;
+}
+body[data-theme='light'] .stg-restriction-label { color: #5a6a7a; }
+.stg-restriction-value {
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 56px;
+  text-align: right;
+}
+
 .stg-row {
   display: flex;
   align-items: flex-start;

@@ -26,7 +26,7 @@ export function settingsRegimeSectionInfo(lang: Lang): string {
 }
 
 export function settingsRegimeSectionConnections(lang: Lang): string {
-  return pick(lang, { en: '� Connections', vi: '🔗 Kết nối' })
+  return pick(lang, { en: '🔗 Connections', vi: '🔗 Kết nối' })
 }
 
 export function settingsRegimeSectionEconomy(lang: Lang): string {
