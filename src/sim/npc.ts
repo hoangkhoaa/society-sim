@@ -1068,7 +1068,7 @@ const ROLE_INCOME_RATE: Record<string, number> = {
 }
 
 // Cost of living per tick (survival spending — food, shelter, basic needs).
-// At this rate an NPC at productivity=0 loses ~1.7 wealth/day.
+// At this rate an NPC at productivity=0 loses ~1.68 wealth/day (0.07 × 24).
 const SURVIVAL_COST_PER_TICK = 0.07
 
 function wealthTick(npc: NPC, state: WorldState): void {

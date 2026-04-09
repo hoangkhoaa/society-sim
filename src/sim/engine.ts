@@ -1972,7 +1972,8 @@ function applyIncomeTax(state: WorldState): void {
     if (npc.daily_income < EXEMPT_THRESHOLD) continue
 
     // Tax is deducted from wealth (proxy for earned and held income).
-    const taxAmount = npc.daily_income * taxRate * 0.25  // 25% of daily_income (as daily payment)
+    // Applied as 25% of the annual tax amount per day (quarterly collection cadence).
+    const taxAmount = npc.daily_income * taxRate * 0.25
     if (taxAmount < 0.01) continue
     npc.wealth = clamp(npc.wealth - taxAmount, 0, 50000)
     state.tax_pool = clamp((state.tax_pool ?? 0) + taxAmount, 0, 9_999_999)
@@ -2014,7 +2015,7 @@ function applyGovernmentWages(state: WorldState): void {
   for (const npc of guards) {
     const wage = GOVT_WAGE_GUARD * payRatio
     npc.wealth = clamp(npc.wealth + wage, 0, 50000)
-    npc.daily_income = npc.daily_income * 0.99 + wage * 1  // update income EMA
+    npc.daily_income = npc.daily_income * 0.99 + wage  // update income EMA with daily wage
     if (payRatio < 0.5) {
       // Government insolvency → guards become demoralized and fearful
       npc.fear      = clamp(npc.fear + 5, 0, 100)
@@ -2024,7 +2025,7 @@ function applyGovernmentWages(state: WorldState): void {
   for (const npc of leaders) {
     const wage = GOVT_WAGE_LEADER * payRatio
     npc.wealth = clamp(npc.wealth + wage, 0, 50000)
-    npc.daily_income = npc.daily_income * 0.99 + wage * 1
+    npc.daily_income = npc.daily_income * 0.99 + wage  // update income EMA with daily wage
     if (payRatio < 0.5) {
       npc.fear      = clamp(npc.fear + 3, 0, 100)
       npc.grievance = clamp(npc.grievance + 5, 0, 100)
