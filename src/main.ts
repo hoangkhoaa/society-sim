@@ -504,6 +504,9 @@ async function startGame(constitution: Constitution) {
   resetNPCChatHistories()
   lastGovernmentPeriod = -1  // reset government cycle tracker for new game
   _lastSimDay = -1
+  // Clear age-bar rows so they are rebuilt fresh (correct language, correct counts)
+  const dAges = document.getElementById('d-ages')
+  if (dAges) dAges.innerHTML = ''
   resetNarrativeRuntimeState()
   resetPressRuntimeState()
 
@@ -515,15 +518,13 @@ async function startGame(constitution: Constitution) {
   // initWorld is now async — it yields every 50 NPCs so the UI stays responsive
   const npcCount = Math.max(MIN_NPC_COUNT, parseInt(npcCountInput?.value || '500', 10) || MIN_NPC_COUNT)
   world = await initWorld(constitution, npcCount)
-  peakPopulation = countLivingNpcs(world)
-
   // Apply regime-specific defaults, locked features, and sim restrictions
   const regimeProfile = getRegimeProfile(constitution)
   applyRegimeDefaults(regimeProfile)
   setActiveSimRestrictions(regimeProfile.simRestrictions)
 
   updateTopbar()
-  updateDemographics()
+  peakPopulation = updateDemographics()
   updateEconomicsPanel()
 
   // Initialize the canvas map
@@ -861,13 +862,6 @@ function checkStrikeReadiness() {
   }
 }
 
-function countLivingNpcs(w: WorldState): number {
-  let c = 0
-  for (const n of w.npcs) {
-    if (n.lifecycle.is_alive) c++
-  }
-  return c
-}
 
 // ── Achievements ───────────────────────────────────────────────────────────
 
@@ -939,8 +933,8 @@ const AGE_GROUPS = [
   { key: 'demo.age_4', min: 70, max: 999 },
 ]
 
-function updateDemographics() {
-  if (!world) return
+function updateDemographics(): number {
+  if (!world) return 0
 
   let pop = 0
   let males = 0
@@ -1000,6 +994,7 @@ function updateDemographics() {
   }
 
   updateLaborTension()
+  return pop
 }
 
 // ── Labor tension: per-role solidarity + grievance ─────────────────────────
@@ -1363,14 +1358,15 @@ function startSimLoop() {
         addFeedRaw(`✅ Event ended.`, 'info', world.year, world.day)
       }
     }
-    const living = countLivingNpcs(world)
-    if (living > peakPopulation) peakPopulation = living
     updateTopbar()
-    // Update daily panels whenever the sim-day advances (works at any speed setting)
+    // Demographics updates every interval so numbers stay in sync with the sim
+    // updateDemographics() also returns live pop count, avoiding a second scan
+    const living = updateDemographics()
+    if (living > peakPopulation) peakPopulation = living
+    // Heavier daily panels only update once per sim-day (works at any speed setting)
     const currentDay = (world.year - 1) * 360 + world.day
     if (currentDay !== _lastSimDay) {
       _lastSimDay = currentDay
-      updateDemographics()
       updateRumors()
       updateEconomicsPanel()
       flushConsequences()
