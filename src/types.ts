@@ -401,6 +401,9 @@ export interface MacroStats {
   literacy: number              // 0–100 (driven by scholar output; boosts economy & info spread)
   labor_unrest: number          // 0–100 (avg class_solidarity × gini; triggers govt alert ≥65)
   polarization: number          // 0–100 (ideological split from worldview variance)
+  gdp: number                   // total daily income across all living NPCs (coins/day)
+  extraction_rate: number       // 0–100: resource extraction efficiency relative to theoretical max
+  economic_efficiency: number   // 0–100: actual economic output vs potential (productivity × roles)
 }
 
 // ── Labor Strike ───────────────────────────────────────────────────────────
@@ -456,6 +459,9 @@ export interface WorldState {
   milestones: HistoryMilestone[]
   births_total: number
   immigration_total: number
+
+  // Economy
+  tax_pool: number              // government treasury — collected from income tax, spent by regime
 }
 
 // ── AI Types ───────────────────────────────────────────────────────────────

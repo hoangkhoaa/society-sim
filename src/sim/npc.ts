@@ -1049,14 +1049,96 @@ export function computeProductivity(npc: NPC, state: WorldState): number {
 const TRADE_EFFICIENCY = 0.80   // non-merchant P2P friction
 const MERCHANT_MARKUP  = 0.22   // merchant profit margin per transaction
 
+// ── Role-based income sources ──────────────────────────────────────────────
+// Government-paid roles (guard, leader) earn their income via the tax pool
+// rather than direct market labor. Their wealthTick only handles needs spending.
+const GOVT_PAID_ROLES: Set<string> = new Set(['guard', 'leader'])
+
+// Base gross income multiplier by role (coins per tick at productivity=1.0).
+// Farmers and craftsmen produce physical goods; scholars provide services;
+// merchants earn through markup on top of their base labor income.
+const ROLE_INCOME_RATE: Record<string, number> = {
+  farmer:    0.12,   // raw resource + food production
+  craftsman: 0.14,   // processed goods
+  merchant:  0.10,   // base; boosted heavily by P2P trade markup
+  scholar:   0.11,   // education/medicine services
+  guard:     0.00,   // paid from tax pool (see engine.ts applyGovernmentWages)
+  leader:    0.00,   // paid from tax pool
+  child:     0.00,
+}
+
+// Cost of living per tick (survival spending — food, shelter, basic needs).
+// At this rate an NPC at productivity=0 loses ~1.7 wealth/day.
+const SURVIVAL_COST_PER_TICK = 0.07
+
 function wealthTick(npc: NPC, state: WorldState): void {
   if (npc.role === 'child') return
   if (npc.action_state === 'fleeing' || npc.action_state === 'confront') return
 
   const productivity = computeProductivity(npc, state)
-  const laborIncome  = (productivity - 0.5) * 0.1
-  npc.wealth     = clamp(npc.wealth + laborIncome, 0, 50000)
-  npc.daily_income = npc.daily_income * 0.99 + Math.max(0, laborIncome) * 24
+
+  // Gross earned income: always non-negative, scales with productivity.
+  // Government-paid roles earn 0 from market labor (paid via tax pool instead).
+  const incomeRate   = ROLE_INCOME_RATE[npc.role] ?? 0.10
+  const grossIncome  = productivity * incomeRate
+
+  // ── Farmer → Merchant supply-chain bonus ────────────────────────────────
+  // Farmers with merchant contacts earn extra income by selling surplus
+  // produce. Merchants within strong-ties benefit proportionally.
+  // This runs once per day (staggered per NPC id) while the farmer is working.
+  if (npc.role === 'farmer' && npc.action_state === 'working'
+      && state.tick % 24 === npc.id % 24
+      && state.constitution.market_freedom >= 0.10) {
+    const farmerSurplusRate = clamp(productivity - 0.3, 0, 1) * 0.8  // surplus above subsistence
+    if (farmerSurplusRate > 0) {
+      for (const tid of npc.strong_ties.slice(0, 4)) {
+        const merchant = state.npcs[tid]
+        if (!merchant?.lifecycle.is_alive || merchant.role !== 'merchant') continue
+        // Farmer sells produce to merchant — both gain wealth
+        const saleValue = farmerSurplusRate * 3 * state.constitution.market_freedom
+        const buyerCost = saleValue * 0.7  // merchant pays 70%; keeps 30% as inventory margin
+        if (merchant.wealth >= buyerCost) {
+          npc.wealth      = clamp(npc.wealth      + saleValue,   0, 50000)
+          merchant.wealth = clamp(merchant.wealth - buyerCost,   0, 50000)
+        }
+        break  // one sale per day per farmer
+      }
+    }
+  }
+
+  // ── Craftsman resource dependency ──────────────────────────────────────
+  // Craftsmen buy raw materials from merchants or farmers when available.
+  // Without a supply source, they can still work at reduced efficiency
+  // (resource penalty already applied in computeProductivity).
+  if (npc.role === 'craftsman' && npc.action_state === 'working'
+      && state.tick % 24 === npc.id % 24
+      && state.constitution.market_freedom >= 0.10) {
+    for (const tid of npc.strong_ties.slice(0, 4)) {
+      const supplier = state.npcs[tid]
+      if (!supplier?.lifecycle.is_alive) continue
+      if (supplier.role !== 'merchant' && supplier.role !== 'farmer') continue
+      const materialCost = 1.5 * state.constitution.market_freedom
+      if (supplier.wealth >= materialCost * 2) {
+        // Craftsman pays for raw materials — supplier earns income
+        npc.wealth      = clamp(npc.wealth      - materialCost, 0, 50000)
+        supplier.wealth = clamp(supplier.wealth + materialCost, 0, 50000)
+      }
+      break  // one purchase per day
+    }
+  }
+
+  // Net wealth change: gross earnings minus cost of living.
+  // Government-paid roles still pay survival cost (deducted, compensated by wages).
+  const laborIncome = GOVT_PAID_ROLES.has(npc.role)
+    ? -SURVIVAL_COST_PER_TICK                  // only cost of living; wages come from tax pool
+    : grossIncome - SURVIVAL_COST_PER_TICK     // net market income
+
+  npc.wealth = clamp(npc.wealth + laborIncome, 0, 50000)
+
+  // Daily income: exponential moving average of gross daily earnings.
+  // Bug fix: previously used Max(0, net) which showed 0 whenever net was negative.
+  // Now uses gross (always ≥ 0) so income reflects actual work output.
+  npc.daily_income = npc.daily_income * 0.99 + grossIncome * 24
 
   // ── Shadow market (planned economies, criminals only) ─────────────────
   // Criminal NPCs in low-market-freedom societies earn illicit income by

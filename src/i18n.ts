@@ -110,6 +110,19 @@ const translations = {
     'rumors.title': '💬 Rumors ({count})',
     'rumors.empty': 'No active rumors right now.',
 
+    // Economics panel
+    'econ.title':       '💰 Economics',
+    'econ.gdp':         'GDP',
+    'econ.extraction':  'Extraction',
+    'econ.efficiency':  'Efficiency',
+    'econ.tax_pool':    'Tax Pool',
+    'econ.tax_rate':    'Tax Rate',
+    'econ.tip_gdp':     'Total daily income of all living citizens (coins/day). Reflects overall economic output.',
+    'econ.tip_extraction': 'Resource extraction efficiency — how much producers extract relative to their maximum capacity.',
+    'econ.tip_efficiency': 'Economic output as percentage of theoretical maximum (all workers at full capacity).',
+    'econ.tip_tax_pool':   'Government treasury: taxes collected from income and used for regime-specific spending.',
+    'econ.tip_tax_rate':   'Income tax rate applied to market workers (farmers, craftsmen, merchants, scholars).',
+
     // Crisis banner + strike readiness feed
     'crisis.banner':           '⚠ CIVILIZATION IN CRISIS',
     'feed.strike_readiness':   '⚠ {role}s showing strike readiness — solidarity {sol}%, grievance {griev}%',
@@ -536,6 +549,19 @@ const translations = {
     // Rumors panel
     'rumors.title': '💬 Tin đồn ({count})',
     'rumors.empty': 'Hiện chưa có tin đồn nào đang hoạt động.',
+
+    // Economics panel
+    'econ.title':       '💰 Kinh tế',
+    'econ.gdp':         'GDP',
+    'econ.extraction':  'Khai thác',
+    'econ.efficiency':  'Hiệu quả',
+    'econ.tax_pool':    'Ngân sách',
+    'econ.tax_rate':    'Thuế suất',
+    'econ.tip_gdp':     'Tổng thu nhập hàng ngày của tất cả người dân (đồng/ngày). Phản ánh sản lượng kinh tế tổng thể.',
+    'econ.tip_extraction': 'Hiệu quả khai thác tài nguyên — mức khai thác thực tế so với năng lực tối đa của người sản xuất.',
+    'econ.tip_efficiency': 'Sản lượng kinh tế thực tế so với lý thuyết tối đa (tất cả lao động làm việc hết công suất).',
+    'econ.tip_tax_pool':   'Ngân sách chính phủ: thuế thu từ thu nhập và được chi theo thể chế.',
+    'econ.tip_tax_rate':   'Thuế suất thu nhập áp dụng cho lao động thị trường (nông dân, thợ thủ công, thương nhân, học giả).',
 
     // Crisis banner + strike readiness feed
     'crisis.banner':           '⚠ VĂN MINH ĐANG KHỦNG HOẢNG',
