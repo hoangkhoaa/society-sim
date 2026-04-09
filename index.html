@@ -127,6 +127,7 @@
       <button class="btn-top" id="btn-speed">1×</button>
       <button class="btn-top" id="btn-toggle-demo" title="Toggle demographics panel">👥</button>
       <button class="btn-top" id="btn-toggle-rumors" title="Toggle rumors panel">🗣</button>
+      <button class="btn-top" id="btn-toggle-econ" title="Toggle economics panel">💰</button>
       <button class="btn-top" id="btn-toggle-legend" title="Toggle network legend">🕸</button>
       <button class="btn-top" id="btn-theme" title="Toggle light/dark mode">🌙</button>
       <button class="btn-top" id="btn-constitution" data-i18n="topbar.constitution">📜 Constitution</button>
@@ -166,6 +167,18 @@
         <div id="rumors-panel">
           <div class="demo-title">🗣 Rumors</div>
           <div id="rumors-overlay-log"></div>
+        </div>
+
+        <!-- Economics panel — bottom-left overlay, collapsible -->
+        <div id="econ-panel" class="hidden">
+          <div class="demo-title">💰 Economics</div>
+          <div class="demo-grid">
+            <span class="demo-label" title="Total daily income of all living citizens (coins/day)">GDP</span><b id="ep-gdp">–</b>
+            <span class="demo-label" title="Resource extraction efficiency (% of theoretical max by producers)">Extraction</span><b id="ep-extraction">–</b>
+            <span class="demo-label" title="Economic output as % of potential (all workers at full capacity)">Efficiency</span><b id="ep-efficiency">–</b>
+            <span class="demo-label" title="Government treasury accumulated from income taxes">Tax Pool</span><b id="ep-tax-pool">–</b>
+            <span class="demo-label" title="Income tax rate applied to market workers">Tax Rate</span><b id="ep-tax-rate">–</b>
+          </div>
         </div>
 
         <!-- NPC Spotlight Panel — opened on NPC click -->

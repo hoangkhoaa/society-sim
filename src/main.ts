@@ -4,7 +4,7 @@ import { setupGreeting, setupChat, applyPreset, handlePlayerChat, resetInGameHis
 import { listAvailableModels, PROVIDER_MODELS, getAIUsage, getRemainingRPM, getWaitSeconds, initKeyRing } from './ai/provider'
 import { addFeedRaw, addFeedThinking, setFeedFilter, setChronicleFilter, refreshChronicleTimestamps } from './ui/feed'
 import { showConfirm, showInfo, showPolicyChoice, type PolicyDisplayCard } from './ui/modal'
-import { initWorld, tick, spawnEvent, applyInterventions, applyInstantEventDeaths } from './sim/engine'
+import { initWorld, tick, spawnEvent, applyInterventions, applyInstantEventDeaths, getIncomeTaxRate } from './sim/engine'
 import {
   setLang,
   t,
@@ -510,6 +510,7 @@ async function startGame(constitution: Constitution) {
 
   updateTopbar()
   updateDemographics()
+  updateEconomicsPanel()
 
   // Initialize the canvas map
   const mapCanvas = document.getElementById('map-canvas') as HTMLCanvasElement
@@ -1015,29 +1016,36 @@ const btnPause = document.getElementById('btn-pause')!
 const btnToggleDemo = document.getElementById('btn-toggle-demo') as HTMLButtonElement
 const btnToggleRumors = document.getElementById('btn-toggle-rumors') as HTMLButtonElement
 const btnToggleLegend = document.getElementById('btn-toggle-legend') as HTMLButtonElement
+const btnToggleEcon = document.getElementById('btn-toggle-econ') as HTMLButtonElement
 const btnTheme = document.getElementById('btn-theme')!
 btnTheme.addEventListener('click', toggleTheme)
 const demographicsPanel = document.getElementById('demographics') as HTMLElement
 const rumorsPanel = document.getElementById('rumors-panel') as HTMLElement
+const econPanel = document.getElementById('econ-panel') as HTMLElement
 
 const DEMO_VISIBLE_KEY = 'ui_demographics_visible'
 const RUMORS_VISIBLE_KEY = 'ui_rumors_visible'
 const LEGEND_VISIBLE_KEY = 'ui_legend_visible'
+const ECON_VISIBLE_KEY = 'ui_econ_visible'
 let demographicsVisible = localStorage.getItem(DEMO_VISIBLE_KEY) !== '0'
 let rumorsVisible = localStorage.getItem(RUMORS_VISIBLE_KEY) !== '0'
 let legendVisible = localStorage.getItem(LEGEND_VISIBLE_KEY) !== '0'
+let econVisible = localStorage.getItem(ECON_VISIBLE_KEY) === '1'
 
 function applyOverlayVisibility() {
   demographicsPanel.classList.toggle('hidden', !demographicsVisible)
   rumorsPanel.classList.toggle('hidden', !rumorsVisible)
+  econPanel.classList.toggle('hidden', !econVisible)
   setMapLegendVisible(legendVisible)
 
   btnToggleDemo.classList.toggle('off', !demographicsVisible)
   btnToggleRumors.classList.toggle('off', !rumorsVisible)
   btnToggleLegend.classList.toggle('off', !legendVisible)
+  btnToggleEcon.classList.toggle('off', !econVisible)
   btnToggleDemo.title = demographicsVisible ? 'Hide demographics panel' : 'Show demographics panel'
   btnToggleRumors.title = rumorsVisible ? 'Hide rumors panel' : 'Show rumors panel'
   btnToggleLegend.title = legendVisible ? 'Hide network legend' : 'Show network legend'
+  btnToggleEcon.title = econVisible ? 'Hide economics panel' : 'Show economics panel'
 }
 
 btnToggleDemo.addEventListener('click', () => {
@@ -1057,7 +1065,42 @@ btnToggleLegend.addEventListener('click', () => {
   localStorage.setItem(LEGEND_VISIBLE_KEY, legendVisible ? '1' : '0')
   applyOverlayVisibility()
 })
+
+btnToggleEcon.addEventListener('click', () => {
+  econVisible = !econVisible
+  localStorage.setItem(ECON_VISIBLE_KEY, econVisible ? '1' : '0')
+  applyOverlayVisibility()
+})
+
 applyOverlayVisibility()
+
+// ── Economics Panel ─────────────────────────────────────────────────────────
+
+function updateEconomicsPanel() {
+  if (!world || !econVisible) return
+  const { macro } = world
+  const taxRate = getIncomeTaxRate(world)
+
+  const gdpEl = document.getElementById('ep-gdp')
+  const extractEl = document.getElementById('ep-extraction')
+  const effEl = document.getElementById('ep-efficiency')
+  const taxPoolEl = document.getElementById('ep-tax-pool')
+  const taxRateEl = document.getElementById('ep-tax-rate')
+
+  if (gdpEl) gdpEl.textContent = `${Math.round(macro.gdp ?? 0)}`
+  if (extractEl) {
+    const ex = Math.round(macro.extraction_rate ?? 0)
+    extractEl.textContent = `${ex}%`
+    extractEl.style.color = ex < 30 ? '#e24b4b' : ex < 60 ? '#ef9f27' : '#5dcaa5'
+  }
+  if (effEl) {
+    const ef = Math.round(macro.economic_efficiency ?? 0)
+    effEl.textContent = `${ef}%`
+    effEl.style.color = ef < 30 ? '#e24b4b' : ef < 55 ? '#ef9f27' : '#5dcaa5'
+  }
+  if (taxPoolEl) taxPoolEl.textContent = `${Math.round(world.tax_pool ?? 0)}`
+  if (taxRateEl) taxRateEl.textContent = `${Math.round(taxRate * 100)}%`
+}
 
 // Government cycle: runs once every 15 sim-days.
 // Tracks which 15-day period has already been processed to avoid double-firing at high speeds.
@@ -1163,6 +1206,7 @@ function startSimLoop() {
     if (world.tick % 24 === 0) {
       updateDemographics()
       updateRumors()
+      updateEconomicsPanel()
       flushConsequences()
       checkStatDeltas(world.macro)
       checkStrikeReadiness()

@@ -269,7 +269,8 @@ body[data-theme='light'] #right-sidebar,
 body[data-theme='light'] #feed-panel,
 body[data-theme='light'] #chatbar,
 body[data-theme='light'] #demographics,
-body[data-theme='light'] #rumors-panel { background: #f8fbff; border-color: #dbe5ef; }
+body[data-theme='light'] #rumors-panel,
+body[data-theme='light'] #econ-panel { background: #f8fbff; border-color: #dbe5ef; }
 body[data-theme='light'] #chronicle-panel { background: #f2f7fd; border-top-color: #dbe5ef; }
 body[data-theme='light'] #chronicle-resizer {
   background: #e7eef7;
@@ -532,6 +533,19 @@ body[data-theme='light'] .map-note-btn {
   bottom: 8px;
   left: 180px;
   width: 236px;
+  background: #0f0f0f;
+  border: 1px solid #1e1e1e;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 11px;
+  z-index: 5;
+}
+
+#econ-panel {
+  position: absolute;
+  bottom: 8px;
+  left: 424px;
+  width: 200px;
   background: #0f0f0f;
   border: 1px solid #1e1e1e;
   border-radius: 6px;
@@ -1263,6 +1277,11 @@ body[data-theme='light'] .chronicle-subheader {
     width: 164px;
     left: 8px;
     bottom: 232px;
+  }
+  #econ-panel {
+    width: 160px;
+    left: 8px;
+    bottom: 420px;
   }
 }
 

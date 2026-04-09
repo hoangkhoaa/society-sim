@@ -75,6 +75,9 @@ export async function initWorld(constitution: Constitution): Promise<WorldState>
     literacy: 50,
     labor_unrest: 0,
     polarization: 15,
+    gdp: 0,
+    extraction_rate: 50,
+    economic_efficiency: 50,
   }
   const macro = computeMacroStats({
     tick: 0,
@@ -90,6 +93,7 @@ export async function initWorld(constitution: Constitution): Promise<WorldState>
     narrative_log: [],
     drift_score: 0,
     crisis_pending: false,
+    tax_pool: 0,
   } as unknown as WorldState)
 
   return {
@@ -117,6 +121,7 @@ export async function initWorld(constitution: Constitution): Promise<WorldState>
     births_total: 0,
     immigration_total: 0,
     active_strikes: [],
+    tax_pool: 0,
   }
 }
 
@@ -206,6 +211,10 @@ export function tick(state: WorldState): void {
     applyWelfare(state)
     applyStateRationing(state)
     applyFeudalTribute(state)
+    applyIncomeTax(state)
+    applyGovernmentWages(state)
+    spendTaxRevenue(state)
+    applyIncomeInequalityEffects(state)
     processInheritance(state)
     checkRegimeEvents(state)
     applyTheocracyEffect(state)
@@ -595,6 +604,31 @@ export function computeMacroStats(state: WorldState): WorldState['macro'] {
   const centerDrift = Math.abs(meanCollectivism - 0.5) + Math.abs(meanAuthority - 0.5)
   const polarization = clamp(stdCollectivism * 90 + stdAuthority * 90 + centerDrift * 40, 0, 100)
 
+  // GDP: sum of all living NPC daily incomes (coins earned per day).
+  let gdpSum = 0
+  let producerCount = 0
+  let producerProdSum = 0
+  for (const npc of state.npcs) {
+    if (!npc.lifecycle.is_alive || npc.role === 'child') continue
+    gdpSum += npc.daily_income
+    if (npc.role === 'farmer' || npc.role === 'craftsman') {
+      producerCount++
+      producerProdSum += computeProductivity(npc, state)
+    }
+  }
+  const gdp = gdpSum
+
+  // Extraction rate (0–100): how efficiently producers are extracting/processing resources
+  // relative to their theoretical maximum output (producer count × 1.0 max productivity × 0.13 avg rate).
+  const maxExtraction = Math.max(producerCount * 0.13, 0.01)
+  const actualExtraction = producerProdSum * 0.13
+  const extraction_rate = clamp(actualExtraction / maxExtraction * 100, 0, 100)
+
+  // Economic efficiency (0–100): ratio of actual GDP to potential GDP
+  // (all working-age NPCs at full productivity).
+  const potentialGDP = workforce * 0.12 * 24   // full productivity × avg income rate × day
+  const economic_efficiency = clamp(gdp / Math.max(potentialGDP, 1) * 100, 0, 100)
+
   return {
     food,
     gini,
@@ -606,6 +640,9 @@ export function computeMacroStats(state: WorldState): WorldState['macro'] {
     literacy,
     labor_unrest,
     polarization,
+    gdp,
+    extraction_rate,
+    economic_efficiency,
   }
 }
 
@@ -1902,7 +1939,247 @@ function applyFeudalTribute(state: WorldState): void {
   }
 }
 
-// ── Inheritance ──────────────────────────────────────────────────────────────
+// ── Income Tax Collection ─────────────────────────────────────────────────────
+// All market-working NPCs (non-government roles) pay a fraction of their daily
+// income as income tax into the state treasury (tax_pool). Tax rate depends on
+// the constitutional regime:
+//   authoritarian/socialist  → 25 %
+//   welfare/theocratic       → 20 %
+//   feudal                   → 15 %
+//   moderate                 → 10 %
+//   libertarian              →  5 %
+// Workers who earn very little (daily_income < 5) are exempt to protect the poor.
+
+export function getIncomeTaxRate(state: WorldState): number {
+  const c = state.constitution
+  if (c.state_power >= 0.75 && c.market_freedom < 0.25) return 0.25  // authoritarian
+  if (c.safety_net >= 0.65 && c.gini_start < 0.40) return 0.20       // welfare
+  if (c.state_power >= 0.70 && c.base_trust >= 0.65) return 0.20     // theocratic
+  if (c.gini_start >= 0.55 && c.individual_rights_floor < 0.20) return 0.15  // feudal
+  if (c.market_freedom >= 0.70 && c.state_power < 0.40) return 0.05  // libertarian
+  return 0.10  // moderate
+}
+
+function applyIncomeTax(state: WorldState): void {
+  const taxRate = getIncomeTaxRate(state)
+  if (taxRate <= 0) return
+
+  const EXEMPT_THRESHOLD = 5   // daily_income below this is exempt
+
+  for (const npc of state.npcs) {
+    if (!npc.lifecycle.is_alive || npc.role === 'child') continue
+    if (npc.role === 'guard' || npc.role === 'leader') continue  // govt workers don't pay income tax
+    if (npc.daily_income < EXEMPT_THRESHOLD) continue
+
+    // Tax is deducted from wealth (proxy for earned and held income).
+    // Applied as 25% of the annual tax amount per day (quarterly collection cadence).
+    const taxAmount = npc.daily_income * taxRate * 0.25
+    if (taxAmount < 0.01) continue
+    npc.wealth = clamp(npc.wealth - taxAmount, 0, 50000)
+    state.tax_pool = clamp((state.tax_pool ?? 0) + taxAmount, 0, 9_999_999)
+
+    // High tax with low perceived government competence → grievance
+    if (taxRate >= 0.20 && npc.trust_in.government.competence < 0.40) {
+      npc.grievance = clamp(npc.grievance + 0.5, 0, 100)
+    }
+    // Tax in welfare states with good trust → slight happiness boost (safety net working)
+    if (taxRate >= 0.15 && npc.trust_in.government.intention > 0.60) {
+      npc.happiness = clamp(npc.happiness + 0.2, 0, 100)
+    }
+  }
+}
+
+// ── Government Wage Payments ──────────────────────────────────────────────────
+// Guards and leaders receive daily wages from the tax_pool.
+// Base wages: guard=8, leader=14 coins/day.
+// If the pool is insufficient, wages are prorated (government insolvency).
+// Running out of money triggers guard morale collapse (fear spike).
+
+const GOVT_WAGE_GUARD  = 8
+const GOVT_WAGE_LEADER = 14
+
+function applyGovernmentWages(state: WorldState): void {
+  if ((state.tax_pool ?? 0) <= 0) return
+
+  const guards  = state.npcs.filter(n => n.lifecycle.is_alive && n.role === 'guard')
+  const leaders = state.npcs.filter(n => n.lifecycle.is_alive && n.role === 'leader')
+  const totalWageBill = guards.length * GOVT_WAGE_GUARD + leaders.length * GOVT_WAGE_LEADER
+
+  if (totalWageBill <= 0) return
+
+  const pool = state.tax_pool ?? 0
+  const payRatio = pool >= totalWageBill ? 1.0 : pool / totalWageBill
+  const poolSpent = Math.min(pool, totalWageBill)
+  state.tax_pool = clamp(pool - poolSpent, 0, 9_999_999)
+
+  for (const npc of guards) {
+    const wage = GOVT_WAGE_GUARD * payRatio
+    npc.wealth = clamp(npc.wealth + wage, 0, 50000)
+    npc.daily_income = npc.daily_income * 0.99 + wage  // update income EMA with daily wage
+    if (payRatio < 0.5) {
+      // Government insolvency → guards become demoralized and fearful
+      npc.fear      = clamp(npc.fear + 5, 0, 100)
+      npc.grievance = clamp(npc.grievance + 3, 0, 100)
+    }
+  }
+  for (const npc of leaders) {
+    const wage = GOVT_WAGE_LEADER * payRatio
+    npc.wealth = clamp(npc.wealth + wage, 0, 50000)
+    npc.daily_income = npc.daily_income * 0.99 + wage  // update income EMA with daily wage
+    if (payRatio < 0.5) {
+      npc.fear      = clamp(npc.fear + 3, 0, 100)
+      npc.grievance = clamp(npc.grievance + 5, 0, 100)
+    }
+  }
+}
+
+// ── Regime-Based Tax Spending ─────────────────────────────────────────────────
+// Every 7 days the government spends accumulated tax revenue on regime-specific
+// investments. Each spending type applies macro or NPC-level bonuses and emits
+// a feed message explaining the policy.
+
+let lastTaxSpendingDay = -1
+
+function spendTaxRevenue(state: WorldState): void {
+  // Only spend every 7 days; skip if pool is too small to matter
+  if (state.day === lastTaxSpendingDay) return
+  if (state.day % 7 !== 0) return
+  if ((state.tax_pool ?? 0) < 50) return
+  lastTaxSpendingDay = state.day
+
+  const pool = state.tax_pool ?? 0
+  const spendAmount = pool * 0.50   // spend up to 50% of accumulated pool each cycle
+  state.tax_pool = clamp(pool - spendAmount, 0, 9_999_999)
+
+  const c = state.constitution
+  const living = state.npcs.filter(n => n.lifecycle.is_alive && n.role !== 'child')
+  if (living.length === 0) return
+
+  // Detect regime for spending pattern
+  let spendType: 'infrastructure' | 'research' | 'military' | 'welfare' | 'temples' | 'balanced'
+  if (c.state_power >= 0.75 && c.market_freedom < 0.25) {
+    spendType = 'military'           // authoritarian: military + surveillance
+  } else if (c.safety_net >= 0.65 && c.gini_start < 0.40) {
+    spendType = 'welfare'            // welfare state: social programs
+  } else if (c.state_power >= 0.70 && c.base_trust >= 0.65) {
+    spendType = 'temples'            // theocratic: religious/civic projects
+  } else if (c.gini_start >= 0.55 && c.individual_rights_floor < 0.20) {
+    spendType = 'military'           // feudal: lords spend on armies
+  } else if (c.value_priority[0] === 'growth' && c.individual_rights_floor >= 0.50) {
+    spendType = 'research'           // technocratic: R&D
+  } else if (c.market_freedom >= 0.50) {
+    spendType = 'infrastructure'     // moderate/libertarian: infrastructure
+  } else {
+    spendType = 'balanced'
+  }
+
+  const perNPC = spendAmount / living.length
+  let feedMsg = ''
+
+  switch (spendType) {
+    case 'infrastructure': {
+      // Infrastructure investment: boosts productivity by reducing stress/exhaustion
+      const workers = living.filter(n => n.role === 'farmer' || n.role === 'craftsman' || n.role === 'merchant')
+      for (const npc of workers) {
+        npc.exhaustion = clamp(npc.exhaustion - 5, 0, 100)
+        npc.happiness  = clamp(npc.happiness  + 3, 0, 100)
+        npc.wealth     = clamp(npc.wealth + perNPC * 0.5, 0, 50000)
+      }
+      feedMsg = `Government invests ${Math.round(spendAmount)} coins in infrastructure — worker productivity rises.`
+      break
+    }
+    case 'research': {
+      // R&D spending: boosts literacy (scholars become more effective)
+      const scholars = living.filter(n => n.role === 'scholar')
+      for (const npc of scholars) {
+        npc.wealth    = clamp(npc.wealth + perNPC * 2.0, 0, 50000)
+        npc.happiness = clamp(npc.happiness + 4, 0, 100)
+      }
+      for (const npc of living) {
+        npc.happiness = clamp(npc.happiness + 1, 0, 100)
+      }
+      feedMsg = `Research investment of ${Math.round(spendAmount)} coins: scholars receive funding, literacy improves.`
+      break
+    }
+    case 'military': {
+      // Military spending: guards get bonuses; civilians get fear/grievance
+      const guards = living.filter(n => n.role === 'guard')
+      for (const npc of guards) {
+        npc.wealth    = clamp(npc.wealth + perNPC * 3.0, 0, 50000)
+        npc.happiness = clamp(npc.happiness + 5, 0, 100)
+      }
+      for (const npc of living.filter(n => n.role !== 'guard' && n.role !== 'leader')) {
+        npc.fear = clamp(npc.fear + 2, 0, 100)
+      }
+      feedMsg = `${Math.round(spendAmount)} coins allocated to military and enforcement — security forces are bolstered.`
+      break
+    }
+    case 'welfare': {
+      // Welfare redistribution: direct cash transfer to the bottom half
+      const sorted = [...living].sort((a, b) => a.wealth - b.wealth)
+      const bottom = sorted.slice(0, Math.ceil(sorted.length * 0.50))
+      for (const npc of bottom) {
+        npc.wealth    = clamp(npc.wealth + perNPC * 2.0, 0, 50000)
+        npc.hunger    = clamp(npc.hunger - 8, 0, 100)
+        npc.happiness = clamp(npc.happiness + 5, 0, 100)
+        npc.trust_in.government.intention = clamp(npc.trust_in.government.intention + 0.015, 0, 1)
+      }
+      feedMsg = `${Math.round(spendAmount)} coins distributed as welfare — the poorest 50% receive direct aid.`
+      break
+    }
+    case 'temples': {
+      // Theocratic civic projects: community cohesion and happiness
+      for (const npc of living) {
+        npc.isolation = clamp(npc.isolation - 4, 0, 100)
+        npc.happiness = clamp(npc.happiness + 4, 0, 100)
+        if (npc.worldview.authority_trust > 0.5) {
+          npc.trust_in.government.intention = clamp(npc.trust_in.government.intention + 0.01, 0, 1)
+        }
+      }
+      feedMsg = `${Math.round(spendAmount)} coins invested in civic and religious projects — community cohesion strengthens.`
+      break
+    }
+    case 'balanced': {
+      // Balanced spending: moderate boost to all
+      for (const npc of living) {
+        npc.wealth    = clamp(npc.wealth + perNPC * 0.8, 0, 50000)
+        npc.happiness = clamp(npc.happiness + 2, 0, 100)
+      }
+      feedMsg = `${Math.round(spendAmount)} coins in balanced public spending — modest gains for all citizens.`
+      break
+    }
+  }
+
+  if (feedMsg) {
+    addFeedRaw(feedMsg, 'political', state.year, state.day)
+  }
+}
+
+// ── Income Inequality Effects ─────────────────────────────────────────────────
+// NPCs earning significantly above/below average experience secondary effects:
+//   High earners (≥2× avg): happiness boost, slight isolation (workaholic)
+//   Low earners (≤0.3× avg): stress and grievance increase
+
+function applyIncomeInequalityEffects(state: WorldState): void {
+  const living = state.npcs.filter(n => n.lifecycle.is_alive && n.role !== 'child')
+  if (living.length === 0) return
+
+  const avgIncome = living.reduce((s, n) => s + n.daily_income, 0) / living.length
+  if (avgIncome < 1) return  // not enough economic activity to compute meaningful effects
+
+  for (const npc of living) {
+    const ratio = npc.daily_income / avgIncome
+    if (ratio >= 2.0) {
+      // Prosperous: happiness up, slight isolation (all work no play)
+      npc.happiness  = clamp(npc.happiness  + 0.5, 0, 100)
+      npc.isolation  = clamp(npc.isolation  + 0.3, 0, 100)
+    } else if (ratio <= 0.30 && npc.daily_income < 3) {
+      // Struggling: stress and grievance
+      npc.stress     = clamp(npc.stress    + 1.0, 0, 100)
+      npc.grievance  = clamp(npc.grievance + 0.8, 0, 100)
+    }
+  }
+}
 // When an NPC dies, 60% of their wealth passes to living children equally.
 // The remaining 40% dissipates (estate costs, decomposition of assets).
 // The wealth field is reset to 0 to prevent double-distribution.
