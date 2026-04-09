@@ -149,14 +149,34 @@ const REGIME_STYLE: Record<RegimeType, string> = {
 
 // ── AI system prompt ──────────────────────────────────────────────────────────
 
-function buildGovernmentSystemPrompt(state: WorldState): string {
+function buildGovernmentSystemPrompt(state: WorldState, leaderNpc?: NPC): string {
   const c = state.constitution
   const regime = detectRegime(c)
   const langNote = getLang() === 'vi'
     ? 'All text fields (description, public_statement, policy_name) must be in Vietnamese.'
     : 'All text fields must be in English.'
 
-  return `You are the Governing Council of a society simulation.
+  // When human elections are enabled, personalise the prompt with the elected leader's profile
+  let leaderSection = ''
+  if (leaderNpc) {
+    const capitalDesc = (leaderNpc.capital ?? 0) > 50 ? 'major property owner'
+      : (leaderNpc.capital ?? 0) > 10 ? 'property owner' : 'working-class background'
+    const innerCircle = leaderNpc.strong_ties
+      .slice(0, 3)
+      .map(id => state.npcs[id]?.name ?? '?')
+      .filter(Boolean)
+      .join(', ') || 'none'
+    leaderSection = `You are ${leaderNpc.name}, the democratically elected leader.
+Background: ${leaderNpc.occupation}, age ${leaderNpc.age}, ${capitalDesc} (capital: ${(leaderNpc.capital ?? 0).toFixed(0)}/100).
+Worldview: collectivism ${(leaderNpc.worldview.collectivism * 100).toFixed(0)}% · authority-trust ${(leaderNpc.worldview.authority_trust * 100).toFixed(0)}% · risk-tolerance ${(leaderNpc.worldview.risk_tolerance * 100).toFixed(0)}%.
+Personal wealth: ${leaderNpc.wealth.toFixed(0)} coins. Grievance: ${Math.round(leaderNpc.grievance)}/100.
+Inner circle (strong ties): ${innerCircle}.
+Your decisions must reflect YOUR personal background, interests, and relationships — not just abstract ideology. A property-owning leader will resist land reform; a grieved working-class leader will champion redistribution.
+
+`
+  }
+
+  return `${leaderSection}You are the Governing Council of a society simulation.
 You observe social statistics and issue policy decisions every 15 days.
 
 YOUR GOVERNING STYLE: ${REGIME_STYLE[regime]}
@@ -736,6 +756,7 @@ export async function runGovernmentCycle(
   state: WorldState,
   config: AIConfig | null,
   onPolicyChoice?: (options: [GovernmentPolicyAI, GovernmentPolicyAI]) => Promise<GovernmentPolicyAI>,
+  leaderNpc?: NPC,
 ): Promise<void> {
   if (_governmentBusy) return
   _governmentBusy = true
@@ -832,7 +853,7 @@ export async function runGovernmentCycle(
     ].join('\n')
 
     try {
-      const raw = await callAI(config, buildGovernmentSystemPrompt(state), prompt)
+      const raw = await callAI(config, buildGovernmentSystemPrompt(state, leaderNpc), prompt)
       const parsed = JSON.parse(extractJSON(raw))
 
       // Accept both new {options:[...]} format and old flat-object fallback

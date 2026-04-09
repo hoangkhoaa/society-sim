@@ -132,6 +132,7 @@
       <button class="btn-top" id="btn-theme" title="Toggle light/dark mode">🌙</button>
       <button class="btn-top" id="btn-constitution" data-i18n="topbar.constitution">📜 Constitution</button>
       <button class="btn-top" id="btn-gov" title="Trigger government cycle manually">🏛 <span id="gov-cd">–</span></button>
+      <button class="btn-top" id="btn-settings" title="Settings">⚙</button>
       <span id="active-events" class="hidden" title="Active events"></span>
       <span id="ai-usage" title="AI requests · tokens used">0 req</span>
     </div>
@@ -197,6 +198,15 @@
             <button id="ip-close" class="btn-icon">×</button>
           </div>
           <div id="ip-body"></div>
+        </div>
+
+        <!-- Settings Panel -->
+        <div id="settings-panel" class="panel stg-panel hidden">
+          <div class="panel-header">
+            <span>⚙ Settings</span>
+            <button id="settings-close" class="btn-icon">×</button>
+          </div>
+          <div id="settings-body"></div>
         </div>
       </div>
 

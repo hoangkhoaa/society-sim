@@ -1,7 +1,8 @@
 import type { NPC, Constitution, WorldState, Role, TrustMap, ActionState, WorkMotivationType, WorkSchedule } from '../types'
 import { faker } from '@faker-js/faker'
 import { clamp, gaussian, rand, randInt, weightedRandom, getSeason, ZONE_ADJACENCY } from './constitution'
-import { t, tf, tOcc } from '../i18n'
+import { t, tf, tOccVariant } from '../i18n'
+import { getRegimeProfile } from './regime-config'
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -168,6 +169,47 @@ export function inferMotivationType(role: Role, c: Constitution, npcId: number):
   return 'mandatory'
 }
 
+// ── Initial capital distribution ──────────────────────────────────────────
+// Means of production distributed at society start according to regime type.
+
+function initialCapital(role: Role, constitution: Constitution): number {
+  if (role === 'child' || role === 'guard') return 0
+
+  const profile = getRegimeProfile(constitution)
+
+  // State ownership (marxist): no private capital
+  if (profile.capitalMode === 'state') return 0
+
+  // Collective: flat small share for everyone (commune / socialist)
+  if (profile.capitalMode === 'collective') {
+    return role === 'leader' ? randInt(25, 45) : randInt(8, 25)
+  }
+
+  // Feudal / warlord: extreme concentration in ruling class
+  if (profile.capitalMode === 'feudal') {
+    if (role === 'leader') return randInt(55, 90)
+    // ~10% of farmers/craftsmen are minor lords or freeholders
+    if ((role === 'farmer' || role === 'craftsman') && Math.random() < 0.10) return randInt(15, 35)
+    return 0  // everyone else: landless/bonded
+  }
+
+  // Pareto (default, capitalist): gini-based spread
+  const BASE_RANGE: Record<Role, [number, number]> = {
+    leader:    [35, 80],
+    merchant:  [20, 65],
+    craftsman: [10, 40],
+    farmer:    [5, 30],
+    scholar:   [0, 15],
+    guard:     [0, 0],
+    child:     [0, 0],
+  }
+  const [lo, hi] = BASE_RANGE[role]
+  const landlessChance = clamp(0.10 + constitution.gini_start * 0.35, 0, 0.55)
+  if (role !== 'leader' && role !== 'merchant' && Math.random() < landlessChance) return 0
+  const spread = (hi - lo) * (0.6 + constitution.gini_start * 0.4)
+  return clamp(Math.round(lo + Math.random() * spread), 0, 100)
+}
+
 // ── Pareto wealth distribution ─────────────────────────────────────────────
 
 function paretoSample(gini: number): number {
@@ -278,8 +320,11 @@ export function createNPC(idx: number, total: number, constitution: Constitution
     ]),
   ) as TrustMap
 
-  // Occupation strings are locale-aware — fetched via i18n
-  const occupation = tOcc(`occ.${role}`)
+  // Regime profile: drives occupation names, stat tweaks, capital distribution
+  const regimeProfile = getRegimeProfile(constitution)
+
+  // Occupation strings are locale-aware and regime-flavoured
+  const occupation = tOccVariant(role, regimeProfile.variant)
 
   const appearance = {
     height: (['short', 'average', 'tall'] as const)[randInt(0, 2)],
@@ -289,6 +334,8 @@ export function createNPC(idx: number, total: number, constitution: Constitution
            : (['gray', 'white'] as const)[randInt(0, 1)],
     skin:   (['light', 'medium', 'dark'] as const)[randInt(0, 2)],
   }
+
+  const tw = regimeProfile.npcTweaks
 
   const npcPartial = {
     id: idx,
@@ -318,8 +365,8 @@ export function createNPC(idx: number, total: number, constitution: Constitution
     role,
     hunger:     rand(10, 30),
     exhaustion: rand(10, 30),
-    isolation:  rand(5, 25),
-    fear:       rand(0, 15),
+    isolation:  clamp(rand(5, 25) + tw.isolation_bonus, 0, 80),
+    fear:       clamp(rand(0, 15) + tw.fear_bonus,      0, 80),
     worldview,
     stress: 0,
     happiness: 60,
@@ -336,7 +383,7 @@ export function createNPC(idx: number, total: number, constitution: Constitution
     daily_income: 0,
     trust_in,
     wealth: paretoSample(constitution.gini_start),
-    grievance: rand(0, 20),
+    grievance: clamp(rand(0, 20) + tw.grievance_bonus, 0, 80),
     dissonance_acc: 0,
     susceptible: false,
     sick: false,
@@ -351,16 +398,22 @@ export function createNPC(idx: number, total: number, constitution: Constitution
     work_motivation: inferMotivationType(role, constitution, idx),
     bio_clock_offset: clamp(Math.round(gaussian(0, 1.2)), -2, 3),
 
-    // Class solidarity: starts higher for laborers in unequal societies
+    // Class solidarity: starts higher for laborers in unequal societies; regime tweaks apply
     class_solidarity: clamp(
       (role === 'farmer' || role === 'craftsman' ? 20 : 10)
       + constitution.gini_start * 30
+      + tw.class_solidarity_bonus
       + gaussian(0, 8),
-      0, 60,
+      0, 70,
     ),
     on_strike: false,
     bridge_score: 0,
     mentor_id: null,
+
+    // Tư liệu lao động
+    capital: initialCapital(role, constitution),
+    capital_rents_from: null,
+    capital_rent_paid: 0,
   }
 
   return {
@@ -1029,8 +1082,19 @@ export function computeProductivity(npc: NPC, state: WorldState): number {
   const burnoutPenalty = (npc.burnout_ticks ?? 0) >= 480 ? 0.50 : 0
   // Strike: participating workers produce nothing
   if (npc.on_strike) return 0
+  // Capital multiplier: owning means of production amplifies output efficiency.
+  // Renting has slight overhead drag; no access at all imposes a bare-hands penalty.
+  // Guards and children are exempt (state-supplied or no production role).
+  const capitalMult = (npc.role === 'guard' || npc.role === 'child')
+    ? 1.0
+    : (npc.capital ?? 0) > 0
+      ? 1.0 + (npc.capital / 100) * 0.35   // own capital: up to +35%
+      : (npc.capital_rents_from != null)
+        ? 0.92                               // renting: -8% overhead
+        : 0.82                               // bare-hands: -18%
   return Math.max(0.08,
     npc.base_skill * motivation * ageFactor
+    * capitalMult
     * (1 - fairnessPenalty)
     * (1 - stressPenalty)
     * (1 - sickPenalty)
@@ -1157,6 +1221,62 @@ function wealthTick(npc: NPC, state: WorldState): void {
         buyer.hunger = clamp(buyer.hunger - 18, 0, 100)
         npc.wealth   = clamp(npc.wealth   + 12, 0, 50000)
       }
+    }
+  }
+
+  // ── Capital rental market (once per day, staggered by NPC id) ──────────────
+  // Landless workers find a capital owner in their network to rent from.
+  // Disabled in state-ownership regimes (no private capital rental).
+  if (npc.role !== 'guard'
+      && state.constitution.market_freedom >= 0.10   // state-owned economies skip rental
+      && state.tick % 24 === npc.id % 24) {
+
+    if ((npc.capital ?? 0) === 0) {
+      // Re-validate existing rental arrangement
+      if (npc.capital_rents_from != null) {
+        const owner = state.npcs[npc.capital_rents_from]
+        if (!owner?.lifecycle.is_alive || (owner.capital ?? 0) < 5) {
+          npc.capital_rents_from = null
+          npc.capital_rent_paid  = 0
+        }
+      }
+      // Search network for an available capital owner
+      if (npc.capital_rents_from == null) {
+        const candidates = [...npc.strong_ties, ...npc.weak_ties.slice(0, 12)]
+        for (const tid of candidates) {
+          const owner = state.npcs[tid]
+          if (!owner?.lifecycle.is_alive || owner.id === npc.id) continue
+          if ((owner.capital ?? 0) >= 10) { npc.capital_rents_from = owner.id; break }
+        }
+      }
+      // Pay daily rent to owner
+      if (npc.capital_rents_from != null) {
+        const owner = state.npcs[npc.capital_rents_from]
+        if (owner?.lifecycle.is_alive) {
+          const dailyRent   = (owner.capital / 100) * 0.50  // proportional to owner's capital
+          const perTickRent = dailyRent / 24
+          npc.capital_rent_paid = perTickRent
+          if (npc.wealth >= dailyRent * 0.5) {
+            npc.wealth   = clamp(npc.wealth   - perTickRent, 0, 50000)
+            owner.wealth = clamp(owner.wealth + perTickRent, 0, 50000)
+          } else {
+            // Can't afford rent → grievance builds
+            npc.grievance = clamp((npc.grievance ?? 0) + 0.08, 0, 100)
+          }
+        }
+      }
+    } else {
+      // Owner: clear stale rental reference and reset rent tracking
+      npc.capital_rents_from = null
+      npc.capital_rent_paid  = 0
+    }
+
+    // Slow capital accumulation from wealth surplus (wealthy NPCs invest over time)
+    if ((npc.capital ?? 0) < 100
+        && npc.wealth > ROLE_WEALTH_EXPECTATION[npc.role] * 2
+        && state.constitution.market_freedom >= 0.15) {
+      const accumRate = 0.05 * (npc.wealth / Math.max(ROLE_WEALTH_EXPECTATION[npc.role], 100))
+      npc.capital = clamp((npc.capital ?? 0) + accumRate, 0, 100)
     }
   }
 
@@ -1508,9 +1628,18 @@ function transitionToAdultCareer(npc: NPC, state: WorldState): void {
   const selectedRole = weightedRandom(weights as Record<string, number>) as Role
   npc.role            = selectedRole
   npc.zone            = assignZone(selectedRole)
-  npc.occupation      = tOcc(selectedRole)
+  npc.occupation      = tOccVariant(selectedRole, getRegimeProfile(state.constitution).variant)
   npc.work_motivation = inferMotivationType(selectedRole, state.constitution, npc.id)
   npc.description     = generateDescription(npc)  // refresh description with new role
+
+  // Capital: blend parent inheritance with role-based starting capital
+  const parent = npc.strong_ties
+    .map(tid => state.npcs[tid])
+    .find(c => c?.lifecycle.children_ids.includes(npc.id))
+  const parentCapital = parent?.capital ?? 0
+  npc.capital            = clamp(Math.round(parentCapital * 0.3 + initialCapital(selectedRole, state.constitution) * 0.7), 0, 100)
+  npc.capital_rents_from = null
+  npc.capital_rent_paid  = 0
 }
 
 // ── Trust update ───────────────────────────────────────────────────────────

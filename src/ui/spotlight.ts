@@ -1,6 +1,7 @@
 import type { NPC, WorldState, AIConfig } from '../types'
 import { generateNPCThought } from '../ai/god-agent'
 import { t, tf, getLang } from '../i18n'
+import { getSettings } from './settings-panel'
 
 const panel   = document.getElementById('spotlight')!
 const spName  = document.getElementById('sp-name')!
@@ -24,7 +25,7 @@ export async function openSpotlight(npc: NPC, state: WorldState, config: AIConfi
   thoughtEl.textContent = t('sp.thought_loading') as string
   thoughtEl.className   = 'sp-thought loading'
 
-  if (!config) {
+  if (!config || !getSettings().enable_npc_thoughts) {
     thoughtEl.textContent = t('sp.thought_fail') as string
     thoughtEl.className = 'sp-thought'
     return
@@ -315,6 +316,28 @@ function renderStatic(npc: NPC, state: WorldState): string {
         <span class="sp-value" style="color:#5dcaa5">${t('sp.group')} #${npc.community_group}</span>
       </div>` : ''}
       ${solidarityBar(npc.class_solidarity ?? 0, npc.on_strike ?? false)}
+      ${(() => {
+        const vi = getLang() === 'vi'
+        const cap = npc.capital ?? 0
+        if (cap > 0) {
+          const capColor = cap >= 60 ? '#f0c040' : cap >= 25 ? '#c8a830' : '#a08820'
+          return `<div class="sp-row">
+            <span class="sp-label">${vi ? 'Tư liệu lao động' : 'Capital'}</span>
+            <span class="sp-value" style="color:${capColor}">${cap.toFixed(0)}/100</span>
+          </div>`
+        }
+        const rentsFrom = npc.capital_rents_from != null ? state.npcs[npc.capital_rents_from] : null
+        if (rentsFrom?.lifecycle.is_alive) {
+          return `<div class="sp-row">
+            <span class="sp-label">${vi ? 'Thuê tư liệu từ' : 'Rents capital from'}</span>
+            <span class="sp-value" style="color:#8899aa">${rentsFrom.name}</span>
+          </div>`
+        }
+        return `<div class="sp-row">
+          <span class="sp-label">${vi ? 'Tư liệu lao động' : 'Capital'}</span>
+          <span class="sp-value" style="color:#666">${vi ? 'Không có' : 'None'}</span>
+        </div>`
+      })()}
     </div>
 
     <!-- Status flags -->

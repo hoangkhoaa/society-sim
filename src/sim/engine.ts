@@ -122,6 +122,8 @@ export async function initWorld(constitution: Constitution): Promise<WorldState>
     immigration_total: 0,
     active_strikes: [],
     tax_pool: 0,
+    leader_id: null,
+    last_election_day: -1,
   }
 }
 
@@ -2198,8 +2200,18 @@ function processInheritance(state: WorldState): void {
     }
 
     const share = (npc.wealth * 0.60) / livingChildren.length
+    const capitalShare = ((npc.capital ?? 0) * 0.60) / livingChildren.length
     for (const child of livingChildren) {
       child.wealth = clamp(child.wealth + share, 0, 50000)
+      // Capital inheritance: productive assets passed to heirs
+      if (capitalShare > 0) {
+        child.capital = clamp((child.capital ?? 0) + capitalShare, 0, 100)
+        // Heir now owns capital — clear any existing rental arrangement
+        if ((child.capital ?? 0) > 5 && child.capital_rents_from != null) {
+          child.capital_rents_from = null
+          child.capital_rent_paid  = 0
+        }
+      }
       // Memory: windfall from inheritance (emotional weight scales with amount)
       const emotionalWeight = clamp(share / 20, 2, 40)
       child.memory.push({
@@ -2210,7 +2222,8 @@ function processInheritance(state: WorldState): void {
       })
       if (child.memory.length > 10) child.memory.shift()
     }
-    npc.wealth = 0   // mark as distributed
+    npc.wealth  = 0   // mark as distributed
+    npc.capital = 0
   }
 }
 
@@ -2706,4 +2719,64 @@ function checkEpidemicIntelligence(state: WorldState): void {
     // Lift quarantines after cure
     state.quarantine_zones = []
   }
+}
+
+// ── Human-Driven Elections ────────────────────────────────────────────────────
+// NPCs vote for candidates based on worldview alignment, faction, and network.
+// Winner becomes state.leader_id and drives the government AI prompt.
+
+export function runElection(state: WorldState): NPC | null {
+  const living = state.npcs.filter(n => n.lifecycle.is_alive && n.role !== 'child')
+  if (living.length < 5) return null
+
+  // Candidate pool: top NPCs by influence + bridge centrality (up to 4 candidates)
+  const sorted = [...living].sort(
+    (a, b) => (b.influence_score + b.bridge_score * 0.5) - (a.influence_score + a.bridge_score * 0.5),
+  )
+  const poolSize = Math.max(2, Math.ceil(living.length * 0.03))
+  const candidates = sorted.slice(0, Math.min(poolSize, 4))
+
+  // Vote tallying — each NPC votes for the candidate that best aligns with their interests
+  const votes: Record<number, number> = {}
+  for (const c of candidates) votes[c.id] = 0
+
+  for (const voter of living) {
+    let bestId   = candidates[0].id
+    let bestScore = -Infinity
+    for (const c of candidates) {
+      const wvSim = 1 - (
+        Math.abs(voter.worldview.collectivism - c.worldview.collectivism) +
+        Math.abs(voter.worldview.authority_trust - c.worldview.authority_trust)
+      ) / 2
+      const factionBonus   = voter.faction_id != null && voter.faction_id === c.faction_id ? 0.30 : 0
+      const networkBonus   = voter.strong_ties.includes(c.id) ? 0.40
+                           : voter.weak_ties.includes(c.id)   ? 0.10 : 0
+      // Grieved voters prefer lower-wealth (anti-establishment) candidates
+      const antiEstab      = voter.grievance > 55 ? Math.max(0, 1 - c.wealth / 5000) * 0.20 : 0
+      const score = wvSim + factionBonus + networkBonus + antiEstab
+      if (score > bestScore) { bestScore = score; bestId = c.id }
+    }
+    votes[bestId] = (votes[bestId] ?? 0) + 1
+  }
+
+  // Find winner
+  let winner = candidates[0]
+  for (const c of candidates) {
+    if ((votes[c.id] ?? 0) > (votes[winner.id] ?? 0)) winner = c
+  }
+
+  const prevLeader = state.leader_id != null ? state.npcs[state.leader_id] : null
+  state.leader_id        = winner.id
+  state.last_election_day = state.day
+
+  const totalVotes = Object.values(votes).reduce((a, b) => a + b, 0)
+  const winPct     = Math.round((votes[winner.id] / Math.max(totalVotes, 1)) * 100)
+
+  const msg = prevLeader && prevLeader.id !== winner.id
+    ? `🗳 Election: ${winner.name} (${winner.occupation}) wins with ${winPct}% of votes, replacing ${prevLeader.name}.`
+    : `🗳 Election: ${winner.name} (${winner.occupation}) elected with ${winPct}% of votes.`
+  addChronicle(msg, state.year, state.day, 'major')
+  addFeedRaw(msg, 'info', state.year, state.day)
+
+  return winner
 }

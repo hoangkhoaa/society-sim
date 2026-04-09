@@ -186,6 +186,14 @@ export interface NPC {
   // ── Mentorship ───────────────────────────────────────────────────────────
   // Youth and early-career NPCs can learn from a social mentor.
   mentor_id: number | null       // strong-tie adult mentor; null when unassigned
+
+  // ── Tư liệu lao động (Means of Production) ─────────────────────────────────
+  // Productive capital owned by this NPC — land, tools, machinery, trade stock.
+  // High capital → productivity boost; zero capital → must rent or work bare-handed.
+  // Accumulates slowly from surplus wealth; inherited on death; affected by policy.
+  capital: number                    // 0–100: owned productive capital
+  capital_rents_from: number | null  // NPC id of capital owner (null = self-owned or none found)
+  capital_rent_paid: number          // coins/tick currently paying as rent (0 if self-owned)
 }
 
 // ── Constitution ───────────────────────────────────────────────────────────
@@ -462,6 +470,10 @@ export interface WorldState {
 
   // Economy
   tax_pool: number              // government treasury — collected from income tax, spent by regime
+
+  // Human-driven governance (opt-in via settings)
+  leader_id: number | null      // id of currently elected leader NPC (null = no election yet)
+  last_election_day: number     // sim-day of last election (-1 = never)
 }
 
 // ── AI Types ───────────────────────────────────────────────────────────────

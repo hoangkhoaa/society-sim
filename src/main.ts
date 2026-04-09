@@ -17,6 +17,9 @@ import { initMap, setMapPaused, setMapLegendVisible } from './ui/map'
 import { runGovernmentCycle, detectRegime, type GovernmentPolicyAI } from './sim/government'
 import { checkPressTrigger, resetPressRuntimeState } from './sim/press'
 import { resetNarrativeRuntimeState } from './sim/narratives'
+import { getSettings, openSettingsPanel, applyRegimeDefaults } from './ui/settings-panel'
+import { runElection } from './sim/engine'
+import { getRegimeProfile } from './sim/regime-config'
 
 // ── App state ──────────────────────────────────────────────────────────────
 
@@ -507,6 +510,9 @@ async function startGame(constitution: Constitution) {
   // initWorld is now async — it yields every 50 NPCs so the UI stays responsive
   world = await initWorld(constitution)
   peakPopulation = countLivingNpcs(world)
+
+  // Apply regime-specific defaults and locked features to settings
+  applyRegimeDefaults(getRegimeProfile(constitution))
 
   updateTopbar()
   updateDemographics()
@@ -1019,6 +1025,8 @@ const btnToggleLegend = document.getElementById('btn-toggle-legend') as HTMLButt
 const btnToggleEcon = document.getElementById('btn-toggle-econ') as HTMLButtonElement
 const btnTheme = document.getElementById('btn-theme')!
 btnTheme.addEventListener('click', toggleTheme)
+
+document.getElementById('btn-settings')!.addEventListener('click', openSettingsPanel)
 const demographicsPanel = document.getElementById('demographics') as HTMLElement
 const rumorsPanel = document.getElementById('rumors-panel') as HTMLElement
 const econPanel = document.getElementById('econ-panel') as HTMLElement
@@ -1165,11 +1173,14 @@ async function triggerGovernment() {
   if (!world || govBusy) return
   govBusy = true
   updateGovCooldown()
-  const rpmBudget = aiConfig ? getRemainingRPM(aiConfig.rpm_limit) : Infinity
-  const govConfig = (rpmBudget >= 2) ? aiConfig : null
+  const settings   = getSettings()
+  const rpmBudget  = aiConfig ? getRemainingRPM(aiConfig.rpm_limit) : Infinity
+  const govConfig  = (rpmBudget >= 2 && settings.enable_government_ai) ? aiConfig : null
+  const leaderNpc  = (settings.enable_human_elections && world.leader_id != null)
+    ? world.npcs[world.leader_id] : undefined
   lastGovernmentPeriod = Math.floor(world.day / GOV_PERIOD_DAYS)
   try {
-    await runGovernmentCycle(world, govConfig, govPolicyCallback)
+    await runGovernmentCycle(world, govConfig, govPolicyCallback, leaderNpc)
   } finally {
     govBusy = false
     updateGovCooldown()
@@ -1213,14 +1224,28 @@ function startSimLoop() {
     }
     // Free press: every 5 sim-days — generates headlines before government reads them
     // If RPM budget is tight, press runs in template-only mode (pass null config)
-    const rpmBudget = aiConfig ? getRemainingRPM(aiConfig.rpm_limit) : Infinity
-    const pressConfig = (rpmBudget >= 3) ? aiConfig : null
+    const settings    = getSettings()
+    const rpmBudget   = aiConfig ? getRemainingRPM(aiConfig.rpm_limit) : Infinity
+    const pressConfig = (rpmBudget >= 3 && settings.enable_press_ai) ? aiConfig : null
     checkPressTrigger(world, pressConfig)
+    // Election cycle: when human elections enabled, run every N sim-days
+    if (settings.enable_human_elections) {
+      const cycleLen = Math.max(30, settings.election_cycle_days)
+      if (world.day > 0 && world.last_election_day >= 0
+          && world.day - world.last_election_day >= cycleLen) {
+        runElection(world)
+      } else if (world.last_election_day < 0 && world.day >= 10) {
+        // First election on day 10 (enough time for network to form)
+        runElection(world)
+      }
+    }
     // Government cycle: every GOV_PERIOD_DAYS sim-days
     const govPeriod = Math.floor(world.day / GOV_PERIOD_DAYS)
     if (govPeriod !== lastGovernmentPeriod && world.day >= GOV_PERIOD_DAYS && !govBusy) {
-      const govConfig = (rpmBudget >= 2) ? aiConfig : null
-      if (!govConfig && aiConfig) {
+      const govConfig  = (rpmBudget >= 2 && settings.enable_government_ai) ? aiConfig : null
+      const leaderNpc  = (settings.enable_human_elections && world.leader_id != null)
+        ? world.npcs[world.leader_id] : undefined
+      if (!govConfig && aiConfig && settings.enable_government_ai) {
         const wait = getWaitSeconds(aiConfig.rpm_limit)
         addFeedRaw(
           tf('gov.policy_delayed', { seconds: Math.ceil(wait) }),
@@ -1229,7 +1254,7 @@ function startSimLoop() {
       }
       govBusy = true
       lastGovernmentPeriod = govPeriod
-      runGovernmentCycle(world, govConfig, govPolicyCallback).finally(() => { govBusy = false; updateGovCooldown() })
+      runGovernmentCycle(world, govConfig, govPolicyCallback, leaderNpc).finally(() => { govBusy = false; updateGovCooldown() })
     }
     updateGovCooldown()
     if (living === 0) triggerGameOver()
@@ -1460,7 +1485,7 @@ function executeIntervention(response: Awaited<ReturnType<typeof handlePlayerCha
 }
 
 async function scheduleConsequences(eventType: string, narrative: string) {
-  if (!world || !aiConfig) return
+  if (!world || !aiConfig || !getSettings().enable_consequence_prediction) return
   const prediction = await predictConsequences(eventType, narrative, world, aiConfig)
   if (!prediction || !world) return
 
