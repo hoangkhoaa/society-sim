@@ -69,14 +69,14 @@ export const PRESS_TEMPLATES: PressTemplate[] = [
   h(s => s.stability > 70 && s.trust > 60, '✅ Trust in institutions holds steady — a period of relative tranquility.',  '✅ Niềm tin vào thể chế ổn định — một giai đoạn tương đối yên bình.', 'info'),
 
   // ── Trust / Government ──
-  h(s => s.trust < 15, '🏛 Government legitimacy in freefall — citizens openly defy authority.',       '🏛 Uy tín chính quyền rơi tự do — dân công khai chống đối.', 'critical'),
+  h(s => s.trust < 15, '🏛 Government legitimacy in freefall — citizens openly defy authority.',       '🏛 Uy tín chính quyền sụp đổ — người dân công khai chống đối.', 'critical'),
   h(s => s.trust < 25, '🏛 "They don\'t represent us" — trust in government at historic lows.',         '🏛 "Họ không đại diện cho chúng tôi" — niềm tin vào chính quyền thấp kỷ lục.', 'critical'),
   h(s => s.trust < 40, '🏛 Skepticism grows: citizens question official statements.',                  '🏛 Hoài nghi gia tăng: dân chúng đặt câu hỏi về tuyên bố chính thức.', 'warning'),
   h(s => s.trust > 75, '🏛 Public approval of the council remains high. Policies seen as fair.',       '🏛 Tỉ lệ ủng hộ hội đồng vẫn cao. Chính sách được xem là công bằng.', 'info'),
 
   // ── Inequality / Economy ──
   h(s => s.gini > 0.65,                        '💰 Extreme wealth gap: the rich feast while the poor starve.',                  '💰 Chênh lệch giàu nghèo cực đoan: người giàu yến tiệc, người nghèo đói khổ.', 'critical'),
-  h(s => s.gini > 0.55,                        '💰 Growing inequality strains social fabric. Envy and resentment brew.',         '💰 Bất bình đẳng gia tăng xé rách kết cấu xã hội. Đố kỵ và oán hận nhen nhóm.', 'warning'),
+  h(s => s.gini > 0.55,                        '💰 Growing inequality strains social fabric. Envy and resentment brew.',         '💰 Bất bình đẳng leo thang làm rạn nứt kết cấu xã hội. Đố kỵ và oán hận nhen nhóm.', 'warning'),
   h(s => s.gini > 0.45 && s.avgGrievance > 40, '💰 Citizens demand fairer distribution — "enough is enough."',                  '💰 Dân chúng đòi phân phối công bằng hơn — "đã quá đủ rồi."', 'warning'),
   h(s => s.gini < 0.25,                        '⚖️ Remarkable equality: wealth distribution is among the most even ever.',      '⚖️ Bình đẳng đáng kinh ngạc: phân phối tài sản đồng đều nhất từ trước đến nay.', 'info'),
   h(s => s.energy < 20,                        '📉 Economy in deep recession — workshops idle, trade stagnant.',                '📉 Kinh tế suy thoái nặng — xưởng đóng cửa, thương mại trì trệ.', 'critical'),
@@ -91,7 +91,7 @@ export const PRESS_TEMPLATES: PressTemplate[] = [
   h(s => s.organizingPct > 15, s => `✊ Organized resistance spreads: ${Math.round(s.organizingPct)}% of the population mobilizing.`,   s => `✊ Phản kháng có tổ chức lan rộng: ${Math.round(s.organizingPct)}% dân số đang tập hợp.`, 'warning'),
   h(s => s.confrontPct > 10,   s => `⚔️ Violent clashes reported — ${Math.round(s.confrontPct)}% of citizens in direct confrontation.`, s => `⚔️ Xung đột bạo lực — ${Math.round(s.confrontPct)}% dân chúng đối đầu trực tiếp.`, 'critical'),
   h(s => s.confrontPct > 5,    '⚔️ Sporadic violence in public squares. Guards deployed.',                                               '⚔️ Bạo lực lẻ tẻ tại quảng trường. Lính canh được triển khai.', 'warning'),
-  h(s => s.pressure < 10 && s.stability > 60, '🕊 Political calm: no significant protests reported this period.',                         '🕊 Chính trị yên ổn: không có biểu tình đáng kể trong kỳ này.', 'info'),
+  h(s => s.pressure < 10 && s.stability > 60, '🕊️ Political calm: no significant protests reported this period.',                         '🕊️ Chính trị yên ổn: không có biểu tình đáng kể trong kỳ này.', 'info'),
 
   // ── Epidemic / Health ──
   h(s => s.epidemicActive && s.sickPct > 20, s => `🏥 Epidemic crisis — ${Math.round(s.sickPct)}% of the population is ill.`,  s => `🏥 Khủng hoảng dịch bệnh — ${Math.round(s.sickPct)}% dân số đang bị bệnh.`, 'critical'),
@@ -115,7 +115,7 @@ export const PRESS_TEMPLATES: PressTemplate[] = [
 
   // ── Resources ──
   h(s => s.resources < 10, '🪨 Natural resources nearly exhausted. Craftsmen unable to source materials.',  '🪨 Tài nguyên thiên nhiên gần cạn kiệt. Thợ thủ công không tìm được nguyên liệu.', 'critical'),
-  h(s => s.resources < 25, '🪨 Resource depletion accelerates. Industry warns of supply chain collapse.',   '🪨 Khai thác tài nguyên tăng tốc. Ngành công nghiệp cảnh báo chuỗi cung ứng sắp đổ.', 'warning'),
+  h(s => s.resources < 25, '🪨 Resource depletion accelerates. Industry warns of supply chain collapse.',   '🪨 Tài nguyên cạn kiệt nhanh chóng. Ngành công nghiệp cảnh báo chuỗi cung ứng sắp sụp đổ.', 'warning'),
   h(s => s.resources > 80, '🌳 Resource abundance: forests thick, mines productive, land fertile.',         '🌳 Tài nguyên dồi dào: rừng rậm, mỏ hiệu quả, đất phì nhiêu.', 'info'),
 
   // ── Literacy / Education ──
@@ -175,3 +175,109 @@ export function pressSnapshotPrompt(state: WorldState, scan: PressScan): string 
   ].join('\n')
 }
 
+// ── Press rumor content ───────────────────────────────────────────────────────
+
+export type RumorEffect = 'trust_down' | 'fear_up' | 'grievance_up'
+type PressRumorSubject = 'government' | 'market'
+
+export interface PressRumorSpec {
+  content: string
+  subject: PressRumorSubject
+  effect: RumorEffect
+}
+
+export function pressRumorTrustDown(lang: Lang): PressRumorSpec {
+  return {
+    content: pick(lang, {
+      en: 'Officials are embezzling public funds under cover of the ongoing crisis.',
+      vi: 'Quan chức đang biển thủ công quỹ dưới danh nghĩa xử lý khủng hoảng.',
+    }),
+    subject: 'government',
+    effect: 'trust_down',
+  }
+}
+
+export function pressRumorFoodFear(lang: Lang): PressRumorSpec {
+  return {
+    content: pick(lang, {
+      en: 'The true food shortage is far worse than official reports dare to admit.',
+      vi: 'Tình trạng thiếu lương thực thực sự tệ hơn nhiều so với báo cáo chính thức.',
+    }),
+    subject: 'government',
+    effect: 'fear_up',
+  }
+}
+
+export function pressRumorHoardingGrievance(lang: Lang): PressRumorSpec {
+  return {
+    content: pick(lang, {
+      en: 'Wealthy merchants are secretly hoarding food and supplies while the poor starve.',
+      vi: 'Thương nhân giàu có đang bí mật tích trữ lương thực trong khi người nghèo đói khát.',
+    }),
+    subject: 'market',
+    effect: 'grievance_up',
+  }
+}
+
+export function pressRumorEpidemicFear(lang: Lang): PressRumorSpec {
+  return {
+    content: pick(lang, {
+      en: 'The epidemic spreads faster than health authorities dare report.',
+      vi: 'Dịch bệnh lây lan nhanh hơn những gì cơ quan y tế dám báo cáo.',
+    }),
+    subject: 'government',
+    effect: 'fear_up',
+  }
+}
+
+// ── Investigative scandal content ─────────────────────────────────────────────
+
+export function scandalRumorContent(lang: Lang): string {
+  return pick(lang, {
+    en: 'Investigative report exposes systemic corruption at the highest levels of government.',
+    vi: 'Báo cáo điều tra phơi bày tham nhũng hệ thống ở cấp cao nhất chính quyền.',
+  })
+}
+
+export function scandalHeadline(lang: Lang): string {
+  return pick(lang, {
+    en: '🗞️ BREAKING: Investigative report exposes systemic corruption at the highest levels of government.',
+    vi: '🗞️ NÓNG: Báo cáo điều tra phơi bày tham nhũng hệ thống ở cấp cao nhất chính quyền.',
+  })
+}
+
+// ── Redaction note ────────────────────────────────────────────────────────────
+
+export function redactionNoteText(lang: Lang, censorshipProb: number): string {
+  if (censorshipProb >= 0.70) {
+    return pick(lang, {
+      en: '🔇 [REMOVED — THIS ARTICLE CONTAINS MISINFORMATION. NO SUCH EVENTS OCCURRED. SOCIETY IS STABLE AND PROGRESSING.]',
+      vi: '🔇 [ĐÃ XÓA — BÀI VIẾT NÀY CHỨA THÔNG TIN SAI LỆCH. KHÔNG CÓ SỰ KIỆN NÀO NHƯ VẬY. XÃ HỘI ỔN ĐỊNH VÀ PHÁT TRIỂN.]',
+    })
+  }
+  if (censorshipProb >= 0.40) {
+    return pick(lang, {
+      en: '🔇 [This article has been removed by order of the authorities on grounds of public security.]',
+      vi: '🔇 [Bài viết này đã bị gỡ xuống theo lệnh của nhà chức trách vì lý do an ninh công cộng.]',
+    })
+  }
+  return pick(lang, {
+    en: '🔇 [Article removed.]',
+    vi: '🔇 [Bài viết đã bị gỡ xuống.]',
+  })
+}
+
+// ── Censorship leak rumor content ─────────────────────────────────────────────
+
+export function censorshipLeakContent(lang: Lang): string {
+  return pick(lang, {
+    en: 'A news article exposing the crisis was abruptly taken down by government order.',
+    vi: 'Một bài báo vạch trần khủng hoảng đã bị chính quyền ra lệnh gỡ xuống đột ngột.',
+  })
+}
+
+// ── Chronicle suppressed label ────────────────────────────────────────────────
+
+export function suppressedLabel(lang: Lang): string {
+  return pick(lang, { en: ' *(Suppressed)*', vi: ' *(Bị kiểm duyệt)*' })
+}

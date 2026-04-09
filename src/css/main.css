@@ -669,6 +669,31 @@ body[data-theme='light'] .map-note-btn {
 .feed-entry.political .feed-text { color: #7f77dd; }
 .feed-entry.player .feed-text { color: #5dcaa5; }
 
+/* ── Press censorship ──────────────────────────────── */
+.feed-entry.press-censored {
+  border-left: 2px solid #7a1a1a;
+  background: rgba(140, 0, 0, 0.06);
+  transition: background 0.4s ease;
+}
+.press-censored-text {
+  text-decoration: line-through;
+  text-decoration-color: #c44;
+  opacity: 0.45;
+}
+.press-censored-note {
+  color: #b33;
+  font-size: 10px;
+  font-weight: 600;
+  margin-top: 5px;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+}
+body[data-theme='light'] .feed-entry.press-censored {
+  background: rgba(180, 0, 0, 0.05);
+  border-left-color: #c44;
+}
+body[data-theme='light'] .press-censored-note { color: #a22; }
+
 /* Chronicle panel */
 #chronicle-panel {
   height: 190px;

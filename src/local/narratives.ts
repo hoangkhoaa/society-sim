@@ -89,6 +89,12 @@ export const NT = {
       en: `${name} and colleagues are on the verge of a breakthrough — their research journals increasingly filled with promising findings.`,
       vi: `${name} và đồng sự đang ở rất gần một đột phá — sổ tay nghiên cứu ngày càng dày lên với những phát hiện đầy hứa hẹn.`,
     }),
+  legendaryReason: (lang: Lang, npc: { influence_score: number; wealth: number; role: string }): string => {
+    if (npc.influence_score > 0.7) return pick(lang, { en: 'their unmatched social reach',  vi: 'tầm ảnh hưởng xã hội vượt trội' })
+    if (npc.wealth > 5000)         return pick(lang, { en: 'their vast wealth',              vi: 'khối tài sản đồ sộ' })
+    if (npc.role === 'scholar')    return pick(lang, { en: 'groundbreaking scholarship',     vi: 'đóng góp học thuật đột phá' })
+    return                                pick(lang, { en: 'a life of remarkable service',   vi: 'một đời cống hiến đáng kính' })
+  },
   legendaryAlive: (lang: Lang, name: string, occupation: string, age: number, reason: string) =>
     pick(lang, {
       en: `⭐ ${name} (${occupation}, ${age}) remains a towering figure — revered for ${reason}.`,
@@ -128,7 +134,7 @@ export const NT = {
     factionPlot: (lang: Lang, name: string) =>
       pick(lang, {
         en: `"${name}" is said to be planning something far more drastic than public organizing — the details remain carefully guarded.`,
-        vi: `"${name}" được cho là đang chuẩn bị điều gì đó quyết liệt hơn cả biểu tình công khai — chi tiết vẫn bị giữ kín.`,
+        vi: `"${name}" được cho là đang chuẩn bị điều gì đó quyết liệt hơn cả tổ chức công khai — chi tiết vẫn được giữ kín.`,
       }),
   },
   milestone: {

@@ -2,8 +2,22 @@
 // Self-contained module: manages GameSettings state, renders the panel, and
 // provides getSettings() for other modules to read current preferences.
 
-import { t } from '../i18n'
-import type { RegimeProfile } from '../sim/regime-config'
+import { getLang, t, type Lang } from '../i18n'
+import type { RegimeProfile, SimRestrictions } from '../sim/regime-config'
+import {
+  settingsTabRegime,
+  settingsRegimeNoWorld,
+  settingsRegimeNote,
+  settingsRegimeSectionInfo,
+  settingsRegimeSectionConnections,
+  settingsRegimeSectionEconomy,
+  settingsRegimeLabels,
+  settingsRegimeCrossZoneAllowed,
+  settingsRegimeCrossZoneLocked,
+  settingsRegimeMarketAllowed,
+  settingsRegimeMarketBanned,
+  settingsToggleCopy,
+} from '../local/ui'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -33,6 +47,7 @@ const DEFAULTS: GameSettings = {
 let _settings: GameSettings = { ...DEFAULTS }
 let _lockedFeatures: Set<keyof GameSettings> = new Set()
 let _regimeVariant: string = 'default'
+let _simRestrictions: SimRestrictions | null = null
 
 function loadSettings(): void {
   try {
@@ -48,8 +63,9 @@ function loadSettings(): void {
  * defaults and locks features that the regime structurally disables.
  */
 export function applyRegimeDefaults(profile: RegimeProfile): void {
-  _lockedFeatures = new Set(profile.lockedFeatures)
-  _regimeVariant  = profile.variant
+  _lockedFeatures    = new Set(profile.lockedFeatures)
+  _regimeVariant     = profile.variant
+  _simRestrictions   = profile.simRestrictions
 
   // Apply feature defaults (locked features are always forced to their locked value)
   const s = _settings as unknown as Record<string, unknown>
@@ -93,11 +109,58 @@ document.addEventListener('click', (e) => {
 
 // ── Tab state ──────────────────────────────────────────────────────────────────
 
-let _activeTab: 'ai_driven' = 'ai_driven'
+let _activeTab: 'ai_driven' | 'regime' = 'ai_driven'
+
+// ── Render helpers ─────────────────────────────────────────────────────────────
+
+function pct(v: number): string { return `${Math.round(v * 100)}%` }
+
+function renderRestrictionRow(icon: string, label: string, value: string, severity: 'low' | 'med' | 'high' | 'ok'): string {
+  const color = severity === 'high' ? '#c44' : severity === 'med' ? '#b80' : severity === 'ok' ? '#4a4' : '#888'
+  return `
+    <div class="stg-row" style="padding:4px 0">
+      <div class="stg-row-info">
+        <div class="stg-row-label" style="font-size:11px">${icon} ${label}</div>
+      </div>
+      <div style="font-size:11px;font-weight:600;color:${color};min-width:60px;text-align:right">${value}</div>
+    </div>`
+}
+
+function renderRegimeTab(lang: Lang): string {
+  if (!_simRestrictions) {
+    return `<div style="color:#888;font-size:11px;padding:8px 0">${settingsRegimeNoWorld(lang)}</div>`
+  }
+  const r = _simRestrictions
+  const infoSev  = r.info_spread_mult < 0.30 ? 'high' : r.info_spread_mult < 0.60 ? 'med' : 'ok'
+  const tiesSev  = r.info_ties_cap    < 0.45 ? 'high' : r.info_ties_cap    < 0.70 ? 'med' : 'ok'
+  const censSev  = r.censorship_prob  > 0.60 ? 'high' : r.censorship_prob  > 0.30 ? 'med' : 'ok'
+  const travelSev = r.cross_zone_ties ? 'ok' : 'high'
+  const tradeSev = r.trade_mult       < 0.35 ? 'high' : r.trade_mult       < 0.65 ? 'med' : 'ok'
+  const rentSev  = r.rent_market      ? 'ok' : 'med'
+  const lendSev  = r.private_lending  ? 'ok' : 'med'
+
+  const label = settingsRegimeLabels(lang)
+
+  return `
+    <div style="font-size:10px;color:#888;margin-bottom:6px">${settingsRegimeNote(lang)}</div>
+    <div class="stg-section-label" style="font-size:10px;color:#777;margin:4px 0 2px">${settingsRegimeSectionInfo(lang)}</div>
+    ${renderRestrictionRow('📢', label.info,   pct(r.info_spread_mult), infoSev)}
+    ${renderRestrictionRow('🔗', label.ties,   pct(r.info_ties_cap),   tiesSev)}
+    ${renderRestrictionRow('🔇', label.cens,   pct(r.censorship_prob), censSev)}
+    <div class="stg-section-label" style="font-size:10px;color:#777;margin:6px 0 2px">${settingsRegimeSectionConnections(lang)}</div>
+    ${renderRestrictionRow('🗺', label.travel, r.cross_zone_ties ? settingsRegimeCrossZoneAllowed(lang) : settingsRegimeCrossZoneLocked(lang), travelSev)}
+    <div class="stg-section-label" style="font-size:10px;color:#777;margin:6px 0 2px">${settingsRegimeSectionEconomy(lang)}</div>
+    ${renderRestrictionRow('🏪', label.trade,  pct(r.trade_mult),      tradeSev)}
+    ${renderRestrictionRow('🏠', label.rent,   r.rent_market     ? settingsRegimeMarketAllowed(lang) : settingsRegimeMarketBanned(lang), rentSev)}
+    ${renderRestrictionRow('🏦', label.lend,   r.private_lending ? settingsRegimeMarketAllowed(lang) : settingsRegimeMarketBanned(lang), lendSev)}`
+}
 
 // ── Render ─────────────────────────────────────────────────────────────────────
 
 function renderPanel(): void {
+  const lang = getLang()
+  const c    = settingsToggleCopy(lang)
+
   const regimeLabel = _regimeVariant !== 'default'
     ? `<div class="stg-regime-badge">${_regimeVariant}</div>`
     : ''
@@ -106,7 +169,10 @@ function renderPanel(): void {
     ${regimeLabel}
     <div class="stg-tabs">
       <button class="stg-tab ${_activeTab === 'ai_driven' ? 'active' : ''}" data-tab="ai_driven">
-        ${t('settings.tab_ai')}
+        🤖 AI-Driven
+      </button>
+      <button class="stg-tab ${_activeTab === 'regime' ? 'active' : ''}" data-tab="regime">
+        ${settingsTabRegime(lang)}
       </button>
     </div>
 
@@ -115,15 +181,15 @@ function renderPanel(): void {
 
       ${renderToggleRow(
         'enable_human_elections',
-        t('settings.elections.label') as string,
-        t('settings.elections.desc') as string,
+        c.electionsLabel,
+        c.electionsDesc,
         _settings.enable_human_elections,
         _lockedFeatures.has('enable_human_elections'),
       )}
 
       ${_settings.enable_human_elections ? renderNumberRow(
         'election_cycle_days',
-        t('settings.election_cycle.label') as string,
+        c.electionCycleLabel,
         _settings.election_cycle_days,
         30, 360,
       ) : ''}
@@ -132,36 +198,41 @@ function renderPanel(): void {
 
       ${renderToggleRow(
         'enable_government_ai',
-        t('settings.gov_ai.label') as string,
-        t('settings.gov_ai.desc') as string,
+        c.govAILabel,
+        c.govAIDesc,
         _settings.enable_government_ai,
         _lockedFeatures.has('enable_government_ai'),
       )}
 
       ${renderToggleRow(
         'enable_npc_thoughts',
-        t('settings.npc_thoughts.label') as string,
-        t('settings.npc_thoughts.desc') as string,
+        c.npcThoughtsLabel,
+        c.npcThoughtsDesc,
         _settings.enable_npc_thoughts,
         _lockedFeatures.has('enable_npc_thoughts'),
       )}
 
       ${renderToggleRow(
         'enable_press_ai',
-        t('settings.press_ai.label') as string,
-        t('settings.press_ai.desc') as string,
+        c.pressAILabel,
+        c.pressAIDesc,
         _settings.enable_press_ai,
         _lockedFeatures.has('enable_press_ai'),
       )}
 
       ${renderToggleRow(
         'enable_consequence_prediction',
-        t('settings.consequence.label') as string,
-        t('settings.consequence.desc') as string,
+        c.consequencesLabel,
+        c.consequencesDesc,
         _settings.enable_consequence_prediction,
         _lockedFeatures.has('enable_consequence_prediction'),
       )}
 
+    </div>
+
+    <div class="stg-tab-content" id="stg-content-regime"
+         style="display:${_activeTab === 'regime' ? 'block' : 'none'}">
+      ${renderRegimeTab(lang)}
     </div>
   `
 

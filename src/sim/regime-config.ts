@@ -24,6 +24,28 @@ export type CapitalMode =
   | 'collective'  // small equal share for everyone (commune/socialist)
   | 'state'       // all capital = 0; state owns means of production (marxist)
 
+/**
+ * Simulation-level restrictions imposed by the regime.
+ * Applied in network building, rumor propagation, and trade/capital systems.
+ * These represent structural features of the political economy — not player toggles.
+ */
+export interface SimRestrictions {
+  /** Multiplier on rumor propagation speed (1.0 = free press; 0.1 = near-total blackout) */
+  info_spread_mult:  number   // 0.1–1.0
+  /** Fraction of normal max info-ties built at init (censored regimes shrink information networks) */
+  info_ties_cap:     number   // 0.3–1.0
+  /** Probability a newly generated rumor is suppressed before reaching the population */
+  censorship_prob:   number   // 0.0–0.90
+  /** Allow cross-zone weak & info ties (false = checkpoints/curfew — only same-zone connections) */
+  cross_zone_ties:   boolean
+  /** Multiplier on P2P and formal market trade volume (stacks with market_freedom) */
+  trade_mult:        number   // 0.2–1.0
+  /** Allow private capital rental market (false = state controls all productive assets) */
+  rent_market:       boolean
+  /** Allow merchant peer-to-peer lending (false = usury banned or state credit only) */
+  private_lending:   boolean
+}
+
 export interface RegimeProfile {
   variant: OccVariant
   capitalMode: CapitalMode
@@ -41,6 +63,9 @@ export interface RegimeProfile {
     class_solidarity_bonus:  number   // extra starting class consciousness
     grievance_bonus:         number   // extra grievance
   }
+
+  /** Structural simulation restrictions derived from the regime's political economy. */
+  simRestrictions: SimRestrictions
 }
 
 // ── Variant detection ─────────────────────────────────────────────────────────
@@ -88,53 +113,129 @@ export function getRegimeProfile(c: Constitution): RegimeProfile {
 
   switch (variant) {
 
+    // ── Feudal ──────────────────────────────────────────────────────────────
+    // Serfs can't freely assemble, trade is lord-mediated, rumors are dangerous.
     case 'feudal': return {
       variant, capitalMode,
       featureDefaults: { enable_human_elections: false },
       lockedFeatures:  ['enable_human_elections'],
       npcTweaks: { fear_bonus: 18, isolation_bonus: 8, class_solidarity_bonus: 10, grievance_bonus: 15 },
+      simRestrictions: {
+        info_spread_mult: 0.35,   // word travels slow in a serf society
+        info_ties_cap:    0.50,   // serfs have narrow information networks
+        censorship_prob:  0.50,   // lords suppress dangerous talk
+        cross_zone_ties:  false,  // manors are isolated; travel requires permission
+        trade_mult:       0.50,   // lord-controlled markets; much trade is in-kind
+        rent_market:      true,   // feudal rent is the whole point
+        private_lending:  false,  // usury forbidden / controlled by lords
+      },
     }
 
+    // ── Theocracy ────────────────────────────────────────────────────────────
+    // Information flows through religious institutions; trade is morally regulated.
     case 'theocracy': return {
       variant, capitalMode,
       featureDefaults: { enable_human_elections: false },
       lockedFeatures:  ['enable_human_elections'],
       npcTweaks: { fear_bonus: 8, isolation_bonus: -5, class_solidarity_bonus: 0, grievance_bonus: 0 },
+      simRestrictions: {
+        info_spread_mult: 0.55,   // clergy mediate information (slower but cohesive)
+        info_ties_cap:    0.65,   // connections channeled through religious networks
+        censorship_prob:  0.40,   // heresy suppressed; approved doctrine promoted
+        cross_zone_ties:  true,   // pilgrimage and parish networks cross zones
+        trade_mult:       0.65,   // usury restricted; religious tithe overhead
+        rent_market:      true,   // religious estates can rent land
+        private_lending:  false,  // interest-bearing loans doctrinally forbidden
+      },
     }
 
+    // ── Technocracy ──────────────────────────────────────────────────────────
+    // Open information economy; meritocratic; high market activity.
     case 'technocracy': return {
       variant, capitalMode,
       featureDefaults: { enable_human_elections: true },
       lockedFeatures:  [],
       npcTweaks: { fear_bonus: -5, isolation_bonus: 5, class_solidarity_bonus: -5, grievance_bonus: -5 },
+      simRestrictions: {
+        info_spread_mult: 1.00,   // free press and fast information networks
+        info_ties_cap:    1.00,   // unrestricted digital connections
+        censorship_prob:  0.05,   // minimal censorship (security exceptions only)
+        cross_zone_ties:  true,   // open borders between districts
+        trade_mult:       0.85,   // well-regulated market; some compliance overhead
+        rent_market:      true,
+        private_lending:  true,
+      },
     }
 
+    // ── Warlord ──────────────────────────────────────────────────────────────
+    // Information blackout, movement controlled, economy militarized / war-footing.
     case 'warlord': return {
       variant, capitalMode,
       featureDefaults: { enable_human_elections: false, enable_press_ai: false },
       lockedFeatures:  ['enable_human_elections'],
       npcTweaks: { fear_bonus: 28, isolation_bonus: 12, class_solidarity_bonus: 15, grievance_bonus: 20 },
+      simRestrictions: {
+        info_spread_mult: 0.15,   // information near-blackout; only propaganda
+        info_ties_cap:    0.35,   // population atomized; distrust prevents connections
+        censorship_prob:  0.80,   // almost all independent information suppressed
+        cross_zone_ties:  false,  // checkpoints and curfews; zone-locked movement
+        trade_mult:       0.25,   // war economy; most goods requisitioned by military
+        rent_market:      true,   // warlords extract rent by force
+        private_lending:  false,  // capital hoarded; no credit market
+      },
     }
 
+    // ── Collective ───────────────────────────────────────────────────────────
+    // State media, party-approved connections, centrally directed economy.
     case 'collective': return {
       variant, capitalMode,
       featureDefaults: { enable_human_elections: true },
       lockedFeatures:  [],
       npcTweaks: { fear_bonus: -5, isolation_bonus: -10, class_solidarity_bonus: 20, grievance_bonus: -5 },
+      simRestrictions: {
+        info_spread_mult: 0.45,   // state media controls narrative; independent voices slow
+        info_ties_cap:    0.60,   // connections go through party/collective structures
+        censorship_prob:  0.55,   // counter-revolutionary speech suppressed
+        cross_zone_ties:  true,   // collective solidarity crosses zone boundaries
+        trade_mult:       0.40,   // state allocation replaces most market trade
+        rent_market:      false,  // no private rental — state owns means of production
+        private_lending:  false,  // state credit only; private capital accumulation banned
+      },
     }
 
+    // ── Capitalist ───────────────────────────────────────────────────────────
+    // Free press, open networks, high market activity.
     case 'capitalist': return {
       variant, capitalMode,
       featureDefaults: { enable_human_elections: true },
       lockedFeatures:  [],
       npcTweaks: { fear_bonus: 0, isolation_bonus: 8, class_solidarity_bonus: -8, grievance_bonus: 5 },
+      simRestrictions: {
+        info_spread_mult: 0.90,   // free press; fast spread (slight friction from noise)
+        info_ties_cap:    1.00,   // unrestricted social and commercial connections
+        censorship_prob:  0.05,   // near-zero censorship
+        cross_zone_ties:  true,   // open movement; trade networks cross zones
+        trade_mult:       1.00,   // fully free market
+        rent_market:      true,
+        private_lending:  true,
+      },
     }
 
+    // ── Default (mixed / transitional) ───────────────────────────────────────
     default: return {
       variant: 'default', capitalMode,
       featureDefaults: {},
       lockedFeatures:  [],
       npcTweaks: { fear_bonus: 0, isolation_bonus: 0, class_solidarity_bonus: 0, grievance_bonus: 0 },
+      simRestrictions: {
+        info_spread_mult: 0.75,
+        info_ties_cap:    0.85,
+        censorship_prob:  0.10,
+        cross_zone_ties:  true,
+        trade_mult:       0.75,
+        rent_market:      true,
+        private_lending:  true,
+      },
     }
   }
 }

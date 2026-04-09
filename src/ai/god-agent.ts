@@ -9,6 +9,8 @@ import {
   aiTokenModeBlockedMessage,
   aiParseFallbackMessage,
   aiNpcThoughtFallback,
+  langDirective,
+  writingDirective,
 } from '../local/ai'
 
 // ── Conversation history (persists for the session) ────────────────────────
@@ -30,14 +32,6 @@ export function resetInGameHistory() {
   inGameHistory.length = 0
 }
 
-// ── Language directive ─────────────────────────────────────────────────────
-
-function langDirective(): string {
-  return getLang() === 'vi'
-    ? 'Respond in Vietnamese.'
-    : 'Respond in English.'
-}
-
 // ── System Prompts ─────────────────────────────────────────────────────────
 
 function buildSetupSystem(): string {
@@ -57,7 +51,7 @@ On confirmation, return (MUST include "confirmed": true):
 Presets: nordic, capitalist, socialist, feudal, theocracy, technocracy, warlord, commune, marxist — adapt and explain trade-offs.
 If not yet confirmed, reply conversationally — concise but insightful.
 
-${langDirective()}`
+${langDirective(getLang())}`
 }
 
 function buildGameSystem(): string {
@@ -97,7 +91,7 @@ RULES:
 ZONES: "north_farm","south_farm","workshop_district","market_square","scholar_quarter","residential_east","residential_west","guard_post","plaza"
 
 ALWAYS return valid JSON. Be dramatic and concise.
-${langDirective()}`
+${langDirective(getLang())}`
 }
 
 function tokenModeDirective(config: AIConfig): string {
@@ -300,7 +294,7 @@ export async function generateConstitutionText(
   ].join('\n')
 
   const lang = getLang()
-  const outputDirective = lang === 'vi' ? 'Write in Vietnamese.' : 'Write in English.'
+  const outputDirective = writingDirective(lang)
   const system = 'You are the founding scribe of a newly established society. Write a short, vivid, emotionally resonant founding proclamation.'
   const prompt = `Given these society parameters:\n${params}\nWrite 2-3 sentences in the solemn register of a historical founding document. ${outputDirective} Return only the proclamation text, no title or explanation.`
 
@@ -378,7 +372,7 @@ World: stability ${Math.round(state.macro.stability)}%, food ${Math.round(state.
 Active events: ${state.active_events.map(e => e.type).join(', ') || 'none'}
 
 Write 1–3 sentences of this person's inner thoughts TODAY, in first person. Be concise, authentic, reflecting their actual circumstances. No explanation — just the thought.
-${langDirective()}`
+${langDirective(getLang())}`
 
   const thought = await callAI(
     config,
@@ -511,7 +505,7 @@ Narrative: ${eventNarrative}
 WORLD STATE:
 ${context}
 
-${langDirective()}
+${langDirective(getLang())}
 Predict the social consequences.`
 
   try {

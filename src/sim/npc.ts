@@ -2,7 +2,137 @@ import type { NPC, Constitution, WorldState, Role, TrustMap, ActionState, WorkMo
 import { faker } from '@faker-js/faker'
 import { clamp, gaussian, rand, randInt, weightedRandom, getSeason, ZONE_ADJACENCY } from './constitution'
 import { t, tf, tOccVariant } from '../i18n'
-import { getRegimeProfile } from './regime-config'
+import { getRegimeProfile, type SimRestrictions } from './regime-config'
+
+// ── Active sim restrictions (set once per game from regime profile) ───────────
+// Cached here to avoid calling getRegimeProfile() in the per-NPC hot path.
+
+const _defaultRestrictions: SimRestrictions = {
+  info_spread_mult: 0.75,
+  info_ties_cap:    0.85,
+  censorship_prob:  0.10,
+  cross_zone_ties:  true,
+  trade_mult:       0.75,
+  rent_market:      true,
+  private_lending:  true,
+}
+
+let _simRestrictions: SimRestrictions = { ..._defaultRestrictions }
+
+/** Called from main.ts after applyRegimeDefaults — syncs restriction values for the sim tick. */
+export function setActiveSimRestrictions(r: SimRestrictions): void {
+  _simRestrictions = { ...r }
+}
+
+// ── Role Configuration ─────────────────────────────────────────────────────
+// Single source of truth for ALL per-role constants.
+// Adding or modifying a role requires editing only this table.
+
+interface RoleConfig {
+  /** Worldview bonuses applied at NPC creation. */
+  worldview_bonus: Partial<Record<string, number>>
+  /** Expected wealth; used in stress and fairness calculations. 0 = non-earner. */
+  wealth_expectation: number
+  /** Exhaustion per tick while working (stacks with base metabolic 0.15). */
+  exhaustion_rate: number
+  /** Work-hour offset vs. regime baseline. Special roles override normalRoutine directly. */
+  schedule_offset: { start: number; end: number }
+  /** Market income per tick at productivity=1.0. 0 = paid via tax pool. */
+  income_rate: number
+  /** True = paid from tax pool, not market labor income. */
+  govt_paid: boolean
+  /** Possible work/home zones for this role (randomly selected at init). */
+  zones: string[]
+  /** Can participate in class solidarity spread and labor strikes. */
+  can_strike: boolean
+  /** Can enter organizing/confront states when under stress. */
+  can_protest: boolean
+}
+
+const ROLE_CONFIG: Record<Role, RoleConfig> = {
+  farmer: {
+    worldview_bonus:    { collectivism: +0.10, time_preference: +0.05 },
+    wealth_expectation: 450,
+    exhaustion_rate:    0.50,   // hard manual labor
+    schedule_offset:    { start: -1, end: -1 },  // early-bird; done before dark
+    income_rate:        0.12,   // raw resource + food production
+    govt_paid:          false,
+    zones:              ['north_farm', 'south_farm'],
+    can_strike:         true,
+    can_protest:        true,
+  },
+  craftsman: {
+    worldview_bonus:    {},
+    wealth_expectation: 600,
+    exhaustion_rate:    0.40,   // skilled physical work
+    schedule_offset:    { start:  0, end:  0 },  // follows regime baseline
+    income_rate:        0.14,   // processed goods
+    govt_paid:          false,
+    zones:              ['workshop_district'],
+    can_strike:         true,
+    can_protest:        true,
+  },
+  merchant: {
+    worldview_bonus:    { collectivism: -0.15, risk_tolerance: +0.10 },
+    wealth_expectation: 1000,
+    exhaustion_rate:    0.25,   // moderate — negotiation and travel
+    schedule_offset:    { start:  0, end: +1 },  // stays open late
+    income_rate:        0.10,   // base; boosted by P2P trade markup
+    govt_paid:          false,
+    zones:              ['market_square'],
+    can_strike:         true,
+    can_protest:        true,
+  },
+  scholar: {
+    worldview_bonus:    { risk_tolerance: -0.05, time_preference: +0.15 },
+    wealth_expectation: 800,
+    exhaustion_rate:    0.20,   // mental work; lighter physical demand
+    schedule_offset:    { start: +1, end:  0 },  // slightly later start
+    income_rate:        0.11,   // education/medicine services
+    govt_paid:          false,
+    zones:              ['scholar_quarter'],
+    can_strike:         true,
+    can_protest:        true,
+  },
+  guard: {
+    worldview_bonus:    { authority_trust: +0.20, risk_tolerance: +0.10 },
+    wealth_expectation: 550,
+    exhaustion_rate:    0.55,   // heavy physical — patrols, standing watch
+    schedule_offset:    { start:  0, end:  0 },  // handled by rotation logic in normalRoutine
+    income_rate:        0.00,   // paid via tax pool (see engine.ts applyGovernmentWages)
+    govt_paid:          true,
+    zones:              ['guard_post', 'plaza'],
+    can_strike:         false,  // guards ARE the enforcement arm; striking is incoherent
+    can_protest:        false,  // guards enforce order — organizing against govt makes no sense
+  },
+  leader: {
+    worldview_bonus:    { authority_trust: +0.10, time_preference: +0.20, collectivism: +0.10 },
+    wealth_expectation: 1200,
+    exhaustion_rate:    0.25,   // administrative stress
+    schedule_offset:    { start: -1, end: +1 },  // handled by long-hours logic in normalRoutine
+    income_rate:        0.00,   // paid via tax pool
+    govt_paid:          true,
+    zones:              ['plaza', 'scholar_quarter'],
+    can_strike:         false,  // leaders ARE the government; can't strike against themselves
+    can_protest:        false,  // leaders manage crises through policy, not protest
+  },
+  child: {
+    worldview_bonus:    {},
+    wealth_expectation: 0,
+    exhaustion_rate:    0.10,   // light activity
+    schedule_offset:    { start:  0, end:  0 },  // handled by child-specific logic in normalRoutine
+    income_rate:        0.00,   // no market income
+    govt_paid:          false,
+    zones:              ['residential_west', 'residential_east'],
+    can_strike:         false,
+    can_protest:        false,  // children don't participate in adult political action
+  },
+}
+
+// ── Derived maps (export for backward-compat with engine / UI consumers) ───
+export const ROLE_WEALTH_EXPECTATION: Record<Role, number> = Object.fromEntries(
+  Object.entries(ROLE_CONFIG).map(([r, cfg]) => [r, cfg.wealth_expectation]),
+) as Record<Role, number>
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -11,40 +141,6 @@ const VALUE_WORLDVIEW_BIAS: Record<string, Partial<Record<string, number>>> = {
   equality: { collectivism: +0.20, authority_trust: +0.05 },
   freedom:  { risk_tolerance: +0.15, collectivism: -0.10, authority_trust: -0.10 },
   growth:   { time_preference: +0.20, risk_tolerance: +0.10 },
-}
-
-const ROLE_WORLDVIEW_BONUS: Record<Role, Partial<Record<string, number>>> = {
-  guard:     { authority_trust: +0.20, risk_tolerance: +0.10 },
-  leader:    { authority_trust: +0.10, time_preference: +0.20, collectivism: +0.10 },
-  farmer:    { collectivism: +0.10, time_preference: +0.05 },
-  scholar:   { risk_tolerance: -0.05, time_preference: +0.15 },
-  merchant:  { collectivism: -0.15, risk_tolerance: +0.10 },
-  craftsman: {},
-  child:     {},
-}
-
-export const ROLE_WEALTH_EXPECTATION: Record<Role, number> = {
-  leader:    1200,
-  merchant:  1000,
-  scholar:   800,
-  craftsman: 600,
-  guard:     550,
-  farmer:    450,
-  child:     0,   // children have no income expectation
-}
-
-// ── Role-based exhaustion rates (per tick while working) ────────────────────
-// Different jobs tire workers at different rates. Guards and farmers do heavy
-// physical labor; scholars and merchants do lighter mental/social work.
-
-const ROLE_EXHAUSTION_RATE: Record<Role, number> = {
-  guard:     0.55,   // heavy physical (patrols, standing watch)
-  farmer:    0.50,   // hard manual labor
-  craftsman: 0.40,   // skilled physical work
-  leader:    0.25,   // administrative stress
-  merchant:  0.25,   // moderate (negotiation, travel)
-  scholar:   0.20,   // mental work, lighter physical demand
-  child:     0.10,   // light activity
 }
 
 // ── Age-based exhaustion modifier ──────────────────────────────────────────
@@ -238,16 +334,7 @@ function assignRole(idx: number, total: number, ratios: Constitution['role_ratio
 export const RESIDENTIAL_ZONES = ['residential_west', 'residential_east'] as const
 
 function assignZone(role: Role): string {
-  const ROLE_ZONES: Record<Role, string[]> = {
-    farmer:    ['north_farm', 'south_farm'],
-    craftsman: ['workshop_district'],
-    merchant:  ['market_square'],
-    scholar:   ['scholar_quarter'],
-    guard:     ['guard_post', 'plaza'],
-    leader:    ['plaza', 'scholar_quarter'],
-    child:     [...RESIDENTIAL_ZONES],  // children live in residential zones
-  }
-  const zoneList = ROLE_ZONES[role]
+  const zoneList = ROLE_CONFIG[role].zones
   return zoneList[Math.floor(Math.random() * zoneList.length)]
 }
 
@@ -301,7 +388,7 @@ export function createNPC(idx: number, total: number, constitution: Constitution
       valueBias[dim] = (valueBias[dim] ?? 0) + (b as number) * weight
     }
   })
-  const rb = ROLE_WORLDVIEW_BONUS[role]
+  const rb = ROLE_CONFIG[role].worldview_bonus
 
   const worldview = {
     collectivism:    clamp(0.5 + (valueBias.collectivism ?? 0) + (rb.collectivism ?? 0) + gaussian(0, 0.15), 0, 1),
@@ -398,8 +485,9 @@ export function createNPC(idx: number, total: number, constitution: Constitution
     work_motivation: inferMotivationType(role, constitution, idx),
     bio_clock_offset: clamp(Math.round(gaussian(0, 1.2)), -2, 3),
 
-    // Class solidarity: starts higher for laborers in unequal societies; regime tweaks apply
-    class_solidarity: clamp(
+    // Class solidarity: children have none (not yet in the workforce).
+    // Laborers start higher in unequal societies; regime tweaks apply.
+    class_solidarity: role === 'child' ? 0 : clamp(
       (role === 'farmer' || role === 'craftsman' ? 20 : 10)
       + constitution.gini_start * 30
       + tw.class_solidarity_bonus
@@ -663,7 +751,7 @@ function decayNeeds(npc: NPC, state: WorldState): void {
     npc.exhaustion += netRest
   } else if (npc.action_state === 'working') {
     // Working: role-specific exhaustion rate on top of base metabolic
-    const roleRate = ROLE_EXHAUSTION_RATE[npc.role] ?? 0.30
+    const roleRate = ROLE_CONFIG[npc.role].exhaustion_rate
     npc.exhaustion += (baseMetabolic + roleRate) * ageMod * sickMod
   } else if (npc.action_state === 'socializing') {
     // Socializing: light activity (+0.10 on top of base)
@@ -721,7 +809,10 @@ function computeStress(npc: NPC): number {
   const f = Math.pow(npc.fear       / 100, 1.5) * 0.22
 
   const roleExpected = ROLE_WEALTH_EXPECTATION[npc.role]
-  const identity = Math.max(0, (roleExpected - npc.wealth) / roleExpected) * 0.10
+  // Guard: roleExpected=0 for children — avoid division by zero.
+  const identity = roleExpected > 0
+    ? Math.max(0, (roleExpected - npc.wealth) / roleExpected) * 0.10
+    : 0
   const socialBuffer = Math.min(npc.strong_ties.length, 12) / 12 * 0.08
 
   return clamp((h + e + i + f + identity - socialBuffer) * 100, 0, 100)
@@ -752,17 +843,6 @@ function computeHappiness(npc: NPC, state: WorldState): number {
 }
 
 // ── Action Selection ───────────────────────────────────────────────────────
-
-// Role-based adjustments to regime work hours (relative to regime baseline).
-const ROLE_SCHEDULE_OFFSET: Record<Role, { start: number; end: number }> = {
-  farmer:    { start: -1, end: -1 },   // early bird — dawn start, done before dark
-  craftsman: { start:  0, end:  0 },   // follows regime baseline
-  merchant:  { start:  0, end: +1 },   // stays open late
-  scholar:   { start: +1, end:  0 },   // slightly later start
-  guard:     { start:  0, end:  0 },   // handled separately
-  leader:    { start: -1, end: +1 },   // long hours
-  child:     { start:  0, end:  0 },   // handled separately
-}
 
 function normalRoutine(npc: NPC, state: WorldState): ActionState {
   const hour = state.tick % 24
@@ -831,7 +911,7 @@ function normalRoutine(npc: NPC, state: WorldState): ActionState {
   }
 
   // ── Typical working day: regime schedule + role offset + bio clock ─────
-  const roleAdj   = ROLE_SCHEDULE_OFFSET[npc.role]
+  const roleAdj   = ROLE_CONFIG[npc.role].schedule_offset
   const offset    = npc.bio_clock_offset
   const workStart = clamp(sched.work_start_hour + roleAdj.start + offset, 3, 12)
   const workEnd   = clamp(sched.work_end_hour   + roleAdj.end   + offset, 12, 23)
@@ -855,6 +935,10 @@ function selectAction(npc: NPC, state: WorldState): ActionState {
   if (npc.exhaustion > 90 && npc.action_state !== 'fleeing') {
     return 'resting'
   }
+
+  // Roles that cannot enter political action states always follow their normal routine.
+  // Children lack political agency; guards/leaders ARE the state apparatus.
+  if (!ROLE_CONFIG[npc.role].can_protest) return normalRoutine(npc, state)
 
   if (npc.stress < npc.stress_threshold) return normalRoutine(npc, state)
 
@@ -1113,23 +1197,8 @@ export function computeProductivity(npc: NPC, state: WorldState): number {
 const TRADE_EFFICIENCY = 0.80   // non-merchant P2P friction
 const MERCHANT_MARKUP  = 0.22   // merchant profit margin per transaction
 
-// ── Role-based income sources ──────────────────────────────────────────────
-// Government-paid roles (guard, leader) earn their income via the tax pool
-// rather than direct market labor. Their wealthTick only handles needs spending.
-const GOVT_PAID_ROLES: Set<string> = new Set(['guard', 'leader'])
-
-// Base gross income multiplier by role (coins per tick at productivity=1.0).
-// Farmers and craftsmen produce physical goods; scholars provide services;
-// merchants earn through markup on top of their base labor income.
-const ROLE_INCOME_RATE: Record<string, number> = {
-  farmer:    0.12,   // raw resource + food production
-  craftsman: 0.14,   // processed goods
-  merchant:  0.10,   // base; boosted heavily by P2P trade markup
-  scholar:   0.11,   // education/medicine services
-  guard:     0.00,   // paid from tax pool (see engine.ts applyGovernmentWages)
-  leader:    0.00,   // paid from tax pool
-  child:     0.00,
-}
+// ── Role-based income sources (derived from ROLE_CONFIG) ─────────────────
+// Government-paid roles (guard, leader) earn via the tax pool, not market labor.
 
 // Cost of living per tick (survival spending — food, shelter, basic needs).
 // At this rate an NPC at productivity=0 loses ~1.68 wealth/day (0.07 × 24).
@@ -1143,23 +1212,25 @@ function wealthTick(npc: NPC, state: WorldState): void {
 
   // Gross earned income: always non-negative, scales with productivity.
   // Government-paid roles earn 0 from market labor (paid via tax pool instead).
-  const incomeRate   = ROLE_INCOME_RATE[npc.role] ?? 0.10
+  const incomeRate   = ROLE_CONFIG[npc.role].income_rate
   const grossIncome  = productivity * incomeRate
 
   // ── Farmer → Merchant supply-chain bonus ────────────────────────────────
   // Farmers with merchant contacts earn extra income by selling surplus
   // produce. Merchants within strong-ties benefit proportionally.
+  // trade_mult restricts this in regimes where lords/state mediate all markets.
   // This runs once per day (staggered per NPC id) while the farmer is working.
   if (npc.role === 'farmer' && npc.action_state === 'working'
       && state.tick % 24 === npc.id % 24
-      && state.constitution.market_freedom >= 0.10) {
+      && state.constitution.market_freedom >= 0.10
+      && _simRestrictions.trade_mult > 0.20) {
     const farmerSurplusRate = clamp(productivity - 0.3, 0, 1) * 0.8  // surplus above subsistence
     if (farmerSurplusRate > 0) {
       for (const tid of npc.strong_ties.slice(0, 4)) {
         const merchant = state.npcs[tid]
         if (!merchant?.lifecycle.is_alive || merchant.role !== 'merchant') continue
-        // Farmer sells produce to merchant — both gain wealth
-        const saleValue = farmerSurplusRate * 3 * state.constitution.market_freedom
+        // Farmer sells produce to merchant — regime trade_mult scales the volume
+        const saleValue = farmerSurplusRate * 3 * state.constitution.market_freedom * _simRestrictions.trade_mult
         const buyerCost = saleValue * 0.7  // merchant pays 70%; keeps 30% as inventory margin
         if (merchant.wealth >= buyerCost) {
           npc.wealth      = clamp(npc.wealth      + saleValue,   0, 50000)
@@ -1176,12 +1247,13 @@ function wealthTick(npc: NPC, state: WorldState): void {
   // (resource penalty already applied in computeProductivity).
   if (npc.role === 'craftsman' && npc.action_state === 'working'
       && state.tick % 24 === npc.id % 24
-      && state.constitution.market_freedom >= 0.10) {
+      && state.constitution.market_freedom >= 0.10
+      && _simRestrictions.trade_mult > 0.20) {
     for (const tid of npc.strong_ties.slice(0, 4)) {
       const supplier = state.npcs[tid]
       if (!supplier?.lifecycle.is_alive) continue
       if (supplier.role !== 'merchant' && supplier.role !== 'farmer') continue
-      const materialCost = 1.5 * state.constitution.market_freedom
+      const materialCost = 1.5 * state.constitution.market_freedom * _simRestrictions.trade_mult
       if (supplier.wealth >= materialCost * 2) {
         // Craftsman pays for raw materials — supplier earns income
         npc.wealth      = clamp(npc.wealth      - materialCost, 0, 50000)
@@ -1193,7 +1265,7 @@ function wealthTick(npc: NPC, state: WorldState): void {
 
   // Net wealth change: gross earnings minus cost of living.
   // Government-paid roles still pay survival cost (deducted, compensated by wages).
-  const laborIncome = GOVT_PAID_ROLES.has(npc.role)
+  const laborIncome = ROLE_CONFIG[npc.role].govt_paid
     ? -SURVIVAL_COST_PER_TICK                  // only cost of living; wages come from tax pool
     : grossIncome - SURVIVAL_COST_PER_TICK     // net market income
 
@@ -1226,9 +1298,10 @@ function wealthTick(npc: NPC, state: WorldState): void {
 
   // ── Capital rental market (once per day, staggered by NPC id) ──────────────
   // Landless workers find a capital owner in their network to rent from.
-  // Disabled in state-ownership regimes (no private capital rental).
+  // Disabled in state-ownership or collective regimes (no private capital rental).
   if (npc.role !== 'guard'
-      && state.constitution.market_freedom >= 0.10   // state-owned economies skip rental
+      && _simRestrictions.rent_market                // regime allows private rental
+      && state.constitution.market_freedom >= 0.10   // and economy has market activity
       && state.tick % 24 === npc.id % 24) {
 
     if ((npc.capital ?? 0) === 0) {
@@ -1281,8 +1354,10 @@ function wealthTick(npc: NPC, state: WorldState): void {
   }
 
   // ── P2P trade (every 12 ticks, staggered by id) ────────────────────────
+  // trade_mult stacks with market_freedom: regime restrictions reduce trade volume
+  // independently of the market-freedom slider (e.g. feudal lord-controlled markets).
   if (npc.action_state === 'socializing' && state.tick % 12 === npc.id % 12) {
-    const mf = state.constitution.market_freedom
+    const mf = state.constitution.market_freedom * _simRestrictions.trade_mult
     for (const tid of npc.strong_ties.slice(0, 3)) {
       const partner = state.npcs[tid]
       if (!partner?.lifecycle.is_alive) continue
@@ -1316,9 +1391,10 @@ function wealthTick(npc: NPC, state: WorldState): void {
   }
 
   // ── Merchant lending (once per day, staggered) ─────────────────────────
-  // Planned economies (mf < 0.20) don't allow private lending — state credit only.
+  // Planned economies and usury-banning regimes block private lending.
   if (npc.role === 'merchant' && npc.wealth > 1000
-      && state.constitution.market_freedom >= 0.20
+      && _simRestrictions.private_lending            // regime allows private lending
+      && state.constitution.market_freedom >= 0.20   // and market is active enough
       && npc.action_state === 'socializing'
       && state.tick % 24 === npc.id % 24) {
     for (const tid of npc.strong_ties.slice(0, 3)) {
@@ -1628,6 +1704,7 @@ function transitionToAdultCareer(npc: NPC, state: WorldState): void {
   const selectedRole = weightedRandom(weights as Record<string, number>) as Role
   npc.role            = selectedRole
   npc.zone            = assignZone(selectedRole)
+  npc.home_zone       = npc.zone   // critical: update work zone so updateZone routes correctly
   npc.occupation      = tOccVariant(selectedRole, getRegimeProfile(state.constitution).variant)
   npc.work_motivation = inferMotivationType(selectedRole, state.constitution, npc.id)
   npc.description     = generateDescription(npc)  // refresh description with new role

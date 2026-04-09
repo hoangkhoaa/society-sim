@@ -12,6 +12,7 @@ import { addChronicle, addFeedRaw } from '../ui/feed'
 import { getLang } from '../i18n'
 import { NT } from '../local/narratives'
 import { showStoryCard } from '../ui/story-card'
+import { getRegimeProfile } from './regime-config'
 
 // ── Cooldown tracking ────────────────────────────────────────────────────────
 
@@ -302,10 +303,7 @@ const STORIES: Story[] = [
       const legends = state.npcs.filter(n => n.lifecycle.is_alive && n.legendary)
       if (legends.length === 0) return null
       const l = legends[Math.floor(Math.random() * legends.length)]
-      const reason = l.influence_score > 0.7 ? (getLang() === 'vi' ? 'tầm ảnh hưởng xã hội vượt trội' : 'their unmatched social reach')
-        : l.wealth > 5000 ? (getLang() === 'vi' ? 'khối tài sản đồ sộ' : 'their vast wealth')
-        : l.role === 'scholar' ? (getLang() === 'vi' ? 'đóng góp học thuật đột phá' : 'groundbreaking scholarship')
-        : (getLang() === 'vi' ? 'một đời cống hiến đáng kính' : 'a life of remarkable service')
+      const reason = NT.legendaryReason(getLang(), l)
       return NT.legendaryAlive(getLang(), l.name, l.occupation, l.age, reason)
     },
   },
@@ -419,10 +417,17 @@ export function resetNarrativeRuntimeState(): void {
 }
 
 export function checkRumors(state: WorldState): void {
+  const restrictions = getRegimeProfile(state.constitution).simRestrictions
+
   // Generate new rumor (15% daily chance, one at a time)
   if (state.tick - lastRumorTick > 72 && Math.random() < 0.15) {
     const valid = RUMOR_TEMPLATES.filter(t => t.condition(state))
     if (valid.length > 0 && state.rumors.length < 5) {
+      // State censorship: suppress rumor before it can spread
+      if (Math.random() < restrictions.censorship_prob) {
+        lastRumorTick = state.tick  // reset cooldown so censored rumors still burn the slot
+        return
+      }
       const template = valid[Math.floor(Math.random() * valid.length)]
       const partial   = template.generate(state)
       const rumor: Rumor = {
@@ -440,6 +445,7 @@ export function checkRumors(state: WorldState): void {
   }
 
   // Spread rumors through info_ties plus face-to-face relays.
+  // info_spread_mult slows propagation in censored/restricted regimes.
   const living = state.npcs.filter(n => n.lifecycle.is_alive)
   for (const rumor of state.rumors) {
     // Opinion leaders and socially central NPCs spread faster.
@@ -448,7 +454,7 @@ export function checkRumors(state: WorldState): void {
       (n.dissonance_acc > 25 || n.influence_score > 0.55),
     )
     const leaderBonus = spreaders.filter(n => n.influence_score > 0.65).length * 0.6
-    const newReach  = Math.floor(spreaders.length * 0.08 + leaderBonus)
+    const newReach  = Math.floor((spreaders.length * 0.08 + leaderBonus) * restrictions.info_spread_mult)
     rumor.reach = Math.min(rumor.reach + newReach, living.length)
 
     // Apply effect when rumor has reached enough people (threshold: 20% of pop)

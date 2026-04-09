@@ -20,6 +20,7 @@ import { resetNarrativeRuntimeState } from './sim/narratives'
 import { getSettings, openSettingsPanel, applyRegimeDefaults } from './ui/settings-panel'
 import { runElection } from './sim/engine'
 import { getRegimeProfile } from './sim/regime-config'
+import { setActiveSimRestrictions } from './sim/npc'
 
 // ── App state ──────────────────────────────────────────────────────────────
 
@@ -511,8 +512,10 @@ async function startGame(constitution: Constitution) {
   world = await initWorld(constitution)
   peakPopulation = countLivingNpcs(world)
 
-  // Apply regime-specific defaults and locked features to settings
-  applyRegimeDefaults(getRegimeProfile(constitution))
+  // Apply regime-specific defaults, locked features, and sim restrictions
+  const regimeProfile = getRegimeProfile(constitution)
+  applyRegimeDefaults(regimeProfile)
+  setActiveSimRestrictions(regimeProfile.simRestrictions)
 
   updateTopbar()
   updateDemographics()

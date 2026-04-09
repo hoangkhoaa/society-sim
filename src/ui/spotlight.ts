@@ -2,6 +2,28 @@ import type { NPC, WorldState, AIConfig } from '../types'
 import { generateNPCThought } from '../ai/god-agent'
 import { t, tf, getLang } from '../i18n'
 import { getSettings } from './settings-panel'
+import {
+  spLifeStoryTitle,
+  spLegendary,
+  spFaction,
+  spMarried,
+  spCompatibility,
+  spInLove,
+  spHeartbroken,
+  spChildren,
+  spCriminalRecord,
+  spDebt,
+  spMemLoss,
+  spMemWindfall,
+  spMemHelped,
+  spMemTrustBroken,
+  spMemCrisis,
+  spWealthy,
+  spPoor,
+  spCapitalLabel,
+  spRentsFromLabel,
+  spNoneLabel,
+} from '../local/ui'
 
 const panel   = document.getElementById('spotlight')!
 const spName  = document.getElementById('sp-name')!
@@ -44,90 +66,56 @@ export async function openSpotlight(npc: NPC, state: WorldState, config: AIConfi
 
 function lifeStory(npc: NPC, state: WorldState): string {
   if (npc.age < 20) return ''
-  const vi = getLang() === 'vi'
+  const lang = getLang()
   const lines: string[] = []
 
   if (npc.legendary) {
-    lines.push(vi
-      ? `⭐ <em>${npc.name} được ghi nhớ như một nhân vật huyền thoại của xã hội này.</em>`
-      : `⭐ <em>${npc.name} is remembered as a legendary figure of this society.</em>`)
+    lines.push(spLegendary(lang, npc.name))
   }
   if (npc.faction_id !== null) {
     const faction = state.factions.find(f => f.id === npc.faction_id)
-    if (faction) lines.push(vi
-      ? `Thuộc phe <strong>${faction.name}</strong> (${faction.dominant_value}).`
-      : `Aligned with the <strong>${faction.name}</strong> faction (${faction.dominant_value}).`)
+    if (faction) lines.push(spFaction(lang, faction.name, faction.dominant_value))
   }
   if (npc.lifecycle.spouse_id !== null) {
     const spouse = state.npcs.find(n => n.id === npc.lifecycle.spouse_id)
     if (spouse) {
-      lines.push(vi
-        ? `Đã kết hôn với ${spouse.name}, làm nghề ${spouse.occupation.toLowerCase()}.`
-        : `Married to ${spouse.name}, a ${spouse.occupation.toLowerCase()}.`)
+      lines.push(spMarried(lang, spouse.name, spouse.occupation.toLowerCase()))
 
       // Compatibility with spouse
       const compat = Math.round(coupleCompatibilityPublic(npc, spouse) * 100)
-      lines.push(vi
-        ? `Độ tương hợp với vợ/chồng: <strong>${compat}%</strong>${compat < 40 ? ' — mối quan hệ có nguy cơ rạn nứt.' : ''}`
-        : `Compatibility with spouse: <strong>${compat}%</strong>${compat < 40 ? ' — the relationship is under strain.' : ''}`)
+      lines.push(spCompatibility(lang, compat))
     }
   } else if (npc.lifecycle.romance_target_id !== null) {
     const target = state.npcs.find(n => n.id === npc.lifecycle.romance_target_id)
-    if (target) lines.push(vi
-      ? `❤ Đang có tình cảm với ${target.name} (độ hấp dẫn: ${Math.round(npc.lifecycle.romance_score ?? 0)}%).`
-      : `❤ Has feelings for ${target.name} (attraction: ${Math.round(npc.lifecycle.romance_score ?? 0)}%).`)
+    if (target) lines.push(spInLove(lang, target.name, Math.round(npc.lifecycle.romance_score ?? 0)))
   } else if ((npc.lifecycle.heartbreak_cooldown ?? 0) > 0) {
     const days = Math.ceil((npc.lifecycle.heartbreak_cooldown ?? 0) / 24)
-    lines.push(vi
-      ? `💔 Đang đau khổ sau chia tay — cần thêm ${days} ngày để hồi phục.`
-      : `💔 Heartbroken — needs ${days} more days to heal.`)
+    lines.push(spHeartbroken(lang, days))
   }
   if (npc.lifecycle.children_ids.length > 0) {
-    const n = npc.lifecycle.children_ids.length
-    lines.push(vi
-      ? `Có ${n} người con.`
-      : `Parent of ${n} child${n > 1 ? 'ren' : ''}.`)
+    lines.push(spChildren(lang, npc.lifecycle.children_ids.length))
   }
-  if (npc.criminal_record) lines.push(vi
-    ? `Có tiền án — không được tin tưởng ở một số giới.`
-    : `Has a criminal record — trust runs thin in some circles.`)
+  if (npc.criminal_record) lines.push(spCriminalRecord(lang))
   if (npc.debt > 0) {
     const creditor = state.npcs.find(n => n.id === npc.debt_to)
-    lines.push(vi
-      ? `Đang mang khoản nợ ${npc.debt.toFixed(0)} đồng${creditor ? ` với ${creditor.name}` : ''}.`
-      : `Carries a debt of ${npc.debt.toFixed(0)} coins${creditor ? ` owed to ${creditor.name}` : ''}.`)
+    lines.push(spDebt(lang, npc.debt.toFixed(0), creditor?.name ?? null))
   }
   // Notable memories
   const heavy = npc.memory.filter(m => Math.abs(m.emotional_weight) > 30).slice(0, 2)
   for (const mem of heavy) {
-    if (mem.type === 'loss') lines.push(vi
-      ? `Từng chịu mất mát lớn, vết thương vẫn chưa lành.`
-      : `Suffered a significant loss that still weighs on them.`)
-    else if (mem.type === 'windfall') lines.push(vi
-      ? `Từng gặp may mắn bất ngờ đổi thay vận số.`
-      : `Once experienced an unexpected windfall that changed their fortunes.`)
-    else if (mem.type === 'helped') lines.push(vi
-      ? `Từng được giúp đỡ trong lúc khốn khó — điều đó vẫn còn in đậm trong tâm trí.`
-      : `Was helped by someone in a moment of great need — they remember it well.`)
-    else if (mem.type === 'trust_broken') lines.push(vi
-      ? `Từng bị phản bội, để lại vết thương lòng khó xóa.`
-      : `Their trust was betrayed in the past, leaving a lasting mark.`)
-    else if (mem.type === 'crisis') lines.push(vi
-      ? `Đã sống sót qua một cuộc khủng hoảng và không còn như xưa nữa.`
-      : `Survived a crisis that left them changed.`)
+    if      (mem.type === 'loss')         lines.push(spMemLoss(lang))
+    else if (mem.type === 'windfall')     lines.push(spMemWindfall(lang))
+    else if (mem.type === 'helped')       lines.push(spMemHelped(lang))
+    else if (mem.type === 'trust_broken') lines.push(spMemTrustBroken(lang))
+    else if (mem.type === 'crisis')       lines.push(spMemCrisis(lang))
   }
-  if (npc.wealth > 5000) lines.push(vi
-    ? `Đã tích lũy khối tài sản đáng kể (${npc.wealth.toFixed(0)} đồng tiền).`
-    : `Has accumulated considerable wealth (${npc.wealth.toFixed(0)} coins).`)
-  else if (npc.wealth < 50 && npc.age > 30) lines.push(vi
-    ? `Sống trong nghèo khó, vật lộn từng ngày.`
-    : `Lives in poverty, struggling to get by.`)
+  if (npc.wealth > 5000)                    lines.push(spWealthy(lang, npc.wealth.toFixed(0)))
+  else if (npc.wealth < 50 && npc.age > 30) lines.push(spPoor(lang))
 
   if (lines.length === 0) return ''
-  const title = vi ? 'Tiểu sử' : 'Life Story'
   return `
     <div class="sp-section">
-      <div class="sp-section-title">${title}</div>
+      <div class="sp-section-title">${spLifeStoryTitle(lang)}</div>
       <div class="sp-description" style="line-height:1.6">
         ${lines.map(l => `<div style="margin-bottom:4px">${l}</div>`).join('')}
       </div>
@@ -317,25 +305,25 @@ function renderStatic(npc: NPC, state: WorldState): string {
       </div>` : ''}
       ${solidarityBar(npc.class_solidarity ?? 0, npc.on_strike ?? false)}
       ${(() => {
-        const vi = getLang() === 'vi'
+        const lang = getLang()
         const cap = npc.capital ?? 0
         if (cap > 0) {
           const capColor = cap >= 60 ? '#f0c040' : cap >= 25 ? '#c8a830' : '#a08820'
           return `<div class="sp-row">
-            <span class="sp-label">${vi ? 'Tư liệu lao động' : 'Capital'}</span>
+            <span class="sp-label">${spCapitalLabel(lang)}</span>
             <span class="sp-value" style="color:${capColor}">${cap.toFixed(0)}/100</span>
           </div>`
         }
         const rentsFrom = npc.capital_rents_from != null ? state.npcs[npc.capital_rents_from] : null
         if (rentsFrom?.lifecycle.is_alive) {
           return `<div class="sp-row">
-            <span class="sp-label">${vi ? 'Thuê tư liệu từ' : 'Rents capital from'}</span>
+            <span class="sp-label">${spRentsFromLabel(lang)}</span>
             <span class="sp-value" style="color:#8899aa">${rentsFrom.name}</span>
           </div>`
         }
         return `<div class="sp-row">
-          <span class="sp-label">${vi ? 'Tư liệu lao động' : 'Capital'}</span>
-          <span class="sp-value" style="color:#666">${vi ? 'Không có' : 'None'}</span>
+          <span class="sp-label">${spCapitalLabel(lang)}</span>
+          <span class="sp-value" style="color:#666">${spNoneLabel(lang)}</span>
         </div>`
       })()}
     </div>

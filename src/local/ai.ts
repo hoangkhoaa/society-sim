@@ -28,3 +28,13 @@ export function aiNpcThoughtFallback(lang: Lang, action: string, stressPct: numb
     : `Today I am ${action}, with stress at ${stressPct}% and mood at ${happinessPct}%.`
 }
 
+/** "Respond in Vietnamese." / "Respond in English." — for LLM system prompts. */
+export function langDirective(lang: Lang): string {
+  return lang === 'vi' ? 'Respond in Vietnamese.' : 'Respond in English.'
+}
+
+/** "Write in Vietnamese." / "Write in English." — for one-off LLM generation calls. */
+export function writingDirective(lang: Lang): string {
+  return lang === 'vi' ? 'Write in Vietnamese.' : 'Write in English.'
+}
+
