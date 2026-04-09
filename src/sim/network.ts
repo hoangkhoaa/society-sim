@@ -1,5 +1,6 @@
 import type { NPC, Constitution, NetworkGraph } from '../types'
 import { clamp, ZONE_ADJACENCY } from './constitution'
+import { getRegimeProfile } from './regime-config'
 
 // ── Small-world network builder ─────────────────────────────────────────────
 //
@@ -88,16 +89,19 @@ export async function buildNetwork(npcs: NPC[], constitution: Constitution): Pro
   const info    = new Map<number, Set<number>>()
   const clusters = new Map<number, number>()
 
+  // Derive regime restrictions once for this build
+  const restrictions = getRegimeProfile(constitution).simRestrictions
+
   for (const npc of npcs) {
     strong.set(npc.id, new Set())
     weak.set(npc.id, new Set())
     info.set(npc.id, new Set())
   }
 
-  // Cohesion scales neighbor counts
+  // Cohesion scales neighbor counts; regime restrictions further limit them
   const cohesion = clamp(constitution.network_cohesion, 0.1, 1)
-  const strongTarget = Math.round(5  + cohesion * 10)   // 5–15
-  const weakTarget   = Math.round(50 + cohesion * 100)  // 50–150
+  const strongTarget = Math.round(5  + cohesion * 10)   // 5–15 (unchanged — face-to-face)
+  const weakTarget   = Math.round(50 + cohesion * 100)  // 50–150 (unchanged — geographic)
 
   // Build candidates per zone for speed
   const byZone: Record<string, NPC[]> = {}
@@ -107,7 +111,7 @@ export async function buildNetwork(npcs: NPC[], constitution: Constitution): Pro
   }
 
   for (const npc of npcs) {
-    // Strong-tie candidates: same zone + adjacent zones
+    // Strong-tie candidates: same zone + adjacent zones (always local — not restricted)
     const sameZone = byZone[npc.zone] ?? []
     const adjZones = (ZONE_ADJACENCY[npc.zone] ?? []).flatMap(z => byZone[z] ?? [])
     const strongCandidates = [...sameZone, ...adjZones]
@@ -126,14 +130,17 @@ export async function buildNetwork(npcs: NPC[], constitution: Constitution): Pro
       if (candidateStrong.size < strongTarget) candidateStrong.add(npc.id)
     }
 
-    // Weak ties: same zone + 2-hop adjacent zones (broader)
+    // Weak ties: cross_zone_ties = false means zone-locked (checkpoints/curfew)
     const hop2 = (ZONE_ADJACENCY[npc.zone] ?? [])
       .flatMap(z => ZONE_ADJACENCY[z] ?? [])
-    const weakCandidates = shuffle([
-      ...(byZone[npc.zone] ?? []),
-      ...(ZONE_ADJACENCY[npc.zone] ?? []).flatMap(z => byZone[z] ?? []),
-      ...hop2.flatMap(z => byZone[z] ?? []),
-    ].filter(c => c.id !== npc.id && !s.has(c.id)))
+    const weakPool = restrictions.cross_zone_ties
+      // Free movement: same zone + adjacent + 2-hop
+      ? [...(byZone[npc.zone] ?? []),
+         ...(ZONE_ADJACENCY[npc.zone] ?? []).flatMap(z => byZone[z] ?? []),
+         ...hop2.flatMap(z => byZone[z] ?? [])]
+      // Restricted movement: same zone only (no crossing checkpoints)
+      : [...(byZone[npc.zone] ?? [])]
+    const weakCandidates = shuffle(weakPool.filter(c => c.id !== npc.id && !s.has(c.id)))
 
     // Fixed: iterate the shuffled list directly (no random-with-replacement)
     const w = weak.get(npc.id)!
@@ -163,23 +170,29 @@ export async function buildNetwork(npcs: NPC[], constitution: Constitution): Pro
     byRole[npc.role].push(npc)
   }
 
-  // Target info-tie count scales with network cohesion (10–40)
-  const infoTarget = Math.round(10 + cohesion * 30)
+  // Target info-tie count: scales with cohesion, then capped by regime's info_ties_cap.
+  // Censored regimes shrink information networks — fewer people to talk to freely.
+  const infoTarget = Math.round((10 + cohesion * 30) * restrictions.info_ties_cap)
 
   // Pre-shuffle the full NPC list once; each NPC uses a different offset window
   // to sample cross-role info-ties — avoids O(N²) per-NPC shuffles.
   const shuffledAll = shuffle(npcs)
 
   for (const npc of npcs) {
-    // Candidates: same role (primary echo chamber) + a uniformly random cross-role sample
-    const sameRoleCandidates = (byRole[npc.role] ?? []).filter(c => c.id !== npc.id)
+    // Candidates: same role (primary echo chamber) + cross-role sample.
+    // cross_zone_ties = false restricts info ties to same-zone: under curfew/checkpoints,
+    // information can only flow within the local community (no digital/cross-district reach).
+    const sameRoleCandidates = (byRole[npc.role] ?? [])
+      .filter(c => c.id !== npc.id && (restrictions.cross_zone_ties || c.zone === npc.zone))
     // Cross-role: walk the pre-shuffled array from a per-NPC offset instead of re-shuffling
     const halfInfo = Math.ceil(infoTarget * 0.5)
     const crossRoleSample: NPC[] = []
     const offset = (npc.id * 7) % shuffledAll.length
     for (let k = 0; crossRoleSample.length < halfInfo && k < shuffledAll.length; k++) {
       const candidate = shuffledAll[(offset + k) % shuffledAll.length]
-      if (candidate.id !== npc.id && candidate.role !== npc.role) crossRoleSample.push(candidate)
+      if (candidate.id !== npc.id && candidate.role !== npc.role
+          && (restrictions.cross_zone_ties || candidate.zone === npc.zone))
+        crossRoleSample.push(candidate)
     }
 
     const infoCandidates = [...sameRoleCandidates, ...crossRoleSample]

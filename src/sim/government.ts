@@ -8,9 +8,9 @@ import { callAI, extractJSON } from '../ai/provider'
 import { addFeedRaw, addChronicle } from '../ui/feed'
 import { applyInterventions } from './engine'
 import { clamp } from './constitution'
-import { getLang, tf } from '../i18n'
+import { getLang, tf, type Lang } from '../i18n'
 import { getLatestHeadlines } from './press'
-import { describeAlert, noAlertsSummaryLine, pickRoutineMessage, getFallbackPolicy, getNPCPolicyReactionThought } from '../local/government'
+import { describeAlert, noAlertsSummaryLine, pickRoutineMessage, getFallbackPolicy, getNPCPolicyReactionThought, softerFallbackPolicyText, OPTION_LABELS, factionReactionMessage } from '../local/government'
 import type { PolicyStance, PolicyType } from '../local/government'
 import { showStoryCard } from '../ui/story-card'
 
@@ -149,14 +149,34 @@ const REGIME_STYLE: Record<RegimeType, string> = {
 
 // ── AI system prompt ──────────────────────────────────────────────────────────
 
-function buildGovernmentSystemPrompt(state: WorldState): string {
+function buildGovernmentSystemPrompt(state: WorldState, leaderNpc?: NPC): string {
   const c = state.constitution
   const regime = detectRegime(c)
   const langNote = getLang() === 'vi'
     ? 'All text fields (description, public_statement, policy_name) must be in Vietnamese.'
     : 'All text fields must be in English.'
 
-  return `You are the Governing Council of a society simulation.
+  // When human elections are enabled, personalise the prompt with the elected leader's profile
+  let leaderSection = ''
+  if (leaderNpc) {
+    const capitalDesc = (leaderNpc.capital ?? 0) > 50 ? 'major property owner'
+      : (leaderNpc.capital ?? 0) > 10 ? 'property owner' : 'working-class background'
+    const innerCircle = leaderNpc.strong_ties
+      .slice(0, 3)
+      .map(id => state.npcs[id]?.name ?? '?')
+      .filter(Boolean)
+      .join(', ') || 'none'
+    leaderSection = `You are ${leaderNpc.name}, the democratically elected leader.
+Background: ${leaderNpc.occupation}, age ${leaderNpc.age}, ${capitalDesc} (capital: ${(leaderNpc.capital ?? 0).toFixed(0)}/100).
+Worldview: collectivism ${(leaderNpc.worldview.collectivism * 100).toFixed(0)}% · authority-trust ${(leaderNpc.worldview.authority_trust * 100).toFixed(0)}% · risk-tolerance ${(leaderNpc.worldview.risk_tolerance * 100).toFixed(0)}%.
+Personal wealth: ${leaderNpc.wealth.toFixed(0)} coins. Grievance: ${Math.round(leaderNpc.grievance)}/100.
+Inner circle (strong ties): ${innerCircle}.
+Your decisions must reflect YOUR personal background, interests, and relationships — not just abstract ideology. A property-owning leader will resist land reform; a grieved working-class leader will champion redistribution.
+
+`
+  }
+
+  return `${leaderSection}You are the Governing Council of a society simulation.
 You observe social statistics and issue policy decisions every 15 days.
 
 YOUR GOVERNING STYLE: ${REGIME_STYLE[regime]}
@@ -458,18 +478,11 @@ function generateFallbackPolicy(state: WorldState, alerts: Alert[]): GovernmentP
 // ── Soft alternative policy (always deterministic) ───────────────────────────
 // Used as option B when the AI isn't available or as a contrast to a strong option A.
 
-function generateSofterFallback(primary: GovernmentPolicyAI, _regime: RegimeType, lang: string): GovernmentPolicyAI {
-  const isVi = lang === 'vi'
+function generateSofterFallback(primary: GovernmentPolicyAI, _regime: RegimeType, lang: Lang): GovernmentPolicyAI {
+  const text = softerFallbackPolicyText(lang)
   return {
-    option_label:       isVi ? 'Cải cách Dần dần' : 'Gradual Reform',
-    policy_name:        isVi ? 'Cải cách & Đối thoại' : 'Dialogue & Reform',
-    description:        isVi
-      ? 'Chính phủ lắng nghe nguyện vọng dân chúng, nhượng bộ dần và tái xây dựng niềm tin xã hội.'
-      : 'The government listens to citizen concerns, makes modest concessions, and rebuilds social trust.',
+    ...text,
     severity:           'important' as const,
-    public_statement:   isVi
-      ? 'Chúng tôi cam kết cải thiện từng bước — bởi lòng tin không thể áp đặt bằng sắc lệnh.'
-      : 'We commit to step-by-step improvement — because trust cannot be mandated by decree.',
     food_delta:         primary.food_delta     ? Math.round(primary.food_delta     * 0.55) : undefined,
     resource_delta:     primary.resource_delta ? Math.round(primary.resource_delta * 0.55) : undefined,
     npc_stress_delta:   -6,
@@ -487,7 +500,7 @@ function generateSofterFallback(primary: GovernmentPolicyAI, _regime: RegimeType
 function emitFactionReactions(state: WorldState, policy: GovernmentPolicyAI): void {
   const factions = state.factions?.filter(f => (f.power ?? 0) > 0.25)
   if (!factions || factions.length === 0) return
-  const isVi = getLang() === 'vi'
+  const lang = getLang()
   const VALUE_ICONS: Record<string, string> = { security: '🛡', equality: '⚖', freedom: '🗽', growth: '📈' }
 
   for (const faction of factions.slice(0, 3)) {
@@ -510,10 +523,7 @@ function emitFactionReactions(state: WorldState, policy: GovernmentPolicyAI): vo
 
     if (!stance) continue
     const icon = VALUE_ICONS[dv] ?? '◆'
-    const msg = isVi
-      ? `${icon} Phe ${faction.name} (${dv}): ${stance === 'supports' ? 'ủng hộ' : 'phản đối'} chính sách này`
-      : `${icon} ${faction.name} (${dv}): ${stance}s this policy`
-    addFeedRaw(msg, 'info', state.year, state.day)
+    addFeedRaw(factionReactionMessage(lang, icon, faction.name, dv, stance), 'info', state.year, state.day)
   }
 }
 
@@ -736,6 +746,7 @@ export async function runGovernmentCycle(
   state: WorldState,
   config: AIConfig | null,
   onPolicyChoice?: (options: [GovernmentPolicyAI, GovernmentPolicyAI]) => Promise<GovernmentPolicyAI>,
+  leaderNpc?: NPC,
 ): Promise<void> {
   if (_governmentBusy) return
   _governmentBusy = true
@@ -770,7 +781,7 @@ export async function runGovernmentCycle(
       }
 
       const optA = generateFallbackPolicy(state, alerts)
-      optA.option_label = lang === 'vi' ? 'Can thiệp Trực tiếp' : 'Direct Intervention'
+      optA.option_label = OPTION_LABELS.directIntervention(lang)
       const optB = generateSofterFallback(optA, detectRegime(state.constitution), lang)
 
       const policy = (alerts.length > 0 && onPolicyChoice)
@@ -832,16 +843,16 @@ export async function runGovernmentCycle(
     ].join('\n')
 
     try {
-      const raw = await callAI(config, buildGovernmentSystemPrompt(state), prompt)
+      const raw = await callAI(config, buildGovernmentSystemPrompt(state, leaderNpc), prompt)
       const parsed = JSON.parse(extractJSON(raw))
 
       // Accept both new {options:[...]} format and old flat-object fallback
       const options: GovernmentPolicyAI[] = Array.isArray(parsed.options) ? parsed.options : [parsed]
       const optA: GovernmentPolicyAI = options[0]
-      optA.option_label ??= lang === 'vi' ? 'Ổn định Ngay' : 'Stabilize Now'
+      optA.option_label ??= OPTION_LABELS.stabilizeNow(lang)
       const optB: GovernmentPolicyAI = options[1]
         ?? generateSofterFallback(optA, detectRegime(state.constitution), lang)
-      optB.option_label ??= lang === 'vi' ? 'Cải cách Dần dần' : 'Gradual Reform'
+      optB.option_label ??= OPTION_LABELS.gradualReform(lang)
 
       const policy = (alerts.length > 0 && onPolicyChoice)
         ? await onPolicyChoice([optA, optB])
@@ -859,7 +870,7 @@ export async function runGovernmentCycle(
       // AI call failed — deterministic fallback
       if (alerts.length > 0) {
         const optA = generateFallbackPolicy(state, alerts)
-        optA.option_label = lang === 'vi' ? 'Can thiệp Trực tiếp' : 'Direct Intervention'
+        optA.option_label = OPTION_LABELS.directIntervention(lang)
         const optB = generateSofterFallback(optA, detectRegime(state.constitution), lang)
 
         const policy = onPolicyChoice

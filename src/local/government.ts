@@ -810,6 +810,42 @@ export function getNPCPolicyReactionThought(
   return thought
 }
 
+// ── Softer fallback policy text ───────────────────────────────────────────────
+
+export function softerFallbackPolicyText(lang: Lang) {
+  return {
+    option_label:     pick(lang, { en: 'Gradual Reform',    vi: 'Cải cách Dần dần' }),
+    policy_name:      pick(lang, { en: 'Dialogue & Reform', vi: 'Cải cách & Đối thoại' }),
+    description:      pick(lang, {
+      en: 'The government listens to citizen concerns, makes modest concessions, and rebuilds social trust.',
+      vi: 'Chính phủ lắng nghe nguyện vọng dân chúng, nhượng bộ dần và tái xây dựng niềm tin xã hội.',
+    }),
+    public_statement: pick(lang, {
+      en: 'We commit to step-by-step improvement — because trust cannot be mandated by decree.',
+      vi: 'Chúng tôi cam kết cải thiện từng bước — bởi lòng tin không thể áp đặt bằng sắc lệnh.',
+    }),
+  }
+}
+
+// ── Option labels ─────────────────────────────────────────────────────────────
+
+export const OPTION_LABELS = {
+  directIntervention: (lang: Lang) => pick(lang, { en: 'Direct Intervention', vi: 'Can thiệp Trực tiếp' }),
+  stabilizeNow:       (lang: Lang) => pick(lang, { en: 'Stabilize Now',        vi: 'Ổn định Ngay' }),
+  gradualReform:      (lang: Lang) => pick(lang, { en: 'Gradual Reform',       vi: 'Cải cách Dần dần' }),
+}
+
+// ── Faction reaction message ──────────────────────────────────────────────────
+
+export function factionReactionMessage(lang: Lang, icon: string, name: string, dv: string, stance: 'supports' | 'opposes'): string {
+  return pick(lang, {
+    en: `${icon} ${name} (${dv}): ${stance}s this policy`,
+    vi: `${icon} Phe ${name} (${dv}): ${stance === 'supports' ? 'ủng hộ' : 'phản đối'} chính sách này`,
+  })
+}
+
+// ── Alert descriptions ────────────────────────────────────────────────────────
+
 export function describeAlert(lang: Lang, kind: 'food' | 'stability' | 'trust' | 'pressure' | 'resources' | 'labor_unrest', level: 'critical' | 'warning', pct: number): string {
   const p = Math.round(pct)
   if (lang === 'vi') {

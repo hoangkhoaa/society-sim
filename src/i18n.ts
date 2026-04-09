@@ -409,6 +409,50 @@ const translations = {
                       'Magistrate', 'Alderman', 'Tribune', 'Steward', 'Prefect'],
     'occ.child':     ['Child'],
 
+    // ── Regime-specific occupation variants ───────────────────────────────────
+    // Feudal
+    'occ.farmer.feudal':    ['Serf', 'Peasant', 'Bonded Farmer', 'Villein', 'Crofter', 'Bondman', 'Cottar'],
+    'occ.craftsman.feudal': ['Guild Artisan', 'Journeyman', 'Tradesman', 'Farrier', 'Cooper', 'Wheelwright', 'Tilemaker'],
+    'occ.merchant.feudal':  ['Peddler', 'Market Stallholder', 'Cloth Merchant', 'Spice Trader', 'Chandler', 'Draper'],
+    'occ.scholar.feudal':   ['Cleric', 'Friar', 'Scribe', 'Monk', 'Almoner', 'Parish Priest', 'Canon'],
+    'occ.guard.feudal':     ['Knight', 'Man-at-Arms', 'Archer', 'Crossbowman', 'Pikeman', 'Sentry', 'Squire'],
+    'occ.leader.feudal':    ['Lord', 'Baron', 'Vassal', 'Castellan', 'Seneschal', 'Margrave', 'Liege'],
+    // Theocracy
+    'occ.farmer.theocracy':    ['Temple Farmer', 'Parish Laborer', 'Tithe Payer', 'Lay Worker', 'Sacred Gardener'],
+    'occ.craftsman.theocracy': ['Temple Artisan', 'Sacred Mason', 'Icon Maker', 'Bell Founder', 'Candlemaker', 'Relic Carver'],
+    'occ.merchant.theocracy':  ['Offering Collector', 'Temple Merchant', 'Market Keeper', 'Trade Deacon', 'Tithe Agent'],
+    'occ.scholar.theocracy':   ['Priest', 'Deacon', 'Monk', 'Theologian', 'Inquisitor', 'Acolyte', 'Cleric', 'Bishop', 'Exorcist'],
+    'occ.guard.theocracy':     ['Temple Guard', 'Holy Warrior', 'Inquisitor Guard', 'Sacred Sentinel', 'Order Knight', 'Crusader'],
+    'occ.leader.theocracy':    ['High Priest', 'Archdeacon', 'Bishop', 'Canon', 'Grand Inquisitor', 'Elder Prophet'],
+    // Technocracy
+    'occ.farmer.technocracy':    ['Agri-Tech Operator', 'Hydroponic Farmer', 'Precision Farmer', 'Bio-Engineer', 'Lab Grower'],
+    'occ.craftsman.technocracy': ['Engineer', 'Technician', 'Programmer', 'Robotics Tech', 'Systems Engineer', 'DevOps Specialist'],
+    'occ.merchant.technocracy':  ['Entrepreneur', 'Venture Capitalist', 'Tech Broker', 'Platform Manager', 'IP Trader', 'Startup Founder'],
+    'occ.scholar.technocracy':   ['Data Scientist', 'AI Researcher', 'Systems Analyst', 'Policy Scientist', 'Research Engineer', 'Biotech Scientist'],
+    'occ.guard.technocracy':     ['Security Analyst', 'Drone Operator', 'Cyber Guard', 'Systems Monitor', 'Patrol Technician'],
+    'occ.leader.technocracy':    ['Director', 'Chief Analyst', 'Committee Chair', 'Policy Architect', 'Algorithm Lead', 'Science Council Head'],
+    // Warlord
+    'occ.farmer.warlord':    ['Conscript Farmer', 'Tribute Payer', 'Forager', 'Camp Laborer', 'Field Serf'],
+    'occ.craftsman.warlord': ['Armorer', 'Weapon Smith', 'Siege Engineer', 'Fortification Builder', 'Munitions Maker'],
+    'occ.merchant.warlord':  ['War Profiteer', 'Black Market Dealer', 'Loot Trader', 'Quartermaster', 'Supply Agent'],
+    'occ.scholar.warlord':   ['Strategist', 'Intelligence Officer', 'Propagandist', 'Field Medic', 'War Correspondent'],
+    'occ.guard.warlord':     ['Soldier', 'Fighter', 'Warrior', 'Militiaman', 'Conscript', 'Raider', 'Enforcer', 'Sniper'],
+    'occ.leader.warlord':    ['Warlord', 'General', 'Commander', 'War Chief', 'Colonel', 'Field Marshal', 'Chieftain'],
+    // Collective (commune / socialist / marxist)
+    'occ.farmer.collective':    ['Collective Worker', 'Brigade Member', 'State Farmer', 'Commune Farmer', 'Field Comrade'],
+    'occ.craftsman.collective': ['Factory Worker', 'State Artisan', 'Brigade Craftsman', 'Union Worker', 'Production Comrade'],
+    'occ.merchant.collective':  ['Distribution Officer', 'Supply Coordinator', 'Exchange Agent', 'Ration Manager', 'Procurement Worker'],
+    'occ.scholar.collective':   ["People's Teacher", 'State Scientist', 'Cultural Worker', 'Party Educator', 'Agitprop Officer'],
+    'occ.guard.collective':     ["People's Militia", 'State Guard', 'Party Security', 'Revolutionary Guard', 'Order Keeper'],
+    'occ.leader.collective':    ['Commissar', 'Party Secretary', 'Committee Chair', 'Collective Director', 'Cadre', 'Politburo Member'],
+    // Capitalist
+    'occ.farmer.capitalist':    ['Contract Farmer', 'Agribusiness Worker', 'Crop Specialist', 'Ranch Hand', 'Farm Operator'],
+    'occ.craftsman.capitalist': ['Factory Technician', 'Industrial Worker', 'Manufacturing Specialist', 'Production Worker', 'Contractor'],
+    'occ.merchant.capitalist':  ['Entrepreneur', 'Investor', 'Executive', 'Business Owner', 'Developer', 'Venture Capitalist', 'Broker'],
+    'occ.scholar.capitalist':   ['Consultant', 'Analyst', 'Legal Counsel', 'Financial Advisor', 'Market Researcher', 'Economist'],
+    'occ.guard.capitalist':     ['Private Security', 'Corporate Guard', 'Patrol Officer', 'Security Contractor', 'Bouncer'],
+    'occ.leader.capitalist':    ['CEO', 'Board Director', 'Corporate Chair', 'City Manager', 'Executive Director', 'Commissioner'],
+
     // Preset descriptions
     'preset.nordic_desc': 'Nordic social democracy — high equality, strong state, high social trust.',
     'preset.cap_desc':    'Free-market capitalism — self-regulating markets, high inequality, minimal state.',
@@ -437,6 +481,28 @@ const translations = {
     'const.hint_cohesion':  'How tightly-knit community networks are',
     'const.hint_scarcity':  'Natural resource pressure (high = harder survival)',
     'const.hint_values':    'The founding moral priorities of the society',
+
+    // Settings panel
+    'settings.title':                    '⚙ Settings',
+    'settings.tab_ai':                   '🤖 AI-Driven',
+    'settings.elections.label':          '🗳 Human-Driven Elections',
+    'settings.elections.desc':           'NPCs elect a real leader NPC. Their worldview biases all policy decisions.',
+    'settings.election_cycle.label':     'Election cycle (sim-days)',
+    'settings.gov_ai.label':             '🏛 Government AI Policy',
+    'settings.gov_ai.desc':              'LLM generates policy options every 15 days. Off → deterministic fallbacks.',
+    'settings.npc_thoughts.label':       '💭 NPC Thought Generation',
+    'settings.npc_thoughts.desc':        'LLM generates daily thoughts in spotlight. Off → template fallback.',
+    'settings.press_ai.label':           '📰 Press Headlines',
+    'settings.press_ai.desc':            'AI generates newspaper headlines every 5 days. Off → no AI headlines.',
+    'settings.consequence.label':        '🔮 Consequence Prediction',
+    'settings.consequence.desc':         'AI predicts ripple effects after events. Off → no predictions shown.',
+    'settings.regime_locked':            'Regime-locked',
+    'settings.enabled':                  'Enabled',
+    'settings.disabled':                 'Disabled',
+
+    // Election feed messages
+    'election.new_leader':   '🗳 Election: {name} ({occ}) wins with {pct}% of votes, replacing {prev}.',
+    'election.first_leader': '🗳 Election: {name} ({occ}) elected with {pct}% of votes.',
   },
 
   vi: {
@@ -848,6 +914,50 @@ const translations = {
                       'Quan tòa địa phương', 'Thị nghị viên', 'Đại biểu dân', 'Quản lý', 'Tri huyện'],
     'occ.child':     ['Trẻ em'],
 
+    // ── Biến thể nghề nghiệp theo chế độ ─────────────────────────────────────
+    // Phong kiến
+    'occ.farmer.feudal':    ['Nông nô', 'Tá điền', 'Dân cày thuê', 'Địa dịch nông', 'Người khai khẩn', 'Nông phu buộc'],
+    'occ.craftsman.feudal': ['Thợ phường hội', 'Thợ học nghề', 'Thợ thủ công phường', 'Thợ rèn làng', 'Thợ đóng xe', 'Thợ làm ngói'],
+    'occ.merchant.feudal':  ['Lái buôn rong', 'Người bán chợ phiên', 'Thương nhân vải', 'Con buôn gia vị', 'Thợ nến'],
+    'occ.scholar.feudal':   ['Tu sĩ', 'Thầy tu', 'Thư lại', 'Nhà sư', 'Cố đạo', 'Cha xứ', 'Giáo sĩ'],
+    'occ.guard.feudal':     ['Kỵ sĩ', 'Lính thương', 'Xạ thủ nỏ', 'Lính kích', 'Thị vệ', 'Giám thị', 'Cận vệ'],
+    'occ.leader.feudal':    ['Lãnh chúa', 'Nam tước', 'Chư hầu', 'Tổng quản lâu đài', 'Thái ấp chủ', 'Tầng lớp quý tộc'],
+    // Thần quyền
+    'occ.farmer.theocracy':    ['Nông dân đền thờ', 'Lao công giáo xứ', 'Người nộp thuế thập phân', 'Tu công', 'Người làm vườn thánh'],
+    'occ.craftsman.theocracy': ['Thợ thủ công đền thờ', 'Thợ xây thánh đường', 'Thợ làm biểu tượng', 'Thợ đúc chuông', 'Thợ làm nến'],
+    'occ.merchant.theocracy':  ['Người thu dâng lễ', 'Thương nhân đền', 'Người quản lý chợ', 'Phó tế thương mại', 'Đại lý thuế thập phân'],
+    'occ.scholar.theocracy':   ['Tăng lữ', 'Phó tế', 'Nhà sư', 'Thần học gia', 'Người thẩm tra dị giáo', 'Học viên', 'Giám mục', 'Giáo sĩ'],
+    'occ.guard.theocracy':     ['Lính canh đền', 'Chiến binh thánh', 'Cận vệ tòa án', 'Kỵ sĩ dòng tu', 'Chiến binh thập tự'],
+    'occ.leader.theocracy':    ['Thượng tế', 'Tổng giám mục', 'Giám mục trưởng', 'Giáo trưởng', 'Đại thẩm tra viên', 'Tiên tri'],
+    // Chuyên gia trị
+    'occ.farmer.technocracy':    ['Kỹ thuật viên nông nghiệp', 'Người trồng thủy canh', 'Nông dân chính xác', 'Kỹ sư sinh học'],
+    'occ.craftsman.technocracy': ['Kỹ sư', 'Kỹ thuật viên', 'Lập trình viên', 'Kỹ sư robot', 'Kỹ sư hệ thống', 'Chuyên gia DevOps'],
+    'occ.merchant.technocracy':  ['Doanh nhân', 'Nhà đầu tư mạo hiểm', 'Môi giới công nghệ', 'Quản lý nền tảng', 'Nhà sáng lập startup'],
+    'occ.scholar.technocracy':   ['Nhà khoa học dữ liệu', 'Nhà nghiên cứu AI', 'Chuyên viên phân tích', 'Nhà khoa học chính sách', 'Kỹ sư nghiên cứu'],
+    'occ.guard.technocracy':     ['Chuyên viên an ninh', 'Người điều khiển drone', 'Lính gác mạng', 'Giám sát hệ thống', 'Kỹ thuật viên tuần tra'],
+    'occ.leader.technocracy':    ['Giám đốc', 'Trưởng ban phân tích', 'Chủ tịch ủy ban', 'Kiến trúc sư chính sách', 'Trưởng thuật toán'],
+    // Quân phiệt
+    'occ.farmer.warlord':    ['Nông dân bị bắt lính', 'Người nộp cống', 'Người tìm lương thực', 'Lao công trại lính', 'Nông nô dã chiến'],
+    'occ.craftsman.warlord': ['Thợ rèn vũ khí', 'Thợ giáp sắt', 'Kỹ sư công thành', 'Thợ xây công sự', 'Thợ đạn dược'],
+    'occ.merchant.warlord':  ['Lái chiến lợi phẩm', 'Kẻ trục lợi chiến tranh', 'Đại lý tiếp tế', 'Quản lý kho hậu cần', 'Buôn chợ đen'],
+    'occ.scholar.warlord':   ['Chiến lược gia', 'Sĩ quan tình báo', 'Tuyên truyền viên', 'Y tá dã chiến', 'Phóng viên chiến tranh'],
+    'occ.guard.warlord':     ['Lính chiến', 'Chiến binh', 'Dân quân', 'Tân binh', 'Lính cưỡng chế', 'Lính đột kích', 'Người thi hành lệnh'],
+    'occ.leader.warlord':    ['Quân phiệt', 'Tướng lĩnh', 'Chỉ huy', 'Thủ lĩnh chiến', 'Đại tá', 'Nguyên soái', 'Thủ lĩnh bộ lạc'],
+    // Tập thể (công xã / xã hội chủ nghĩa / marxist)
+    'occ.farmer.collective':    ['Công nhân tập thể', 'Thành viên lữ đoàn', 'Nông dân nhà nước', 'Nông dân công xã', 'Đồng chí đồng ruộng'],
+    'occ.craftsman.collective': ['Công nhân nhà máy', 'Thợ thủ công nhà nước', 'Thợ lữ đoàn', 'Thợ công đoàn', 'Đồng chí sản xuất'],
+    'occ.merchant.collective':  ['Cán bộ phân phối', 'Điều phối viên cung ứng', 'Đại lý trao đổi', 'Quản lý phân khẩu', 'Công nhân thu mua'],
+    'occ.scholar.collective':   ['Giáo viên nhân dân', 'Nhà khoa học nhà nước', 'Công tác viên văn hóa', 'Giáo dục viên đảng', 'Cán bộ tuyên giáo'],
+    'occ.guard.collective':     ['Dân quân nhân dân', 'Lính bảo vệ nhà nước', 'An ninh đảng', 'Vệ binh cách mạng', 'Trật tự viên'],
+    'occ.leader.collective':    ['Chính ủy', 'Bí thư đảng', 'Chủ tịch ủy ban', 'Giám đốc tập thể', 'Cán bộ', 'Ủy viên bộ chính trị'],
+    // Tư bản
+    'occ.farmer.capitalist':    ['Nông dân hợp đồng', 'Công nhân nông nghiệp', 'Chuyên gia cây trồng', 'Người vận hành trang trại'],
+    'occ.craftsman.capitalist': ['Kỹ thuật viên nhà máy', 'Công nhân công nghiệp', 'Chuyên gia sản xuất', 'Nhà thầu', 'Công nhân dây chuyền'],
+    'occ.merchant.capitalist':  ['Doanh nhân', 'Nhà đầu tư', 'Giám đốc điều hành', 'Chủ doanh nghiệp', 'Nhà phát triển', 'Nhà tư bản mạo hiểm'],
+    'occ.scholar.capitalist':   ['Tư vấn viên', 'Chuyên viên phân tích', 'Luật sư tư vấn', 'Cố vấn tài chính', 'Nhà nghiên cứu thị trường'],
+    'occ.guard.capitalist':     ['Bảo vệ tư nhân', 'Lính gác công ty', 'Nhà thầu bảo mật', 'Tuần tra viên', 'Bảo vệ sự kiện'],
+    'occ.leader.capitalist':    ['Giám đốc', 'Thành viên hội đồng quản trị', 'Chủ tịch công ty', 'Quản lý thành phố', 'Giám đốc điều hành'],
+
     // Preset descriptions
     'preset.nordic_desc': 'Dân chủ xã hội Bắc Âu — bình đẳng cao, nhà nước mạnh, tin tưởng cao.',
     'preset.cap_desc':    'Tư bản tự do — thị trường tự quyết, bất bình đẳng cao, nhà nước tối thiểu.',
@@ -876,6 +986,28 @@ const translations = {
     'const.hint_cohesion':  'Mức độ gắn kết trong mạng lưới cộng đồng',
     'const.hint_scarcity':  'Áp lực tài nguyên thiên nhiên (cao = sống còn khó hơn)',
     'const.hint_values':    'Ưu tiên đạo đức khi lập quốc',
+
+    // Settings panel
+    'settings.title':                    '⚙ Cài đặt',
+    'settings.tab_ai':                   '🤖 AI-Driven',  // English term used as-is in Vietnamese tech context
+    'settings.elections.label':          '🗳 Bầu cử nhân vật',
+    'settings.elections.desc':           'NPCs bầu lãnh đạo thực sự. Worldview của người thắng ảnh hưởng chính sách.',
+    'settings.election_cycle.label':     'Chu kỳ bầu cử (ngày)',
+    'settings.gov_ai.label':             '🏛 AI Chính sách',
+    'settings.gov_ai.desc':              'LLM tạo 2 lựa chọn chính sách mỗi 15 ngày. Tắt → dùng template cố định.',
+    'settings.npc_thoughts.label':       '💭 Suy nghĩ NPC',
+    'settings.npc_thoughts.desc':        'LLM tạo suy nghĩ hàng ngày khi click NPC. Tắt → dùng template.',
+    'settings.press_ai.label':           '📰 Báo chí AI',
+    'settings.press_ai.desc':            'AI tạo tiêu đề báo mỗi 5 ngày. Tắt → không có tin tức AI.',
+    'settings.consequence.label':        '🔮 Dự đoán hậu quả',
+    'settings.consequence.desc':         'AI dự đoán tác động lan truyền sau sự kiện. Tắt → không có dự đoán.',
+    'settings.regime_locked':            'Khóa bởi chế độ',
+    'settings.enabled':                  'Bật',
+    'settings.disabled':                 'Tắt',
+
+    // Election feed messages
+    'election.new_leader':   '🗳 Bầu cử: {name} ({occ}) thắng với {pct}% phiếu, thay thế {prev}.',
+    'election.first_leader': '🗳 Bầu cử: {name} ({occ}) được bầu với {pct}% phiếu.',
   },
 } as const
 
@@ -983,4 +1115,17 @@ export function tOcc(roleKey: string): string {
   const list = t(roleKey)
   if (Array.isArray(list)) return list[Math.floor(Math.random() * list.length)]
   return String(list)
+}
+
+/**
+ * Get a regime-flavoured occupation string.
+ * Tries 'occ.{role}.{variant}' first; falls back to 'occ.{role}'.
+ */
+export function tOccVariant(role: string, variant: string): string {
+  if (variant && variant !== 'default') {
+    const variantList = t(`occ.${role}.${variant}`)
+    if (Array.isArray(variantList))
+      return variantList[Math.floor(Math.random() * variantList.length)]
+  }
+  return tOcc(`occ.${role}`)
 }

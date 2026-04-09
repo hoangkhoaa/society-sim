@@ -60,9 +60,10 @@ export function addFeedRaw(
   severity: FeedSeverity = 'info',
   year = 1,
   day = 1,
-) {
+): string {
+  const id = crypto.randomUUID()
   addFeedEntry({
-    id: crypto.randomUUID(),
+    id,
     tick: 0,
     day,
     year,
@@ -72,6 +73,21 @@ export function addFeedRaw(
     related_npc_ids: [],
     related_zones: [],
   })
+  return id
+}
+
+/**
+ * Visually censor a feed entry — strikes through its text and appends a redaction note.
+ * Called after a delay to simulate government monitoring → removal order.
+ */
+export function censorFeedEntry(id: string, note: string): void {
+  const el = log.querySelector(`[data-id="${CSS.escape(id)}"]`) as HTMLElement | null
+  if (!el || el.classList.contains('press-censored')) return
+  el.classList.add('press-censored')
+  const textEl = el.querySelector('.feed-text') as HTMLElement | null
+  if (!textEl) return
+  // Wrap existing content in a struck-through span, then append the redaction note
+  textEl.innerHTML = `<span class="press-censored-text">${textEl.innerHTML}</span><div class="press-censored-note">${note}</div>`
 }
 
 export function addFeedThinking(text = 'Processing...') {
