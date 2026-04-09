@@ -2,7 +2,7 @@
 // Self-contained module: manages GameSettings state, renders the panel, and
 // provides getSettings() for other modules to read current preferences.
 
-import { getLang } from '../i18n'
+import { t } from '../i18n'
 import type { RegimeProfile } from '../sim/regime-config'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -98,8 +98,6 @@ let _activeTab: 'ai_driven' = 'ai_driven'
 // ── Render ─────────────────────────────────────────────────────────────────────
 
 function renderPanel(): void {
-  const vi = getLang() === 'vi'
-
   const regimeLabel = _regimeVariant !== 'default'
     ? `<div class="stg-regime-badge">${_regimeVariant}</div>`
     : ''
@@ -108,7 +106,7 @@ function renderPanel(): void {
     ${regimeLabel}
     <div class="stg-tabs">
       <button class="stg-tab ${_activeTab === 'ai_driven' ? 'active' : ''}" data-tab="ai_driven">
-        ${vi ? '🤖 AI-Driven' : '🤖 AI-Driven'}
+        ${t('settings.tab_ai')}
       </button>
     </div>
 
@@ -117,16 +115,15 @@ function renderPanel(): void {
 
       ${renderToggleRow(
         'enable_human_elections',
-        vi ? '🗳 Bầu cử nhân vật' : '🗳 Human-Driven Elections',
-        vi ? 'NPCs bầu lãnh đạo thực sự. Worldview của người thắng ảnh hưởng chính sách.'
-           : 'NPCs elect a real leader NPC. Their worldview biases all policy decisions.',
+        t('settings.elections.label') as string,
+        t('settings.elections.desc') as string,
         _settings.enable_human_elections,
         _lockedFeatures.has('enable_human_elections'),
       )}
 
       ${_settings.enable_human_elections ? renderNumberRow(
         'election_cycle_days',
-        vi ? 'Chu kỳ bầu cử (ngày)' : 'Election cycle (sim-days)',
+        t('settings.election_cycle.label') as string,
         _settings.election_cycle_days,
         30, 360,
       ) : ''}
@@ -135,36 +132,32 @@ function renderPanel(): void {
 
       ${renderToggleRow(
         'enable_government_ai',
-        vi ? '🏛 AI Chính sách' : '🏛 Government AI Policy',
-        vi ? 'LLM tạo 2 lựa chọn chính sách mỗi 15 ngày. Tắt → dùng template cố định.'
-           : 'LLM generates policy options every 15 days. Off → deterministic fallbacks.',
+        t('settings.gov_ai.label') as string,
+        t('settings.gov_ai.desc') as string,
         _settings.enable_government_ai,
         _lockedFeatures.has('enable_government_ai'),
       )}
 
       ${renderToggleRow(
         'enable_npc_thoughts',
-        vi ? '💭 Suy nghĩ NPC' : '💭 NPC Thought Generation',
-        vi ? 'LLM tạo suy nghĩ hàng ngày khi click NPC. Tắt → dùng template.'
-           : 'LLM generates daily thoughts in spotlight. Off → template fallback.',
+        t('settings.npc_thoughts.label') as string,
+        t('settings.npc_thoughts.desc') as string,
         _settings.enable_npc_thoughts,
         _lockedFeatures.has('enable_npc_thoughts'),
       )}
 
       ${renderToggleRow(
         'enable_press_ai',
-        vi ? '📰 Báo chí AI' : '📰 Press Headlines',
-        vi ? 'AI tạo tiêu đề báo mỗi 5 ngày. Tắt → không có tin tức AI.'
-           : 'AI generates newspaper headlines every 5 days. Off → no AI headlines.',
+        t('settings.press_ai.label') as string,
+        t('settings.press_ai.desc') as string,
         _settings.enable_press_ai,
         _lockedFeatures.has('enable_press_ai'),
       )}
 
       ${renderToggleRow(
         'enable_consequence_prediction',
-        vi ? '🔮 Dự đoán hậu quả' : '🔮 Consequence Prediction',
-        vi ? 'AI dự đoán tác động lan truyền sau sự kiện. Tắt → không có dự đoán.'
-           : 'AI predicts ripple effects after events. Off → no predictions shown.',
+        t('settings.consequence.label') as string,
+        t('settings.consequence.desc') as string,
         _settings.enable_consequence_prediction,
         _lockedFeatures.has('enable_consequence_prediction'),
       )}
@@ -206,17 +199,18 @@ function clampNum(v: number, lo: number, hi: number): number {
 }
 
 function renderToggleRow(key: string, label: string, desc: string, value: boolean, locked = false): string {
-  const lockIcon = locked ? ' 🔒' : ''
-  const lockTitle = locked ? ' (locked by regime)' : ''
+  const lockIcon  = locked ? ' 🔒' : ''
+  const lockLabel = locked ? t('settings.regime_locked') as string : ''
+  const stateLabel = value ? t('settings.enabled') as string : t('settings.disabled') as string
   return `
     <div class="stg-row${locked ? ' stg-row-locked' : ''}">
       <div class="stg-row-info">
         <div class="stg-row-label">${label}${lockIcon}</div>
-        <div class="stg-row-desc">${desc}${locked ? `<br><em style="color:#553;font-style:normal">Regime-locked${lockTitle}</em>` : ''}</div>
+        <div class="stg-row-desc">${desc}${locked ? `<br><em style="color:#553;font-style:normal">${lockLabel}</em>` : ''}</div>
       </div>
       <div class="stg-toggle ${value ? 'on' : 'off'}${locked ? ' stg-toggle-locked' : ''}"
            data-toggle="${key}" data-locked="${locked ? '1' : '0'}"
-           title="${value ? 'Enabled' : 'Disabled'}${lockTitle}">
+           title="${stateLabel}${locked ? ` (${lockLabel})` : ''}">
         <div class="stg-toggle-knob"></div>
       </div>
     </div>`

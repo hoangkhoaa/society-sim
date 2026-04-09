@@ -2773,8 +2773,8 @@ export function runElection(state: WorldState): NPC | null {
   const winPct     = Math.round((votes[winner.id] / Math.max(totalVotes, 1)) * 100)
 
   const msg = prevLeader && prevLeader.id !== winner.id
-    ? `🗳 Election: ${winner.name} (${winner.occupation}) wins with ${winPct}% of votes, replacing ${prevLeader.name}.`
-    : `🗳 Election: ${winner.name} (${winner.occupation}) elected with ${winPct}% of votes.`
+    ? tf('election.new_leader', { name: winner.name, occ: winner.occupation, pct: winPct, prev: prevLeader.name })
+    : tf('election.first_leader', { name: winner.name, occ: winner.occupation, pct: winPct })
   addChronicle(msg, state.year, state.day, 'major')
   addFeedRaw(msg, 'info', state.year, state.day)
 

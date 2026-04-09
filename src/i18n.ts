@@ -481,6 +481,28 @@ const translations = {
     'const.hint_cohesion':  'How tightly-knit community networks are',
     'const.hint_scarcity':  'Natural resource pressure (high = harder survival)',
     'const.hint_values':    'The founding moral priorities of the society',
+
+    // Settings panel
+    'settings.title':                    '⚙ Settings',
+    'settings.tab_ai':                   '🤖 AI-Driven',
+    'settings.elections.label':          '🗳 Human-Driven Elections',
+    'settings.elections.desc':           'NPCs elect a real leader NPC. Their worldview biases all policy decisions.',
+    'settings.election_cycle.label':     'Election cycle (sim-days)',
+    'settings.gov_ai.label':             '🏛 Government AI Policy',
+    'settings.gov_ai.desc':              'LLM generates policy options every 15 days. Off → deterministic fallbacks.',
+    'settings.npc_thoughts.label':       '💭 NPC Thought Generation',
+    'settings.npc_thoughts.desc':        'LLM generates daily thoughts in spotlight. Off → template fallback.',
+    'settings.press_ai.label':           '📰 Press Headlines',
+    'settings.press_ai.desc':            'AI generates newspaper headlines every 5 days. Off → no AI headlines.',
+    'settings.consequence.label':        '🔮 Consequence Prediction',
+    'settings.consequence.desc':         'AI predicts ripple effects after events. Off → no predictions shown.',
+    'settings.regime_locked':            'Regime-locked',
+    'settings.enabled':                  'Enabled',
+    'settings.disabled':                 'Disabled',
+
+    // Election feed messages
+    'election.new_leader':   '🗳 Election: {name} ({occ}) wins with {pct}% of votes, replacing {prev}.',
+    'election.first_leader': '🗳 Election: {name} ({occ}) elected with {pct}% of votes.',
   },
 
   vi: {
@@ -964,6 +986,28 @@ const translations = {
     'const.hint_cohesion':  'Mức độ gắn kết trong mạng lưới cộng đồng',
     'const.hint_scarcity':  'Áp lực tài nguyên thiên nhiên (cao = sống còn khó hơn)',
     'const.hint_values':    'Ưu tiên đạo đức khi lập quốc',
+
+    // Settings panel
+    'settings.title':                    '⚙ Cài đặt',
+    'settings.tab_ai':                   '🤖 AI-Driven',  // English term used as-is in Vietnamese tech context
+    'settings.elections.label':          '🗳 Bầu cử nhân vật',
+    'settings.elections.desc':           'NPCs bầu lãnh đạo thực sự. Worldview của người thắng ảnh hưởng chính sách.',
+    'settings.election_cycle.label':     'Chu kỳ bầu cử (ngày)',
+    'settings.gov_ai.label':             '🏛 AI Chính sách',
+    'settings.gov_ai.desc':              'LLM tạo 2 lựa chọn chính sách mỗi 15 ngày. Tắt → dùng template cố định.',
+    'settings.npc_thoughts.label':       '💭 Suy nghĩ NPC',
+    'settings.npc_thoughts.desc':        'LLM tạo suy nghĩ hàng ngày khi click NPC. Tắt → dùng template.',
+    'settings.press_ai.label':           '📰 Báo chí AI',
+    'settings.press_ai.desc':            'AI tạo tiêu đề báo mỗi 5 ngày. Tắt → không có tin tức AI.',
+    'settings.consequence.label':        '🔮 Dự đoán hậu quả',
+    'settings.consequence.desc':         'AI dự đoán tác động lan truyền sau sự kiện. Tắt → không có dự đoán.',
+    'settings.regime_locked':            'Khóa bởi chế độ',
+    'settings.enabled':                  'Bật',
+    'settings.disabled':                 'Tắt',
+
+    // Election feed messages
+    'election.new_leader':   '🗳 Bầu cử: {name} ({occ}) thắng với {pct}% phiếu, thay thế {prev}.',
+    'election.first_leader': '🗳 Bầu cử: {name} ({occ}) được bầu với {pct}% phiếu.',
   },
 } as const
 
