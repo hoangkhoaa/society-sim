@@ -35,6 +35,12 @@ function buildSystemPrompt(npc: NPC, state: WorldState): string {
       ? `rents capital, pays ${Math.round(npc.capital_rent_paid ?? 0)} coins/tick`
       : 'landless/no capital'
 
+  const activeEventsSummary = state.active_events.length > 0
+    ? state.active_events.map(e =>
+        `[${e.type}] "${e.narrative_open}" (intensity ${Math.round(e.intensity * 100)}%)`
+      ).join('\n  ')
+    : 'none'
+
   return `You are ${npc.name}, a ${npc.occupation} (age ${npc.age}, ${npc.gender}) living in a ${regime} society.
 
 PERSONALITY:
@@ -51,7 +57,8 @@ ${npc.criminal_record ? '- Has a criminal record' : ''}
 
 RECENT MEMORIES: ${recentMem}
 WORLD: stability ${Math.round(state.macro.stability)}%, food ${Math.round(state.macro.food)}%, gini ${state.macro.gini.toFixed(2)}
-Active crises: ${state.active_events.map(e => e.type).join(', ') || 'none'}
+ACTIVE WORLD EVENTS:
+  ${activeEventsSummary}
 
 Respond as ${npc.name} in first person. Stay in character — reflect your stress, grievance, and worldview in your tone. 2–4 sentences max. No meta-commentary.
 
@@ -82,9 +89,19 @@ export async function handleNPCChat(
   const raw = await callAI(config, buildSystemPrompt(npc, state), prompt, 256)
 
   try {
-    const json = JSON.parse(extractJSON(raw))
-    return { text: String(json.text ?? raw.trim()).slice(0, 400), effect: json.effect }
+    const jsonStr = extractJSON(raw)
+    const json = JSON.parse(jsonStr)
+    // If the AI responded with just {"effect":{...}} without a "text" field,
+    // strip the JSON blob from the raw string to get the spoken text.
+    if (json.text != null) {
+      return { text: String(json.text).slice(0, 400), effect: json.effect }
+    }
+    // Fallback: remove the JSON blob from the raw response
+    const textOnly = raw.replace(jsonStr, '').trim().replace(/^["']|["']$/g, '').trim()
+    return { text: (textOnly || raw.trim()).slice(0, 400), effect: json.effect }
   } catch {
-    return { text: raw.trim().slice(0, 400) }
+    // Strip any JSON-like suffix from plain text responses
+    const cleaned = raw.replace(/\{[\s\S]*\}$/, '').trim()
+    return { text: (cleaned || raw.trim()).slice(0, 400) }
   }
 }

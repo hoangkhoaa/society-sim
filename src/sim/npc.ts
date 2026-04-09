@@ -529,8 +529,12 @@ export function tickNPC(npc: NPC, state: WorldState, events: IndividualEvent[] |
   }
   npc.stress    = computeStress(npc)
   npc.happiness = computeHappiness(npc, state)
-  updateGrievance(npc, state)
-  updateWorldview(npc, state)
+  // Sleeping NPCs don't process social grievances or worldview drift —
+  // these only shift during waking hours when NPCs experience the world.
+  if (npc.action_state !== 'resting') {
+    updateGrievance(npc, state)
+    updateWorldview(npc, state)
+  }
   applyResistanceBehavior(npc, state, eventFlags)
   npc.action_state = selectAction(npc, state)
   updateZone(npc, state)
@@ -940,7 +944,12 @@ function selectAction(npc: NPC, state: WorldState): ActionState {
   // Children lack political agency; guards/leaders ARE the state apparatus.
   if (!ROLE_CONFIG[npc.role].can_protest) return normalRoutine(npc, state)
 
-  if (npc.stress < npc.stress_threshold) return normalRoutine(npc, state)
+  // Sleep override: if normalRoutine says resting (sleep hours), always sleep —
+  // even stressed NPCs must rest at night; political action happens while awake.
+  const routineState = normalRoutine(npc, state)
+  if (routineState === 'resting') return 'resting'
+
+  if (npc.stress < npc.stress_threshold) return routineState
 
   const govTrust = (npc.trust_in.government.competence + npc.trust_in.government.intention) / 2
   const guardInst = state.institutions.find(i => i.id === 'guard')

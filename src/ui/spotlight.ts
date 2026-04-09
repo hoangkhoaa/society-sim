@@ -186,7 +186,7 @@ function renderChatPanel(npc: NPC): string {
       <div class="sp-section-title">💬 Talk to ${npc.name}</div>
       <div class="sp-chat-thread" id="sp-chat-thread"></div>
       <div class="sp-chat-input-row">
-        <button id="sp-chat-ai-toggle" class="btn-icon sp-chat-ai-btn" title="Toggle AI responses"></button>
+        <button id="sp-chat-ai-toggle" class="btn-icon sp-chat-ai-btn" title="Toggle AI responses">🤖 <span class="sp-ai-label">AI ON</span></button>
         <input type="text" id="sp-chat-input" class="sp-chat-input" placeholder="Say something..." maxlength="200" />
         <button id="sp-chat-send" class="btn-icon sp-chat-send-btn">→</button>
       </div>
@@ -279,7 +279,7 @@ export async function openSpotlight(npc: NPC, state: WorldState, config: AIConfi
 
     const updateAIToggle = () => {
       if (!aiToggle) return
-      aiToggle.textContent = _useAI ? '🤖' : '💬'
+      aiToggle.innerHTML = _useAI ? '🤖 <span class="sp-ai-label">AI ON</span>' : '💬 <span class="sp-ai-label">AI OFF</span>'
       aiToggle.title = _useAI ? 'AI responses ON — click to use scripted replies' : 'AI responses OFF — click to use AI'
       aiToggle.classList.toggle('sp-chat-ai-off', !_useAI)
     }
@@ -307,6 +307,25 @@ export async function openSpotlight(npc: NPC, state: WorldState, config: AIConfi
         thinkEl.innerHTML = `<b>${escapeHtml(_chatNpc.name)}:</b> <em>...</em>`
         chatThread.appendChild(thinkEl)
         chatThread.scrollTop = chatThread.scrollHeight
+
+        // If NPC is sleeping, respond without AI
+        if (_chatNpc.action_state === 'resting') {
+          const sleepResponses = [
+            `*mumbles sleepily* ...${_chatNpc.name} is fast asleep.`,
+            `*no response* — ${_chatNpc.name} is sleeping.`,
+            `*groans* ...let me sleep...`,
+            `*turns over* Zzz...`,
+          ]
+          const replyText = sleepResponses[Math.floor(Math.random() * sleepResponses.length)]
+          turns.push({ speaker: 'npc', text: replyText })
+          npcChatHistories.set(_chatNpc.id, turns.slice(-20))
+          thinkEl.remove()
+          renderNPCChatThread(turns, _chatNpc.name, sideBody)
+          chatSend.disabled  = false
+          chatInput.disabled = false
+          chatInput.focus()
+          return
+        }
 
         let replyText: string
         if (_useAI && _chatConfig) {
@@ -560,6 +579,23 @@ function renderStatic(npc: NPC, state: WorldState): string {
     <!-- Status bars -->
     <div class="sp-section">
       <div class="sp-section-title">${t('sp.status')}</div>
+      ${(() => {
+        const actionState = npc.action_state
+        const actionEmoji: Record<string, string> = {
+          working: '⚒️', resting: '😴', socializing: '💬', organizing: '✊',
+          fleeing: '🏃', complying: '🫡', confront: '⚠️',
+        }
+        const actionColor: Record<string, string> = {
+          working: '#c0a0ff', resting: '#7f77dd', socializing: '#5dcaa5', organizing: '#ef9f27',
+          fleeing: '#e24b4b', complying: '#378add', confront: '#ff6b35',
+        }
+        const em    = actionEmoji[actionState] ?? '❓'
+        const color = actionColor[actionState] ?? '#aaa'
+        return `<div class="sp-row">
+          <span class="sp-label">Current activity</span>
+          <span class="sp-value" style="color:${color}">${em} ${actionState}</span>
+        </div>`
+      })()}
       ${statBar(t('sp.stress')     as string, npc.stress,      '#e24b4b')}
       ${statBar(t('sp.happiness')  as string, npc.happiness,   '#5dcaa5')}
       ${statBar(t('sp.grievance')  as string, npc.grievance,   '#ef9f27')}
