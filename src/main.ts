@@ -4,7 +4,7 @@ import { setupGreeting, setupChat, applyPreset, handlePlayerChat, resetInGameHis
 import { listAvailableModels, PROVIDER_MODELS, getAIUsage, getRemainingRPM, getWaitSeconds, initKeyRing } from './ai/provider'
 import { addFeedRaw, addFeedThinking, setFeedFilter, setChronicleFilter, refreshChronicleTimestamps } from './ui/feed'
 import { showConfirm, showInfo, showPolicyChoice, type PolicyDisplayCard } from './ui/modal'
-import { initWorld, tick, spawnEvent, applyInterventions, applyInstantEventDeaths, getIncomeTaxRate } from './sim/engine'
+import { initWorld, tick, spawnEvent, applyInterventions, applyInstantEventDeaths, getIncomeTaxRate, MIN_NPC_COUNT } from './sim/engine'
 import {
   setLang,
   t,
@@ -172,6 +172,7 @@ const providerSelect = document.getElementById('provider-select') as HTMLSelectE
 const modelSelect    = document.getElementById('model-select') as HTMLSelectElement
 const tokenModeSelect = document.getElementById('token-mode-select') as HTMLSelectElement
 const rpmLimitInput  = document.getElementById('rpm-limit-input') as HTMLInputElement
+const npcCountInput  = document.getElementById('npc-count-input') as HTMLInputElement
 const onboardingErr  = document.getElementById('onboarding-error')!
 
 let onboardingModelsReady = false
@@ -509,7 +510,8 @@ async function startGame(constitution: Constitution) {
 
   try {
   // initWorld is now async — it yields every 50 NPCs so the UI stays responsive
-  world = await initWorld(constitution)
+  const npcCount = Math.max(MIN_NPC_COUNT, parseInt(npcCountInput?.value || '500', 10) || MIN_NPC_COUNT)
+  world = await initWorld(constitution, npcCount)
   peakPopulation = countLivingNpcs(world)
 
   // Apply regime-specific defaults, locked features, and sim restrictions

@@ -16,6 +16,8 @@ const translations = {
     'onboarding.model':         'Model',
     'onboarding.model_placeholder': '— Load models after entering your key —',
     'onboarding.token_mode':    'Token mode',
+    'onboarding.npc_count':     'Starting population (NPCs)',
+    'onboarding.npc_count_hint': 'Minimum 500. More NPCs = richer simulation but slower performance.',
     'onboarding.rpm_limit':     'Rate limit (RPM)',
     'onboarding.rpm_limit_ph':  'Requests per minute (0 = unlimited)',
     'onboarding.rpm_hint':
@@ -522,6 +524,8 @@ const translations = {
     'onboarding.model':         'Model',
     'onboarding.model_placeholder': '— Nhập key rồi bấm tải danh sách model —',
     'onboarding.token_mode':    'Chế độ token',
+    'onboarding.npc_count':     'Dân số ban đầu (NPC)',
+    'onboarding.npc_count_hint': 'Tối thiểu 500. Nhiều NPC hơn = mô phỏng phong phú hơn nhưng chậm hơn.',
     'onboarding.rpm_limit':     'Giới hạn tốc độ (RPM)',
     'onboarding.rpm_limit_ph':  'Số request mỗi phút (0 = không giới hạn)',
     'onboarding.rpm_hint':
