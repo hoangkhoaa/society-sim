@@ -738,6 +738,11 @@ export async function runGovernmentCycle(
   onPolicyChoice?: (options: [GovernmentPolicyAI, GovernmentPolicyAI]) => Promise<GovernmentPolicyAI>,
   leaderNpc?: NPC,
 ): Promise<void> {
+  // Government cannot function when society is in collapse or critical phase
+  if (state.collapse_phase !== 'normal') return
+  const livingCount = state.npcs.filter(n => n.lifecycle.is_alive).length
+  if (livingCount < 20) return
+
   if (_governmentBusy) return
   _governmentBusy = true
 

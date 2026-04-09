@@ -13,7 +13,7 @@ import {
   getStoredLangPreference,
   isSupportedLang,
 } from './i18n'
-import { initMap, setMapPaused, setMapLegendVisible } from './ui/map'
+import { initMap, setMapPaused, setMapLegendVisible, triggerMapShake } from './ui/map'
 import { resetNPCChatHistories, registerSpotlightCallbacks } from './ui/spotlight'
 import { runGovernmentCycle, detectRegime, type GovernmentPolicyAI } from './sim/government'
 import { checkPressTrigger, resetPressRuntimeState } from './sim/press'
@@ -868,6 +868,66 @@ function countLivingNpcs(w: WorldState): number {
   return c
 }
 
+// ── Achievements ───────────────────────────────────────────────────────────
+
+interface AchievementDef {
+  id: string       // e.g. 'day100'
+  dayThreshold: number
+  titleKey: string
+  descKey: string
+}
+
+const ACHIEVEMENT_DEFS: AchievementDef[] = [
+  { id: 'day100', dayThreshold: 100,       titleKey: 'achievement.day100.title', descKey: 'achievement.day100.desc' },
+  { id: 'year1',  dayThreshold: 360,       titleKey: 'achievement.year1.title',  descKey: 'achievement.year1.desc'  },
+  { id: 'year3',  dayThreshold: 360 * 3,   titleKey: 'achievement.year3.title',  descKey: 'achievement.year3.desc'  },
+  { id: 'year5',  dayThreshold: 360 * 5,   titleKey: 'achievement.year5.title',  descKey: 'achievement.year5.desc'  },
+  { id: 'year10', dayThreshold: 360 * 10,  titleKey: 'achievement.year10.title', descKey: 'achievement.year10.desc' },
+]
+
+function showAchievementToast(def: AchievementDef) {
+  const container = document.getElementById('achievement-toast-container')
+  if (!container) return
+
+  const titleText = t(def.titleKey) as string
+  const descText  = t(def.descKey) as string
+  // Extract icon (first grapheme cluster — typically an emoji)
+  const icon = [...titleText][0] ?? '🏅'
+  // Title without the leading icon
+  const titleBody = titleText.slice([...titleText][0]?.length ?? 1).trim()
+
+  const toast = document.createElement('div')
+  toast.className = 'achievement-toast'
+  toast.innerHTML = `
+    <div class="achievement-toast-icon">${icon}</div>
+    <div class="achievement-toast-body">
+      <div class="achievement-toast-label">${t('achievement.toast_new') as string}</div>
+      <div class="achievement-toast-title">${titleBody}</div>
+      <div class="achievement-toast-desc">${descText}</div>
+    </div>`
+  container.appendChild(toast)
+
+  // Auto-dismiss after 5 s with slide-out animation
+  setTimeout(() => {
+    toast.classList.add('hiding')
+    toast.addEventListener('animationend', () => toast.remove(), { once: true })
+  }, 5000)
+}
+
+function checkAchievements(w: WorldState) {
+  const totalDays = (w.year - 1) * 360 + w.day
+  for (const def of ACHIEVEMENT_DEFS) {
+    if (totalDays >= def.dayThreshold && !w.stats.achieved_days.includes(def.dayThreshold)) {
+      w.stats.achieved_days.push(def.dayThreshold)
+      showAchievementToast(def)
+      addFeedRaw(
+        `🏅 ${t(def.titleKey)}`,
+        'info', w.year, w.day,
+      )
+    }
+  }
+}
+
 // ── Demographics panel ─────────────────────────────────────────────────────
 
 const AGE_GROUPS = [
@@ -1098,6 +1158,8 @@ let _spotlightWasPaused = false
 registerSpotlightCallbacks(
   () => { _spotlightWasPaused = paused; if (!paused) setPaused(true) },
   () => { if (!_spotlightWasPaused) setPaused(false) },
+  () => { if (world) world.stats.npc_chats++ },
+  () => { if (world) world.stats.npc_edits++ },
 )
 const btnPause = document.getElementById('btn-pause')!
 const btnToggleDemo = document.getElementById('btn-toggle-demo') as HTMLButtonElement
@@ -1251,6 +1313,7 @@ async function govPolicyCallback(opts: [GovernmentPolicyAI, GovernmentPolicyAI])
     () => setPaused(true),
     () => setPaused(false)
   )
+  if (world) world.stats.policy_count++
   return opts[idx]
 }
 
@@ -1307,6 +1370,7 @@ function startSimLoop() {
       flushConsequences()
       checkStatDeltas(world.macro)
       checkStrikeReadiness()
+      checkAchievements(world)
     }
     // Free press: every 5 sim-days — generates headlines before government reads them
     // If RPM budget is tight, press runs in template-only mode (pass null config)
@@ -1345,27 +1409,32 @@ function startSimLoop() {
       runGovernmentCycle(world, govConfig, govPolicyCallback, _leaderNpc).finally(() => { govBusy = false; updateGovCooldown() })
     }
     updateGovCooldown()
-    if (living === 0) triggerGameOver()
+    if (living === 0) triggerGameOver('extinction')
+    else if (world.collapse_phase === 'collapse') triggerGameOver('collapse')
   }, BASE_TICK_MS)
 }
 
 // ── Game over ──────────────────────────────────────────────────────────────
 
-function triggerGameOver() {
+function triggerGameOver(reason: 'extinction' | 'collapse' = 'extinction') {
   if (!world) return
   if (simInterval) { clearInterval(simInterval); simInterval = null }
 
-  addFeedRaw(t('engine.extinction') as string, 'critical', world.year, world.day)
+  const feedKey = reason === 'collapse' ? 'engine.societal_collapse' : 'engine.extinction'
+  addFeedRaw(t(feedKey) as string, 'critical', world.year, world.day)
 
   const summary = document.getElementById('gameover-summary')!
   const stats   = document.getElementById('gameover-stats')!
 
-  const totalDays  = (world.year - 1) * 360 + world.day
-  summary.textContent = tf('gameover.summary', {
+  const totalDays = (world.year - 1) * 360 + world.day
+  const summaryKey = reason === 'collapse' ? 'gameover.summary_collapse' : 'gameover.summary'
+  summary.textContent = tf(summaryKey, {
     d:  totalDays,
+    wd: world.day,
     y:  world.year,
     ys: world.year !== 1 ? 's' : '',
   })
+
   const milestoneHtml = world.milestones.slice(-5).map(m =>
     `<div style="margin-top:4px;opacity:.85">${m.icon} <em>Year ${m.year}, Day ${m.day}</em> — ${m.text}</div>`,
   ).join('')
@@ -1375,14 +1444,88 @@ function triggerGameOver() {
     tf('gameover.stats_day', { d: totalDays, ds: totalDays !== 1 ? 's' : '', y: world.year }),
   ].join('<br>') + (milestoneHtml ? `<div style="margin-top:10px;font-size:0.85em"><strong>Notable Milestones</strong>${milestoneHtml}</div>` : '')
 
-  // Apply i18n to the static elements in the game-over screen
-  document.getElementById('gameover-title-el')?.replaceChildren()
+  // Override title for collapse vs extinction
+  const titleEl = document.getElementById('gameover-title-el')
+  if (titleEl) {
+    titleEl.textContent = reason === 'collapse'
+      ? t('gameover.title_collapse') as string
+      : t('gameover.title') as string
+  }
+
   document.querySelectorAll('#screen-gameover [data-i18n]').forEach(el => {
     const key = (el as HTMLElement).dataset.i18n!
-    el.textContent = t(key) as string
+    if (el !== titleEl) el.textContent = t(key) as string
   })
 
-  showScreen('screen-gameover')
+  // ── Achievement medals panel ──────────────────────────────────────────────
+  const medalsEl = document.getElementById('gameover-medals')
+  if (medalsEl) {
+    const earned = ACHIEVEMENT_DEFS.filter(d => world!.stats.achieved_days.includes(d.dayThreshold))
+    if (earned.length > 0) {
+      medalsEl.innerHTML = earned.map(d => {
+        const titleText = t(d.titleKey) as string
+        const descText  = t(d.descKey) as string
+        const icon = [...titleText][0] ?? '🏅'
+        const titleBody = titleText.slice([...titleText][0]?.length ?? 1).trim()
+        return `<div class="gameover-medal">
+          <div class="gameover-medal-icon">${icon}</div>
+          <div class="gameover-medal-title">${titleBody}</div>
+          <div class="gameover-medal-desc">${descText}</div>
+        </div>`
+      }).join('')
+    } else {
+      medalsEl.innerHTML = ''
+    }
+  }
+
+  // ── World report panel ────────────────────────────────────────────────────
+  const reportEl = document.getElementById('gameover-report')
+  if (reportEl && world) {
+    const s = world.stats
+    const initPop = world.initial_population
+    const popGrowth = initPop > 0 ? Math.round(((peakPopulation - initPop) / initPop) * 100) : 0
+    const regime = detectRegime(world.constitution)
+    const regimeLabel = regime.charAt(0).toUpperCase() + regime.slice(1)
+
+    const row = (labelKey: string, val: string | number) =>
+      `<div class="gameover-report-row"><span>${t(labelKey) as string}</span><span>${val}</span></div>`
+
+    reportEl.innerHTML = `
+      <div class="gameover-report-title">${t('gameover.report_title')}</div>
+      ${row('gameover.report_regime',           regimeLabel)}
+      ${row('gameover.report_pop_growth',       `${popGrowth}%`)}
+      ${row('gameover.report_min_pop',          s.min_population)}
+      ${row('gameover.report_god_calls',        s.god_calls)}
+      ${row('gameover.report_policies',         s.policy_count)}
+      ${row('gameover.report_interventions',    s.intervention_count)}
+      ${row('gameover.report_deaths_natural',   s.deaths_natural)}
+      ${row('gameover.report_deaths_violent',   s.deaths_violent)}
+      ${row('gameover.report_emigrations',      s.fled_total)}
+      ${row('gameover.report_elections',        s.elections_held)}
+      ${row('gameover.report_npc_chats',        s.npc_chats)}
+      ${row('gameover.report_npc_edits',        s.npc_edits)}
+    `
+  }
+
+  // Phase-out: fade the game world to black over ~3 s, then reveal the game-over screen
+  const veil = document.getElementById('gameover-veil')
+  if (veil) {
+    veil.classList.remove('clearing')
+    veil.classList.add('fading')
+    setTimeout(() => {
+      showScreen('screen-gameover')
+      // Fade the veil away so the gameover screen shows through
+      veil.classList.remove('fading')
+      veil.classList.add('clearing')
+      setTimeout(() => {
+        veil.classList.remove('clearing')
+        veil.style.opacity = '0'
+        veil.style.pointerEvents = 'none'
+      }, 900)
+    }, 3200)
+  } else {
+    showScreen('screen-gameover')
+  }
 }
 
 document.getElementById('btn-restart')!.addEventListener('click', () => {
@@ -1395,12 +1538,355 @@ document.getElementById('btn-restart')!.addEventListener('click', () => {
   chatInputEl.disabled = false
   chatInputEl.placeholder = t('chat.ph') as string
   btnChatSendEl.removeAttribute('disabled')
-  showScreen('screen-onboarding')
-  // Reset the start button in case it was disabled
-  const btnStart = document.getElementById('btn-start')!
-  btnStart.textContent = t('onboarding.btn_start') as string
-  btnStart.removeAttribute('disabled')
+  // Go straight to the society-design screen and start a fresh setup conversation
+  if (aiConfig) {
+    showScreen('screen-setup')
+    startSetupConversation().catch(() => showScreen('screen-onboarding'))
+  } else {
+    // No AI config (no-API mode) — fall back to onboarding so user can enter a key
+    showScreen('screen-onboarding')
+    const btnStart = document.getElementById('btn-start')!
+    btnStart.textContent = t('onboarding.btn_start') as string
+    btnStart.removeAttribute('disabled')
+  }
 })
+
+// ── Voluntary apocalypse (End Game button) ─────────────────────────────────
+
+document.getElementById('btn-end-game')?.addEventListener('click', () => {
+  if (!world) return
+  // Close the panels dropdown first
+  document.getElementById('panels-dropdown')?.classList.remove('open')
+  showConfirm({
+    title: t('endgame.confirm_title') as string,
+    body:  t('endgame.confirm_body') as string,
+    onConfirm: triggerApocalypse,
+    onCancel: () => {},
+  })
+})
+
+function triggerApocalypse() {
+  if (!world) return
+  if (simInterval) { clearInterval(simInterval); simInterval = null }
+
+  // Feed announcement
+  addFeedRaw(t('endgame.feed') as string, 'critical', world.year, world.day)
+
+  // Map: initial rumble as meteor approaches (~800ms), then massive impact flash + long shake
+  triggerMapShake(800, 6)
+  setTimeout(() => triggerMapShake(3500, 28, true), 900)  // impact: intense shake + orange flash
+
+  // Spawn a global meteor_strike event at max intensity covering all zones
+  const ev = spawnEvent(world, {
+    type: 'meteor_strike',
+    intensity: 1.0,
+    zones: [
+      'north_farm','south_farm','workshop_district','market_square',
+      'scholar_quarter','residential_east','residential_west','guard_post','plaza',
+    ],
+    duration_ticks: 1,
+    narrative_open: '',
+  })
+
+  // Kill every single living NPC — no survivors
+  for (const npc of world.npcs) {
+    if (!npc.lifecycle.is_alive) continue
+    npc.lifecycle.is_alive    = false
+    npc.lifecycle.death_cause = 'accident'
+    npc.lifecycle.death_tick  = world.tick
+  }
+
+  // Drain all resources to make the world state clearly dead
+  world.food_stock       = 0
+  world.natural_resources = 0
+  world.macro.stability  = 0
+  world.macro.trust      = 0
+
+  // Dramatic pause: let the shake + flash play out before fade-to-black
+  void ev  // suppress unused warning
+  setTimeout(() => triggerGameOver('extinction'), 4500)
+}
+
+// ── Download achievement badge ─────────────────────────────────────────────
+
+document.getElementById('btn-download-badge')?.addEventListener('click', () => {
+  if (!world) return
+  downloadAchievementBadge()
+})
+
+function downloadAchievementBadge() {
+  if (!world) return
+
+  const W = 680, H = 440
+  const DPR = 2
+  const canvas = document.createElement('canvas')
+  canvas.width  = W * DPR
+  canvas.height = H * DPR
+  const ctx = canvas.getContext('2d')!
+  ctx.scale(DPR, DPR)
+
+  const s         = world.stats
+  const totalDays = (world.year - 1) * 360 + world.day
+  const regime    = detectRegime(world.constitution)
+  const popGrowth = world.initial_population > 0
+    ? Math.round(((peakPopulation - world.initial_population) / world.initial_population) * 100)
+    : 0
+  const earned = ACHIEVEMENT_DEFS.filter(d => s.achieved_days.includes(d.dayThreshold))
+  const descRaw = world.constitution.description
+  const desc = (descRaw.startsWith('preset.') ? (t(descRaw) as string) : descRaw)
+  const PAD = 28
+
+  // ── Background ────────────────────────────────────────────────────────────
+  const bgGrad = ctx.createLinearGradient(0, 0, 0, H)
+  bgGrad.addColorStop(0,   '#0e0b08')
+  bgGrad.addColorStop(1,   '#130d08')
+  ctx.fillStyle = bgGrad
+  ctx.fillRect(0, 0, W, H)
+
+  // ── Ornamental border ─────────────────────────────────────────────────────
+  // Outer frame
+  ctx.strokeStyle = '#5a3a12'
+  ctx.lineWidth = 1.5
+  ctx.strokeRect(PAD, PAD, W - PAD * 2, H - PAD * 2)
+
+  // Inner frame (offset 5px)
+  ctx.strokeStyle = '#3a2408'
+  ctx.lineWidth = 0.7
+  ctx.strokeRect(PAD + 5, PAD + 5, W - (PAD + 5) * 2, H - (PAD + 5) * 2)
+
+  // Corner ornaments — small diamond at each corner
+  const corners = [
+    [PAD, PAD], [W - PAD, PAD], [PAD, H - PAD], [W - PAD, H - PAD],
+  ] as [number, number][]
+  corners.forEach(([cx, cy]) => {
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.rotate(Math.PI / 4)
+    ctx.fillStyle = '#7a5018'
+    ctx.fillRect(-5, -5, 10, 10)
+    ctx.strokeStyle = '#c08030'
+    ctx.lineWidth = 0.8
+    ctx.strokeRect(-5, -5, 10, 10)
+    ctx.restore()
+  })
+
+  // Mid-edge ornament dots
+  const mids = [
+    [W / 2, PAD], [W / 2, H - PAD], [PAD, H / 2], [W - PAD, H / 2],
+  ] as [number, number][]
+  mids.forEach(([mx, my]) => {
+    ctx.beginPath()
+    ctx.arc(mx, my, 3.5, 0, Math.PI * 2)
+    ctx.fillStyle = '#7a5018'
+    ctx.fill()
+    ctx.strokeStyle = '#c08030'
+    ctx.lineWidth = 0.7
+    ctx.stroke()
+  })
+
+  // Decorative corner scrollwork lines (short diagonal strokes toward center)
+  const scrollLen = 18
+  const scrollOff = PAD + 10
+  ;([
+    [scrollOff,      scrollOff,      1,  1],
+    [W - scrollOff,  scrollOff,     -1,  1],
+    [scrollOff,      H - scrollOff,  1, -1],
+    [W - scrollOff,  H - scrollOff, -1, -1],
+  ] as [number, number, number, number][]).forEach(([sx, sy, dx, dy]) => {
+    ctx.strokeStyle = '#5a3a12'
+    ctx.lineWidth = 0.8
+    ctx.beginPath()
+    ctx.moveTo(sx, sy); ctx.lineTo(sx + dx * scrollLen, sy)
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.moveTo(sx, sy); ctx.lineTo(sx, sy + dy * scrollLen)
+    ctx.stroke()
+  })
+
+  // ── Header ────────────────────────────────────────────────────────────────
+  const headerY = PAD + 18
+
+  // Top flourish line pair
+  const flourishGrad = ctx.createLinearGradient(PAD + 20, 0, W - PAD - 20, 0)
+  flourishGrad.addColorStop(0,    'transparent')
+  flourishGrad.addColorStop(0.25, '#7a5018')
+  flourishGrad.addColorStop(0.75, '#7a5018')
+  flourishGrad.addColorStop(1,    'transparent')
+
+  const drawFlourishLine = (y: number) => {
+    ctx.strokeStyle = flourishGrad
+    ctx.lineWidth = 0.6
+    ctx.beginPath(); ctx.moveTo(PAD + 20, y); ctx.lineTo(W - PAD - 20, y); ctx.stroke()
+  }
+
+  // Game name
+  ctx.textAlign = 'center'
+  ctx.fillStyle = '#c07828'
+  ctx.font = 'bold 11px Georgia, serif'
+  ctx.letterSpacing = '0.22em'
+  ctx.fillText('✦  SOCIETY  SIMULATION  ✦', W / 2, headerY)
+  ctx.letterSpacing = '0'
+
+  drawFlourishLine(headerY + 7)
+
+  // Society title
+  ctx.fillStyle = '#f5e8d0'
+  ctx.font = 'bold 20px Georgia, serif'
+  const shortDesc = desc.length > 46 ? desc.slice(0, 44) + '…' : desc
+  ctx.fillText(shortDesc, W / 2, headerY + 28)
+
+  // Regime · Year · Days subtitle
+  ctx.fillStyle = '#9a7840'
+  ctx.font = '11px Georgia, serif'
+  ctx.fillText(
+    `${regime.charAt(0).toUpperCase() + regime.slice(1)}  ·  Year ${world.year}, Day ${world.day}  ·  ${totalDays} days`,
+    W / 2, headerY + 46,
+  )
+
+  drawFlourishLine(headerY + 56)
+
+  // ── Medals ────────────────────────────────────────────────────────────────
+  const medalCY = headerY + 100
+  if (earned.length > 0) {
+    const spacing = Math.min(108, (W - 80) / earned.length)
+    const totalMW = spacing * earned.length
+    const startMX = (W - totalMW) / 2 + spacing / 2
+
+    earned.forEach((def, i) => {
+      const mx = startMX + i * spacing
+
+      // Outer ring
+      ctx.beginPath()
+      ctx.arc(mx, medalCY, 27, 0, Math.PI * 2)
+      const ringG = ctx.createLinearGradient(mx - 27, medalCY - 27, mx + 27, medalCY + 27)
+      ringG.addColorStop(0,   '#f0d060')
+      ringG.addColorStop(0.4, '#9a6810')
+      ringG.addColorStop(1,   '#f0d060')
+      ctx.strokeStyle = ringG
+      ctx.lineWidth = 2
+      ctx.stroke()
+
+      // Inner fill
+      ctx.beginPath()
+      ctx.arc(mx, medalCY, 24, 0, Math.PI * 2)
+      const fillG = ctx.createRadialGradient(mx, medalCY - 6, 3, mx, medalCY, 24)
+      fillG.addColorStop(0, '#2a1e06')
+      fillG.addColorStop(1, '#0e0a02')
+      ctx.fillStyle = fillG
+      ctx.fill()
+
+      // Inner thin ring
+      ctx.beginPath()
+      ctx.arc(mx, medalCY, 24, 0, Math.PI * 2)
+      ctx.strokeStyle = '#6a4808'
+      ctx.lineWidth = 0.6
+      ctx.stroke()
+
+      // Emoji
+      ctx.font = '18px system-ui, sans-serif'
+      ctx.textAlign = 'center'
+      const titleText = t(def.titleKey) as string
+      const icon = [...titleText][0] ?? '🏅'
+      ctx.fillText(icon, mx, medalCY + 6)
+
+      // Label
+      const label = titleText.slice([...titleText][0]?.length ?? 1).trim()
+      ctx.fillStyle = '#c8a030'
+      ctx.font = '7px Georgia, serif'
+      ctx.letterSpacing = '0.03em'
+      ctx.fillText(label.toUpperCase().slice(0, 16), mx, medalCY + 40)
+      ctx.letterSpacing = '0'
+    })
+  } else {
+    ctx.fillStyle = '#4a3018'
+    ctx.font = 'italic 11px Georgia, serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('— No milestones reached —', W / 2, medalCY + 6)
+  }
+
+  // ── Divider ───────────────────────────────────────────────────────────────
+  const divY = medalCY + 56
+  drawFlourishLine(divY)
+  ctx.fillStyle = '#7a5018'
+  ctx.font = '9px Georgia, serif'
+  ctx.letterSpacing = '0.18em'
+  ctx.textAlign = 'center'
+  ctx.fillText('WORLD  CHRONICLE', W / 2, divY - 5)
+  ctx.letterSpacing = '0'
+  drawFlourishLine(divY - 14)
+
+  // ── Stats (classic 2-col layout) ──────────────────────────────────────────
+  const statRows: [string, string][] = [
+    ['Peak population',   String(peakPopulation)],
+    ['Lowest population', String(s.min_population)],
+    ['Population growth', `${popGrowth > 0 ? '+' : ''}${popGrowth}%`],
+    ['God Agent calls',   String(s.god_calls)],
+    ['Policies enacted',  String(s.policy_count)],
+    ['Interventions',     String(s.intervention_count)],
+    ['NPC conversations', String(s.npc_chats)],
+    ['Manual NPC edits',  String(s.npc_edits)],
+    ['Elections held',    String(s.elections_held)],
+    ['Emigrations',       String(s.fled_total)],
+  ]
+
+  const col1x = PAD + 22, col2x = W / 2 + 16
+  const rowH = 20, statsY = divY + 14
+
+  statRows.forEach(([label, val], i) => {
+    const cx  = i < 5 ? col1x : col2x
+    const row = i < 5 ? i : i - 5
+    const ry  = statsY + row * rowH
+
+    // Subtle alternating row tint
+    if (row % 2 === 0) {
+      ctx.fillStyle = 'rgba(255,200,100,0.025)'
+      ctx.fillRect(cx - 4, ry - 12, W / 2 - PAD - 10, 16)
+    }
+
+    // Dot separator
+    ctx.fillStyle = '#5a3a12'
+    ctx.beginPath(); ctx.arc(cx - 8, ry - 4, 1.5, 0, Math.PI * 2); ctx.fill()
+
+    ctx.textAlign = 'left'
+    ctx.fillStyle = '#8a6840'
+    ctx.font = '10px Georgia, serif'
+    ctx.fillText(label, cx, ry)
+
+    ctx.textAlign = 'right'
+    ctx.fillStyle = '#f0e0c0'
+    ctx.font = 'bold 10px Georgia, serif'
+    ctx.fillText(val, cx === col1x ? W / 2 - 16 : W - PAD - 22, ry)
+  })
+
+  // Vertical separator between columns
+  const sepX = W / 2
+  ctx.strokeStyle = '#3a2408'
+  ctx.lineWidth = 0.5
+  ctx.beginPath()
+  ctx.moveTo(sepX, statsY - 6)
+  ctx.lineTo(sepX, statsY + 5 * rowH - 4)
+  ctx.stroke()
+
+  // ── Footer ────────────────────────────────────────────────────────────────
+  const footerY = H - PAD - 6
+  drawFlourishLine(footerY - 12)
+
+  ctx.textAlign = 'left'
+  ctx.fillStyle = '#6a4818'
+  ctx.font = '8px Georgia, serif'
+  ctx.fillText(new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }), PAD + 10, footerY)
+
+  ctx.textAlign = 'right'
+  ctx.fillStyle = '#7a5820'
+  ctx.font = '8px Georgia, serif'
+  ctx.fillText('hoangkhoaa.github.io/society-sim', W - PAD - 10, footerY)
+
+  // ── Download ──────────────────────────────────────────────────────────────
+  const link = document.createElement('a')
+  link.download = `society-sim-${regime}-year${world.year}d${world.day}.png`
+  link.href = canvas.toDataURL('image/png')
+  link.click()
+}
 
 // ── Time controls ──────────────────────────────────────────────────────────
 
@@ -1466,6 +1952,7 @@ async function sendChatMessage() {
   try {
     const response = await handlePlayerChat(msg, world, aiConfig)
     removeThinking()
+    world.stats.god_calls++
 
     if (response.type === 'event' && response.event) {
       if (response.requires_confirm) {
@@ -1538,6 +2025,7 @@ function applySideChannels(response: Awaited<ReturnType<typeof handlePlayerChat>
 
 function injectEvent(response: Awaited<ReturnType<typeof handlePlayerChat>>) {
   if (!world || !response.event) return
+  world.stats.intervention_count++
   const narrative = response.event.narrative_open ?? response.answer
   addFeedRaw(narrative, 'warning', world.year, world.day)
   const spawned = spawnEvent(world, response.event)
@@ -1560,6 +2048,7 @@ function injectEvent(response: Awaited<ReturnType<typeof handlePlayerChat>>) {
 
 function executeIntervention(response: Awaited<ReturnType<typeof handlePlayerChat>>) {
   if (!world) return
+  world.stats.intervention_count++
 
   addFeedRaw(response.answer, 'warning', world.year, world.day)
 

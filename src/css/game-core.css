@@ -195,6 +195,10 @@ body[data-theme='light'] .stat-tooltip-factor::before { color: #b5c8da; }
 }
 .top-dropdown-item:hover { background: #222; color: #ddd; }
 .top-dropdown-item.active { color: #7aabff; }
+.top-dropdown-divider { height: 1px; background: #2a2a2a; margin: 3px 6px; }
+.top-dropdown-danger { color: #c94040 !important; }
+.top-dropdown-danger:hover { background: #2a1010 !important; color: #e24b4b !important; }
+body[data-theme='light'] .top-dropdown-divider { background: #dce6f0; }
 body[data-theme='light'] .top-dropdown-menu {
   background: #fff;
   border-color: #cdd7e4;

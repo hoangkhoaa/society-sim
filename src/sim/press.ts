@@ -338,6 +338,11 @@ export async function runPressCycle(
 
 /** Should be called from the sim loop. Returns true if a press cycle ran this tick. */
 export function checkPressTrigger(state: WorldState, config: AIConfig | null): boolean {
+  // No press when society has collapsed or population is too low to support media
+  if (state.collapse_phase !== 'normal') return false
+  const livingCount = state.npcs.filter(n => n.lifecycle.is_alive).length
+  if (livingCount < 20) return false
+
   const pressPeriod = Math.floor(state.day / 5)
   if (pressPeriod === _lastPressDay) return false
   if (state.day < 5) return false

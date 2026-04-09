@@ -125,6 +125,22 @@ export async function initWorld(constitution: Constitution, npcCount: number = M
     tax_pool: 0,
     leader_id: null,
     last_election_day: -1,
+    collapse_phase: 'normal',
+    initial_population: population,
+    stats: {
+      god_calls: 0,
+      intervention_count: 0,
+      policy_count: 0,
+      min_population: population,
+      max_population: population,
+      fled_total: 0,
+      deaths_natural: 0,
+      deaths_violent: 0,
+      elections_held: 0,
+      npc_chats: 0,
+      npc_edits: 0,
+      achieved_days: [],
+    },
   }
 }
 
@@ -196,6 +212,7 @@ export function tick(state: WorldState): void {
     state.macro = computeMacroStats(state)
     state.drift_score = computeDriftScore(state)
     checkCrisis(state)
+    checkPopulationViability(state)
 
     // Flush event-caused deaths to chronicle
     if (eventDeathsThisDay > 0) {
@@ -252,6 +269,9 @@ export function tick(state: WorldState): void {
     // Class solidarity spreads daily; strikes checked daily
     spreadSolidarity(state)
     checkLaborStrikes(state)
+
+    // Update per-run statistics used for achievement medals
+    updateRunStats(state)
   }
 }
 
@@ -632,7 +652,17 @@ export function computeMacroStats(state: WorldState): WorldState['macro'] {
 
     if (npc.role !== 'child') {
       workforce++
-      if (npc.action_state !== 'fleeing' && npc.action_state !== 'confront' && npc.action_state !== 'organizing') {
+      // family/resting/socializing = off duty but present in economy
+      // organizing/confront = partial (distracted workers)
+      // fleeing = fully absent
+      if (npc.action_state === 'fleeing') {
+        // no contribution
+      } else if (npc.action_state === 'organizing' || npc.action_state === 'confront') {
+        activeProdSum += prod * 0.30
+      } else if (npc.action_state === 'family' || npc.action_state === 'resting' || npc.action_state === 'socializing') {
+        // Off-duty but contributes to economic baseline (demand, informal economy)
+        activeProdSum += prod * 0.15
+      } else {
         activeProdSum += prod
       }
     }
@@ -818,6 +848,118 @@ function emitCrisisEvent(state: WorldState): void {
   }
   state.narrative_log.unshift(entry)
   addFeedRaw(text, 'critical', state.year, state.day)
+}
+
+// ── Population Viability & Societal Collapse ─────────────────────────────────
+//
+// Thresholds:
+//   collapse  < 15  — society cannot sustain itself; trigger end-game
+//   critical  < 30  — government dissolves; survival role-shifts begin
+//   survival  < 60  — partial role-shift (scholars/merchants → farmers if food scarce)
+//   normal   >= 60  — everything operates normally
+
+let lastCollapseWarnDay = -1
+
+function checkPopulationViability(state: WorldState): void {
+  const living = state.npcs.filter(n => n.lifecycle.is_alive).length
+
+  if (living < 15) {
+    if (state.collapse_phase !== 'collapse') {
+      state.collapse_phase = 'collapse'
+      const text = t('engine.societal_collapse') as string
+      state.narrative_log.unshift({
+        id: crypto.randomUUID(),
+        tick: state.tick,
+        day: state.day,
+        year: state.year,
+        text,
+        icon: '💀',
+        severity: 'critical',
+        related_npc_ids: [],
+        related_zones: [],
+      })
+      addFeedRaw(text, 'critical', state.year, state.day)
+    }
+    return
+  }
+
+  if (living < 30) {
+    if (state.collapse_phase === 'normal') {
+      // Government dissolves — emit once
+      const govText = t('engine.collapse_govfail') as string
+      addFeedRaw(govText, 'critical', state.year, state.day)
+      addChronicle(govText, state.year, state.day, 'critical')
+    }
+    state.collapse_phase = 'critical'
+    autoSurvivalRoleShift(state, living)
+    return
+  }
+
+  if (living < 60) {
+    state.collapse_phase = living < 30 ? 'critical' : 'normal'
+    autoSurvivalRoleShift(state, living)
+
+    // Emit a warning periodically (not more than once per 5 days)
+    if (state.day !== lastCollapseWarnDay && state.day % 5 === 0) {
+      lastCollapseWarnDay = state.day
+      addFeedRaw(t('engine.collapse_warning') as string, 'critical', state.year, state.day)
+    }
+    return
+  }
+
+  // Population recovered — restore normal phase
+  state.collapse_phase = 'normal'
+}
+
+let lastRoleShiftDay = -1
+
+/**
+ * When population is critically low, NPCs abandon non-essential roles and become farmers
+ * or craftsmen to focus on basic survival. Called from checkPopulationViability.
+ */
+function autoSurvivalRoleShift(state: WorldState, livingCount: number): void {
+  // Only shift once per day to avoid thrashing
+  if (state.day === lastRoleShiftDay) return
+
+  const living = state.npcs.filter(n => n.lifecycle.is_alive && n.role !== 'child')
+  const farmers = living.filter(n => n.role === 'farmer')
+  const food    = state.macro.food
+
+  // Only shift if food is scarce OR population is critically low
+  const needsMoreFarmers = food < 40 || livingCount < 30
+  if (!needsMoreFarmers) return
+
+  // Determine which roles are "non-essential" for survival
+  // At critical levels (< 30) guards and leaders also shift
+  const nonEssentialRoles = livingCount < 30
+    ? ['scholar', 'merchant', 'guard', 'leader'] as const
+    : ['scholar', 'merchant'] as const
+
+  const shiftCandidates = living.filter(n => (nonEssentialRoles as readonly string[]).includes(n.role))
+  if (shiftCandidates.length === 0) return
+
+  // Don't shift everyone — keep minimum 1 of each essential non-farmer role if population allows
+  const maxShift = Math.ceil(shiftCandidates.length * 0.30)
+  let shifted = 0
+
+  for (const npc of shiftCandidates) {
+    if (shifted >= maxShift) break
+    // Don't shift if there are already enough farmers (> 40% of workforce)
+    const farmerRatio = (farmers.length + shifted) / Math.max(living.length, 1)
+    if (farmerRatio >= 0.40) break
+
+    npc.role = 'farmer'
+    // Reset income so their productivity curve restarts as a farmer
+    npc.daily_income = npc.daily_income * 0.5
+    shifted++
+  }
+
+  if (shifted > 0) {
+    lastRoleShiftDay = state.day
+    const text = tf('engine.collapse_roleshift', { count: shifted }) as string
+    addFeedRaw(text, 'warning', state.year, state.day)
+    addChronicle(text, state.year, state.day, 'major')
+  }
 }
 
 // ── Lifecycle Events (birth / marriage) ─────────────────────────────────────
@@ -1247,7 +1389,10 @@ function checkImmigration(state: WorldState): void {
   }
 
   // ── Immigration: attractive conditions draw newcomers ─────────────────────
-  if (living.length >= 1200) return
+  // Cap at 130% of initial population — immigration can grow the city beyond its starting size
+  // but not indefinitely. This scales correctly whether the game started with 500 or 2000 NPCs.
+  const immigrationCap = Math.round((state.initial_population ?? 1200) * 1.3)
+  if (living.length >= immigrationCap) return
 
   const attractiveness =
     state.macro.stability * 0.35 +
@@ -1356,7 +1501,7 @@ function refreshInfoTies(state: WorldState): void {
 function formOrganicStrongTies(state: WorldState): void {
   const byZone: Record<string, NPC[]> = {}
   for (const npc of state.npcs) {
-    if (!npc.lifecycle.is_alive || npc.action_state !== 'socializing') continue
+    if (!npc.lifecycle.is_alive || (npc.action_state !== 'socializing' && npc.action_state !== 'family')) continue
     if (npc.strong_ties.length >= MAX_STRONG_TIES) continue
     if (!byZone[npc.zone]) byZone[npc.zone] = []
     byZone[npc.zone].push(npc)
@@ -1371,7 +1516,7 @@ function formOrganicStrongTies(state: WorldState): void {
       const b = group[Math.floor(Math.random() * group.length)]
       if (a.id === b.id || a.strong_ties.includes(b.id)) continue
       if (b.strong_ties.length >= MAX_STRONG_TIES) continue
-      if (Math.random() < 0.01) {   // ~1% daily chance per encountered pair
+      if (Math.random() < 0.003) {  // ~0.3% daily chance — real friendships take weeks/months
         a.strong_ties.push(b.id)
         b.strong_ties.push(a.id)
         state.network.strong.get(a.id)?.add(b.id)
@@ -1512,9 +1657,13 @@ function checkLaborStrikes(state: WorldState): void {
  * Bridge score = fraction of distinct zone-clusters spanned by an NPC's weak_ties.
  * A high bridge NPC controls cross-community information flow → more influence.
  */
+// Reference degree for influence normalization — "well-connected" = 15 strong ties.
+// Using a fixed reference (not population max) prevents inflation in small communities
+// where 5 ties out of a max-5 would otherwise score 1.0 influence.
+const INFLUENCE_REFERENCE_DEGREE = 15
+
 function computeBridgeScores(state: WorldState): void {
   const totalClusters = Math.max(new Set([...state.network.clusters.values()]).size, 1)
-  const maxDegree = Math.max(...state.npcs.map(n => n.strong_ties.length), 1)
 
   for (const npc of state.npcs) {
     if (!npc.lifecycle.is_alive) { npc.bridge_score = 0; continue }
@@ -1526,8 +1675,10 @@ function computeBridgeScores(state: WorldState): void {
     }
     npc.bridge_score = spannedClusters.size / totalClusters
 
-    // Combined influence: 60% strong-tie centrality + 40% bridging power
-    const strongCentrality  = npc.strong_ties.length / maxDegree
+    // Combined influence: 60% strong-tie centrality + 40% bridging power.
+    // Centrality is normalized against a fixed reference degree, not the population max,
+    // so influence scores are stable and comparable across different community sizes.
+    const strongCentrality = npc.strong_ties.length / INFLUENCE_REFERENCE_DEGREE
     npc.influence_score = clamp(strongCentrality * 0.6 + npc.bridge_score * 0.4, 0, 1)
   }
 }
@@ -1726,8 +1877,8 @@ function applyCrisisBonding(state: WorldState): void {
 
       const bothUnderStress = a.fear > 45 && b.fear > 45
       const tieChance = inCrisis
-        ? (bothUnderStress ? 0.05 : 0.02)
-        : (state.tick - lastCrisisTick < 20 * 24 ? 0.02 : 0.01)
+        ? (bothUnderStress ? 0.015 : 0.005)  // crisis bonding: reduced from 5%/2% to 1.5%/0.5%
+        : (state.tick - lastCrisisTick < 20 * 24 ? 0.004 : 0.002)
       if (Math.random() >= tieChance) continue
 
       a.strong_ties.push(b.id)
@@ -1840,14 +1991,15 @@ function checkCommunityGroups(state: WorldState): void {
     const candidates = state.npcs.filter(n =>
       n.lifecycle.is_alive &&
       n.community_group === null &&
-      n.action_state === 'socializing',
+      (n.action_state === 'socializing' || n.action_state === 'family'),
     )
 
     for (const npc of candidates) {
       if (npc.community_group !== null) continue
       const coMembers = npc.strong_ties
         .map(id => state.npcs[id])
-        .filter(n => n?.lifecycle.is_alive && n.community_group === null && n.action_state === 'socializing')
+        .filter(n => n?.lifecycle.is_alive && n.community_group === null
+          && (n.action_state === 'socializing' || n.action_state === 'family'))
       if (coMembers.length < 2) continue
 
       const groupId = nextGroupId++
@@ -2075,6 +2227,8 @@ function applyStateRationing(state: WorldState): void {
 // Rate = (gini - 0.40) × state_power × 0.005 per day (zero for egalitarian societies).
 
 function applyFeudalTribute(state: WorldState): void {
+  // No tribute system when society is in collapse or critical phase
+  if (state.collapse_phase !== 'normal') return
   const { state_power } = state.constitution
   // Use live macro.gini (actual wealth distribution) instead of constitution gini_start.
   // This means tribute intensifies as real inequality grows, not just starting conditions.
@@ -2129,6 +2283,8 @@ export function getIncomeTaxRate(state: WorldState): number {
 }
 
 function applyIncomeTax(state: WorldState): void {
+  // No tax collection when society has collapsed or is critical (government dissolved)
+  if (state.collapse_phase !== 'normal') return
   const taxRate = getIncomeTaxRate(state)
   if (taxRate <= 0) return
 
@@ -2169,6 +2325,8 @@ const GOVT_WAGE_GUARD  = 2.5
 const GOVT_WAGE_LEADER = 4.0
 
 function applyGovernmentWages(state: WorldState): void {
+  // No wages when government has dissolved due to population collapse
+  if (state.collapse_phase !== 'normal') return
   if ((state.tax_pool ?? 0) <= 0) return
 
   const guards  = state.npcs.filter(n => n.lifecycle.is_alive && n.role === 'guard')
@@ -2212,6 +2370,8 @@ function applyGovernmentWages(state: WorldState): void {
 let lastTaxSpendingDay = -1
 
 function spendTaxRevenue(state: WorldState): void {
+  // No government spending when population has collapsed
+  if (state.collapse_phase !== 'normal') return
   // Spend daily: ~10% of pool per day. Prevents the 7-day lump-sum from
   // creating oversized single-day effects that dilute any visible impact.
   if (state.day === lastTaxSpendingDay) return
@@ -2640,7 +2800,18 @@ function applyCommuneEffect(state: WorldState): void {
 // On their death, a major chronicle entry mourns them and their strong-tie
 // contacts receive a grief memory.
 
+// Maximum legendary recognitions per sim-day (prevents spam when many NPCs hit thresholds together)
+const MAX_LEGENDARY_PER_DAY = 1
+let legendaryRecognizedToday = 0
+let legendaryLastDay = -1
+
 function checkLegendaryNPCs(state: WorldState): void {
+  // Reset per-day counter
+  if (state.day !== legendaryLastDay) {
+    legendaryRecognizedToday = 0
+    legendaryLastDay = state.day
+  }
+
   for (const npc of state.npcs) {
     if (!npc.lifecycle.is_alive) {
       // Detect legendary death within the past day
@@ -2673,16 +2844,26 @@ function checkLegendaryNPCs(state: WorldState): void {
 
     if (npc.legendary) continue  // already marked
 
-    // Conditions for legendary status
-    const isLongLived    = npc.age >= 65 && npc.stress < 60
-    const isInfluential  = npc.influence_score > 0.75
-    const isWealthy      = npc.wealth > 8000
-    const isReformed     = npc.criminal_record && npc.grievance < 15 && npc.age >= 40
+    // Cap recognitions per day to avoid spam when many NPCs cross thresholds simultaneously
+    if (legendaryRecognizedToday >= MAX_LEGENDARY_PER_DAY) continue
+
+    // Minimum: NPC must have been alive for at least 60 sim-days (lived through hardship, not just arrived)
+    const ticksAlive = npc.lifecycle.death_tick == null ? state.tick - (npc.id * 3) : 0  // rough proxy
+    const daysInWorld = state.day - Math.max(0, state.day - Math.floor(ticksAlive / 24))
+    if (daysInWorld < 60 && npc.age < 40) continue  // newcomers can't be legendary
+
+    // Conditions for legendary status — all thresholds are high to make this a rare, meaningful event.
+    // influence_score with INFLUENCE_REFERENCE_DEGREE=15 means 0.85 requires ~13+ strong ties AND good bridge.
+    const isLongLived    = npc.age >= 75 && npc.stress < 40 && npc.happiness > 65
+    const isInfluential  = npc.influence_score > 0.85 && npc.strong_ties.length >= 14 && npc.age >= 35
+    const isWealthy      = npc.wealth > 20000 && npc.age >= 50
+    const isReformed     = npc.criminal_record && npc.grievance < 8 && npc.age >= 50 && npc.happiness > 60
     const isFactionElder = npc.faction_id !== null
-      && state.factions.some(f => f.id === npc.faction_id && state.tick - f.founded_tick > 1800)  // 75 days
+      && state.factions.some(f => f.id === npc.faction_id && state.tick - f.founded_tick > 7200)  // 300 days
 
     if (isLongLived || isInfluential || isWealthy || isReformed || isFactionElder) {
       npc.legendary = true
+      legendaryRecognizedToday++
       const reasonKey = isInfluential ? 'engine.legendary_reason.influential'
         : isWealthy    ? 'engine.legendary_reason.wealthy'
         : isReformed   ? 'engine.legendary_reason.reformed'
@@ -2981,5 +3162,28 @@ export function runElection(state: WorldState): NPC | null {
   addChronicle(msg, state.year, state.day, 'major')
   addFeedRaw(msg, 'info', state.year, state.day)
 
+  state.stats.elections_held++
+
   return winner
+}
+
+// ── Run statistics updater (called daily) ──────────────────────────────────
+
+export function updateRunStats(state: WorldState): void {
+  const living = state.npcs.filter(n => n.lifecycle.is_alive).length
+  if (living < state.stats.min_population) state.stats.min_population = living
+  if (living > state.stats.max_population) state.stats.max_population = living
+
+  // Tally deaths by cause (reset-proof: recount from npcs array each day is O(n) but simple)
+  let natural = 0, violent = 0, fled = 0
+  for (const n of state.npcs) {
+    if (n.lifecycle.is_alive) continue
+    const cause = n.lifecycle.death_cause
+    if (cause === 'natural' || cause === 'starvation' || cause === 'disease' || cause === 'accident') natural++
+    else if (cause === 'violence') violent++
+    else if (cause === 'fled') fled++
+  }
+  state.stats.deaths_natural = natural
+  state.stats.deaths_violent = violent
+  state.stats.fled_total = fled
 }

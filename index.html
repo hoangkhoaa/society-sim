@@ -135,12 +135,14 @@
       <div class="top-divider"></div>
       <!-- Panels dropdown -->
       <div class="top-dropdown" id="panels-dropdown">
-        <button class="btn-top" id="btn-panels-toggle">Panels ▾</button>
+        <button class="btn-top" id="btn-panels-toggle" data-i18n="panels.toggle">Panels ▾</button>
         <div class="top-dropdown-menu" id="panels-menu">
-          <button class="top-dropdown-item" id="btn-toggle-demo">👥 Population</button>
-          <button class="top-dropdown-item" id="btn-toggle-rumors">🗣 Rumors</button>
-          <button class="top-dropdown-item" id="btn-toggle-econ">💰 Economics</button>
-          <button class="top-dropdown-item" id="btn-toggle-legend">🕸 Network</button>
+          <button class="top-dropdown-item" id="btn-toggle-demo"   data-i18n="panels.population">👥 Population</button>
+          <button class="top-dropdown-item" id="btn-toggle-rumors" data-i18n="panels.rumors">🗣 Rumors</button>
+          <button class="top-dropdown-item" id="btn-toggle-econ"   data-i18n="panels.economics">💰 Economics</button>
+          <button class="top-dropdown-item" id="btn-toggle-legend" data-i18n="panels.network">🕸 Network</button>
+          <div class="top-dropdown-divider"></div>
+          <button class="top-dropdown-item top-dropdown-danger" id="btn-end-game" data-i18n="endgame.btn">☄️ End Game</button>
         </div>
       </div>
       <div class="top-divider"></div>
@@ -277,6 +279,12 @@
 
   </div>
 
+  <!-- Achievement toast stack (fixed, always in DOM) -->
+  <div id="achievement-toast-container"></div>
+
+  <!-- Dark veil that fades over the game world before the game-over screen -->
+  <div id="gameover-veil"></div>
+
   <!-- ── GAME OVER ────────────────────────────────── -->
   <div id="screen-gameover" class="screen">
     <div class="gameover-box">
@@ -284,7 +292,12 @@
       <div class="gameover-title" data-i18n="gameover.title">Extinction</div>
       <div class="gameover-sub" id="gameover-summary"></div>
       <div class="gameover-stats" id="gameover-stats"></div>
-      <button id="btn-restart" class="btn-primary" data-i18n="gameover.btn_restart">Start New Society</button>
+      <div class="gameover-medals" id="gameover-medals"></div>
+      <div class="gameover-report" id="gameover-report"></div>
+      <div class="gameover-actions">
+        <button id="btn-download-badge" class="btn-ghost" data-i18n="gameover.btn_download">⬇️ Download Badge</button>
+        <button id="btn-restart" class="btn-primary" data-i18n="gameover.btn_restart">Start New Society</button>
+      </div>
     </div>
   </div>
 

@@ -337,6 +337,23 @@ export function setMapLegendVisible(value: boolean) {
   _needsMapRedraw = true
 }
 
+// ── Map shake / flash effect ───────────────────────────────────────────────
+
+let _shakeEndTime  = 0
+let _shakeIntensity = 0
+let _flashOpacity  = 0   // 0–1 white flash overlay
+let _flashDecay    = 0   // how fast flash fades per frame
+
+export function triggerMapShake(durationMs: number, intensity: number, flashWhite = false) {
+  _shakeEndTime   = performance.now() + durationMs
+  _shakeIntensity = intensity
+  if (flashWhite) {
+    _flashOpacity = 1
+    _flashDecay   = 0.018   // fades over ~55 frames ≈ ~0.9 s at 60fps
+  }
+  _needsMapRedraw = true
+}
+
 // ── NPC visual state (separate from sim data) ──────────────────────────────
 
 interface CommuteState {
@@ -408,8 +425,9 @@ function randomPosInZone(zone: string): { x: number; y: number } {
 }
 
 const ACTION_SPEED: Record<string, number> = {
-  working:    0.0006,  // calmer than before
-  resting:    0.0002,  // very slow
+  working:    0.0006,
+  resting:    0,       // sleeping: no movement at all
+  family:     0.0004,  // at home: very gentle drift within the room
   socializing:0.0010,
   organizing: 0.0014,
   fleeing:    0.003,
@@ -429,6 +447,31 @@ function stepVisual(v: NPCVisual, action: string, workZone: string, family: Fami
   if (_mapPaused) return
 
   const targetZone = getVisualZone(workZone, action)
+
+  // Sleeping NPCs freeze in place once they've reached their home zone.
+  // They still commute home first if needed, then stop moving.
+  if (action === 'resting') {
+    if (v.commute) {
+      // Still travelling home — keep the commute running
+      v.commute.t++
+      const u = easeInOutCubic(Math.min(1, v.commute.t / v.commute.duration))
+      v.x = v.commute.sx + (v.commute.ex - v.commute.sx) * u
+      v.y = v.commute.sy + (v.commute.ey - v.commute.sy) * u
+      if (v.commute.t >= v.commute.duration) {
+        v.renderZone = v.commute.destZone
+        v.commute = null
+        v.moveIn = 9999
+        const settle = randomPosInZone(v.renderZone)
+        v.tx = settle.x; v.ty = settle.y
+      }
+    } else if (targetZone !== v.renderZone) {
+      // Start commute to home zone
+      const p = randomPosInZone(targetZone)
+      v.commute = { sx: v.x, sy: v.y, ex: p.x, ey: p.y, t: 0, duration: commuteDuration(npcId, v.renderZone, targetZone), destZone: targetZone }
+    }
+    // Already home and not commuting: stay frozen
+    return
+  }
 
   // Smooth commute: lerp between zones instead of snapping
   if (v.commute) {
@@ -463,7 +506,7 @@ function stepVisual(v: NPCVisual, action: string, workZone: string, family: Fami
     // Family attraction: blend target toward family cluster centroid.
     // Resting/socializing NPCs cluster tightly with family; working NPCs drift more freely.
     if (family && family.count > 0) {
-      const weight = action === 'resting'     ? 0.65
+      const weight = action === 'family'      ? 0.80   // at home: cluster tightly with household
                    : action === 'socializing' ? 0.40
                    : 0.15
       t.x = t.x * (1 - weight) + family.cx * weight
@@ -479,7 +522,7 @@ function stepVisual(v: NPCVisual, action: string, workZone: string, family: Fami
     v.ty = t.y
     // Longer intervals = calmer, less chaotic movement
     const freqMap: Record<string, number> = {
-      resting: 360, working: 130, socializing: 55,
+      resting: 9999, working: 130, socializing: 55, family: 240,
       organizing: 70, fleeing: 22, confront: 32, complying: 150,
     }
     v.moveIn = (freqMap[action] ?? 130) + (Math.random() * 40 | 0)
@@ -577,10 +620,28 @@ function draw() {
 
   ctx.clearRect(0, 0, W, H)
 
+  // ── Shake / flash effects ────────────────────────────────────────────────
+  const now = performance.now()
+  const shaking = now < _shakeEndTime
+  let sx = 0, sy = 0
+  if (shaking) {
+    const t = (_shakeEndTime - now) / 1000   // remaining seconds
+    const amp = _shakeIntensity * Math.min(1, t * 2)   // ease out
+    sx = (Math.random() - 0.5) * amp * 2
+    sy = (Math.random() - 0.5) * amp * 2
+    _needsMapRedraw = true
+  }
+
+  if (sx !== 0 || sy !== 0) {
+    ctx.save()
+    ctx.translate(sx, sy)
+  }
+
   const world = getWorld?.()
   if (!world) {
     drawOcean(W, H)
     drawPlaceholder(W, H)
+    if (sx !== 0 || sy !== 0) ctx.restore()
     return
   }
 
@@ -588,6 +649,16 @@ function draw() {
   drawNPCs(world, W, H)
   drawAtmosphere(world, W, H)
   if (_legendVisible) drawLegend(W, H)
+
+  if (sx !== 0 || sy !== 0) ctx.restore()
+
+  // White flash overlay (fades after impact)
+  if (_flashOpacity > 0) {
+    ctx.fillStyle = `rgba(255,200,120,${_flashOpacity})`
+    ctx.fillRect(0, 0, W, H)
+    _flashOpacity = Math.max(0, _flashOpacity - _flashDecay)
+    _needsMapRedraw = true
+  }
 }
 
 function drawAtmosphere(world: WorldState, W: number, H: number) {

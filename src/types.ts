@@ -19,7 +19,7 @@ export interface WorkSchedule {
   work_end_hour:     number    // 0–23 (regime/role baseline end)
 }
 export type Gender = 'male' | 'female'
-export type ActionState = 'working' | 'resting' | 'socializing' | 'organizing' | 'fleeing' | 'complying' | 'confront'
+export type ActionState = 'working' | 'resting' | 'socializing' | 'family' | 'organizing' | 'fleeing' | 'complying' | 'confront'
 export type DeathCause = 'natural' | 'accident' | 'disease' | 'violence' | 'starvation' | 'fled'
 export type InstitutionId = 'government' | 'market' | 'opposition' | 'community' | 'guard'
 export type EventType =
@@ -474,6 +474,31 @@ export interface WorldState {
   // Human-driven governance (opt-in via settings)
   leader_id: number | null      // id of currently elected leader NPC (null = no election yet)
   last_election_day: number     // sim-day of last election (-1 = never)
+
+  // Population collapse tracking
+  collapse_phase: 'normal' | 'critical' | 'collapse'
+
+  // Starting population — used as reference for immigration cap (not a hard max, just a baseline)
+  initial_population: number
+
+  // Gameplay statistics for achievements / end-of-run report
+  stats: RunStats
+}
+
+export interface RunStats {
+  god_calls: number          // how many times the player sent a chat message to the God Agent
+  intervention_count: number // direct NPC/world interventions executed
+  policy_count: number       // government policies enacted
+  min_population: number     // lowest living population ever recorded
+  max_population: number     // peak population (mirrors peakPopulation in main.ts)
+  fled_total: number         // total emigrations (death_cause === 'fled')
+  deaths_natural: number     // natural + starvation + disease deaths
+  deaths_violent: number     // violence deaths
+  elections_held: number     // number of elections that occurred
+  npc_chats: number          // total player messages sent to individual NPCs
+  npc_edits: number          // number of times player opened the Edit Stats panel (manual tweaks)
+  // which achievement milestones have already fired (day checkpoints)
+  achieved_days: number[]
 }
 
 // ── AI Types ───────────────────────────────────────────────────────────────

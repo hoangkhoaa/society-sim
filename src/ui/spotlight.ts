@@ -45,12 +45,21 @@ export function close() {
 }
 
 // ── Pause/resume callbacks (set by main.ts to avoid circular dep) ──────────
-let _onOpen:  (() => void) | null = null
-let _onClose: (() => void) | null = null
+let _onOpen:    (() => void) | null = null
+let _onClose:   (() => void) | null = null
+let _onNpcChat: (() => void) | null = null
+let _onNpcEdit: (() => void) | null = null
 
-export function registerSpotlightCallbacks(onOpen: () => void, onClose: () => void): void {
-  _onOpen  = onOpen
-  _onClose = onClose
+export function registerSpotlightCallbacks(
+  onOpen:    () => void,
+  onClose:   () => void,
+  onNpcChat: () => void,
+  onNpcEdit: () => void,
+): void {
+  _onOpen    = onOpen
+  _onClose   = onClose
+  _onNpcChat = onNpcChat
+  _onNpcEdit = onNpcEdit
 }
 
 function openSubPanel(title: string, bodyHtml: string): void {
@@ -264,6 +273,7 @@ export async function openSpotlight(npc: NPC, state: WorldState, config: AIConfi
   openEditBtn?.addEventListener('click', () => {
     openSubPanel(tf('sp.edit.title', { name: npc.name }), renderEditPanel(npc))
     wireStatsEditor(npc, sideBody)
+    _onNpcEdit?.()
   })
 
   openChatBtn?.addEventListener('click', () => {
@@ -297,6 +307,7 @@ export async function openSpotlight(npc: NPC, state: WorldState, config: AIConfi
         chatInput.value = ''
         chatSend.disabled = true
         chatInput.disabled = true
+        _onNpcChat?.()
 
         const turns = npcChatHistories.get(_chatNpc.id) ?? []
         turns.push({ speaker: 'player', text: msg })
@@ -493,9 +504,40 @@ function renderStatic(npc: NPC, state: WorldState): string {
   // Appearance tags using i18n labels
   const heightLabel = t(`app.${npc.appearance.height}`) as string
   const buildLabel  = npc.appearance.build === 'average'
-    ? t('app.average') as string : t(`app.${npc.appearance.build}`) as string
-  const hairLabel   = `${t('app.hair')} ${t(`hair.${npc.appearance.hair}`)}`
-  const skinLabel   = `${t('skin.light')?.length ? '' : ''}${t(`skin.${npc.appearance.skin}`)}`
+    ? t('app.average_build') as string : t(`app.${npc.appearance.build}`) as string
+  const hairLabel   = t(`hair.${npc.appearance.hair}`) as string
+  const skinLabel   = t(`skin.${npc.appearance.skin}`) as string
+
+  // Personality trait pills derived from worldview + economic situation + network
+  type TraitPill = { label: string; color: string }
+  const traitPills: TraitPill[] = []
+  const wv = npc.worldview
+  const ROLE_EXPECT: Record<string, number> = {
+    farmer: 300, craftsman: 400, merchant: 600, scholar: 350,
+    guard: 350, leader: 700, child: 50,
+  }
+  const wealthExpect = ROLE_EXPECT[npc.role] ?? 400
+
+  if (wv.collectivism > 0.65)       traitPills.push({ label: t('trait.collectivist')  as string, color: '#7f77dd' })
+  else if (wv.collectivism < 0.35)  traitPills.push({ label: t('trait.individualist') as string, color: '#c0a0ff' })
+  if (wv.authority_trust > 0.65)    traitPills.push({ label: t('trait.authoritarian') as string, color: '#ef9f27' })
+  else if (wv.authority_trust < 0.30) traitPills.push({ label: t('trait.rebel')       as string, color: '#e24b4b' })
+  if (wv.risk_tolerance > 0.65)     traitPills.push({ label: t('trait.risk_taker')    as string, color: '#5dcaa5' })
+  else if (wv.risk_tolerance < 0.30) traitPills.push({ label: t('trait.cautious')     as string, color: '#378add' })
+  if (npc.work_motivation === 'achievement' || npc.work_motivation === 'duty')
+    traitPills.push({ label: t('trait.hardworking') as string, color: '#5dcaa5' })
+  else if (npc.work_motivation === 'coerced' || npc.work_motivation === 'survival')
+    traitPills.push({ label: t('trait.lethargic')   as string, color: '#777' })
+  if (npc.wealth > wealthExpect * 2.5)      traitPills.push({ label: t('trait.wealthy')       as string, color: '#f0c040' })
+  else if (npc.wealth < wealthExpect * 0.3) traitPills.push({ label: t('trait.struggling')    as string, color: '#e24b4b' })
+  if (npc.strong_ties.length >= 10)         traitPills.push({ label: t('trait.well_connected') as string, color: '#50a0ff' })
+  else if (npc.isolation > 70 && npc.strong_ties.length < 4)
+    traitPills.push({ label: t('trait.isolated_npc') as string, color: '#888' })
+  if (npc.age >= 80)       traitPills.push({ label: t('trait.elder')  as string, color: '#c8a830' })
+  else if (npc.age >= 65)  traitPills.push({ label: t('trait.senior') as string, color: '#a08820' })
+  const traitHtml = traitPills.length > 0
+    ? `<div class="sp-appearance" style="margin-top:6px">${traitPills.map(p => `<span class="sp-tag" style="background:${p.color}22;color:${p.color};border:1px solid ${p.color}44">${p.label}</span>`).join('')}</div>`
+    : ''
 
   // Romance section: attraction bar + compatibility (only when in courtship)
   const romanceSection = npc.lifecycle.romance_target_id !== null ? (() => {
@@ -575,6 +617,7 @@ function renderStatic(npc: NPC, state: WorldState): string {
         <span class="sp-tag">${hairLabel}</span>
         <span class="sp-tag">${skinLabel}</span>
       </div>
+      ${traitHtml}
     </div>
 
     <!-- Status bars -->
@@ -583,12 +626,12 @@ function renderStatic(npc: NPC, state: WorldState): string {
       ${(() => {
         const actionState = npc.action_state
         const actionEmoji: Record<string, string> = {
-          working: '⚒️', resting: '😴', socializing: '💬', organizing: '✊',
-          fleeing: '🏃', complying: '🫡', confront: '⚠️',
+          working: '⚒️', resting: '😴', socializing: '💬', family: '🏠',
+          organizing: '✊', fleeing: '🏃', complying: '🫡', confront: '⚠️',
         }
         const actionColor: Record<string, string> = {
-          working: '#c0a0ff', resting: '#7f77dd', socializing: '#5dcaa5', organizing: '#ef9f27',
-          fleeing: '#e24b4b', complying: '#378add', confront: '#ff6b35',
+          working: '#c0a0ff', resting: '#7f77dd', socializing: '#5dcaa5', family: '#e87ca0',
+          organizing: '#ef9f27', fleeing: '#e24b4b', complying: '#378add', confront: '#ff6b35',
         }
         const em    = actionEmoji[actionState] ?? '❓'
         const color = actionColor[actionState] ?? '#aaa'

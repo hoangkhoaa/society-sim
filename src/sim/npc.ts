@@ -736,7 +736,9 @@ function decayNeeds(npc: NPC, state: WorldState): void {
   // food < 30 → mild penalty; food < 10 → famine conditions
   const scarcityPenalty = foodLevel < 30 ? (30 - foodLevel) / 100 * 0.9 : 0
   npc.hunger    += hungerBase + scarcityPenalty
-  npc.isolation += 0.2
+  // Isolation baseline: +0.08/tick (was 0.2). Working and resting now actively reduce isolation
+  // because those activities involve meaningful human contact or structured routine.
+  npc.isolation += 0.08
   npc.fear      += violenceActive ? 1.2 : -0.5
 
   // ── Exhaustion: role-based gain + age modifier ──────────────────────────
@@ -776,17 +778,36 @@ function decayNeeds(npc: NPC, state: WorldState): void {
     : foodLevel > 10 ? 0.25
     : 0
   if (npc.action_state === 'working' && hungerRecovery > 0) npc.hunger -= hungerRecovery
-  if (npc.action_state === 'socializing') {
-    npc.isolation -= 0.5
-    if (npc.strong_ties.length < 3) npc.isolation += 0.3
+
+  // Isolation changes by action state:
+  // Working = structured daily contact with coworkers → mild reduction
+  // Resting = recovery time, some social media/casual contact → very mild reduction
+  // Socializing = active social interaction → strongest reduction
+  // Organizing = group activity → moderate reduction
+  // Fleeing/confront = panic isolation → increase
+  if (npc.action_state === 'working') {
+    npc.isolation -= 0.12   // coworker contact, daily structure
+  } else if (npc.action_state === 'resting') {
+    npc.isolation -= 0.05   // passive social contact
+  } else if (npc.action_state === 'family') {
+    npc.isolation -= 0.65   // family time: strongest isolation reducer
+    npc.happiness  = clamp(npc.happiness + 0.15, 0, 100)
+    npc.stress     = clamp(npc.stress    - 0.10, 0, 100)
+  } else if (npc.action_state === 'socializing') {
+    npc.isolation -= 0.55
+    if (npc.strong_ties.length < 3) npc.isolation += 0.25  // socializing but no real friends
+  } else if (npc.action_state === 'organizing') {
+    npc.isolation -= 0.20   // collective action builds solidarity
+  } else if (npc.action_state === 'fleeing' || npc.action_state === 'confront') {
+    npc.isolation += 0.20   // panic/crisis cuts people off
   }
 
   // Social ostracism: neighbors gradually distance themselves from known criminals
-  if (npc.criminal_record) npc.isolation += 0.3
+  if (npc.criminal_record) npc.isolation += 0.15
 
   // Community group: belonging reduces isolation even when not actively socializing
   if (npc.community_group !== null) {
-    npc.isolation -= 0.15
+    npc.isolation -= 0.20
     // In winter, community provides mutual support against cold/fear
     if (isWinter) npc.fear = clamp(npc.fear - 0.5, 0, 100)
   }
@@ -861,6 +882,10 @@ function normalRoutine(npc: NPC, state: WorldState): ActionState {
   const dayOfWeek = (state.day - 1) % 7
   const isRestDay = dayOfWeek >= sched.work_days_per_week
 
+  // Helper: does this NPC have close family (spouse or children) to spend time with?
+  const hasFamily = npc.lifecycle.spouse_id !== null
+    || npc.lifecycle.children_ids.length > 0
+
   // ── Guards: rotation schedule ──────────────────────────────────────────
   // Guards in humane regimes (safety_net > 0.40) get true rest days; in harsh
   // regimes they are always on duty with only a short sleep window.
@@ -868,10 +893,13 @@ function normalRoutine(npc: NPC, state: WorldState): ActionState {
     const guardHasRestDay = isRestDay && c.safety_net > 0.40
     if (guardHasRestDay) {
       if (hour >= 22 || hour < 8) return 'resting'
+      if (hasFamily && hour >= 12 && hour < 18) return 'family'
       if (hour >= 14) return 'socializing'
       return 'resting'
     }
     if (hour >= 23 || hour < 5) return 'resting'
+    // Even on duty, guards with family get a brief evening window
+    if (hasFamily && hour >= 20 && hour < 22 && c.safety_net > 0.30) return 'family'
     return 'working'
   }
 
@@ -879,12 +907,14 @@ function normalRoutine(npc: NPC, state: WorldState): ActionState {
   if (npc.role === 'leader') {
     if (isRestDay) {
       if (hour >= 23 || hour < 7) return 'resting'
+      if (hasFamily && hour >= 10 && hour < 15) return 'family'
       if (hour >= 13) return 'socializing'
-      return 'working'  // leaders rarely fully disconnect
+      return 'working'
     }
     const leaderStart = Math.max(3, sched.work_start_hour - 1)
-    const leaderEnd   = Math.min(23, sched.work_end_hour   + 1)
+    const leaderEnd   = Math.min(22, sched.work_end_hour + 1)
     if (hour >= 23 || hour < leaderStart) return 'resting'
+    if (hasFamily && hour >= leaderEnd && hour < leaderEnd + 2) return 'family'
     if (hour >= leaderEnd) return 'socializing'
     return 'working'
   }
@@ -894,25 +924,31 @@ function normalRoutine(npc: NPC, state: WorldState): ActionState {
     const wake  = 7 + Math.floor(scheduleUnit(npc.id, 15) * 2)   // 7–8
     const sleep = 20 + Math.floor(scheduleUnit(npc.id, 16) * 2)  // 20–21
     if (hour >= sleep || hour < wake) return 'resting'
-    if (isRestDay || hour >= 16) return 'socializing'
+    if (isRestDay || hour >= 15) return 'family'  // children spend free time with family
     return 'working'
   }
 
   // ── Rest day (all other adults) ─────────────────────────────────────────
   if (isRestDay) {
     const offset   = npc.bio_clock_offset
-    const wakeTime = clamp(8 + offset, 6, 12)
+    const wakeTime = clamp(8 + offset, 6, 11)
     if (hour < wakeTime || hour >= 22) return 'resting'
+    // Rest day priority: family first (morning + mid-day), then socializing, then resting
+    if (hasFamily) {
+      if (hour >= wakeTime && hour < 13) return 'family'    // morning with family
+      if (hour >= 17 && hour < 21) return 'family'          // evening meal / bedtime routines
+    }
     if (hour >= 10) return 'socializing'
     return 'resting'
   }
 
-  // ── Night-shift workers (existing logic preserved) ─────────────────────
+  // ── Night-shift workers ────────────────────────────────────────────────
   if (isNightShiftWorker(npc)) {
     const lateSleeper = scheduleUnit(npc.id, 12) < 0.35
     const sleepStart  = lateSleeper ? 10 : 8
     const sleepEnd    = lateSleeper ? 18 : 17
     if (hour >= sleepStart && hour < sleepEnd) return 'resting'
+    if (hasFamily && hour >= 17 && hour < 20) return 'family'
     if (hour >= 17 && hour < 20) return 'socializing'
     return 'working'
   }
@@ -921,12 +957,16 @@ function normalRoutine(npc: NPC, state: WorldState): ActionState {
   const roleAdj   = ROLE_CONFIG[npc.role].schedule_offset
   const offset    = npc.bio_clock_offset
   const workStart = clamp(sched.work_start_hour + roleAdj.start + offset, 3, 12)
-  const workEnd   = clamp(sched.work_end_hour   + roleAdj.end   + offset, 12, 23)
-  // Social window before sleep: 1–3 hours after work, scaled by NPC id
-  const socialHours = 1 + Math.floor(scheduleUnit(npc.id, 1) * 3)     // 1–3 h
-  const sleepHour   = Math.min(workEnd + socialHours, 23)
+  const workEnd   = clamp(sched.work_end_hour   + roleAdj.end   + offset, 12, 22)
+
+  // Evening window: 2–4 hours after work (was 1–3). Family NPCs spend first part with family.
+  const eveningHours = 2 + Math.floor(scheduleUnit(npc.id, 1) * 3)    // 2–4 h total
+  const sleepHour    = Math.min(workEnd + eveningHours, 23)
+  // Family time: first 1–2 hours of evening for NPCs with spouse/children
+  const familyHours  = hasFamily ? 1 + Math.floor(scheduleUnit(npc.id, 7) * 2) : 0  // 1–2 h
 
   if (hour >= sleepHour || hour < workStart) return 'resting'
+  if (hasFamily && hour >= workEnd && hour < workEnd + familyHours) return 'family'
   if (hour >= workEnd) return 'socializing'
   return 'working'
 }
@@ -951,6 +991,8 @@ function selectAction(npc: NPC, state: WorldState): ActionState {
   // even stressed NPCs must rest at night; political action happens while awake.
   const routineState = normalRoutine(npc, state)
   if (routineState === 'resting') return 'resting'
+  // Family time is protected: stressed NPCs still go home to their family
+  if (routineState === 'family') return 'family'
 
   if (npc.stress < npc.stress_threshold) return routineState
 
