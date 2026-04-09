@@ -503,6 +503,7 @@ async function startGame(constitution: Constitution) {
   resetInGameHistory()
   resetNPCChatHistories()
   lastGovernmentPeriod = -1  // reset government cycle tracker for new game
+  _lastSimDay = -1
   resetNarrativeRuntimeState()
   resetPressRuntimeState()
 
@@ -1347,6 +1348,8 @@ function setPaused(value: boolean) {
   btnPause.textContent = paused ? '▶' : '⏸'
 }
 
+let _lastSimDay = -1
+
 function startSimLoop() {
   if (simInterval) clearInterval(simInterval)
   simInterval = setInterval(() => {
@@ -1363,7 +1366,10 @@ function startSimLoop() {
     const living = countLivingNpcs(world)
     if (living > peakPopulation) peakPopulation = living
     updateTopbar()
-    if (world.tick % 24 === 0) {
+    // Update daily panels whenever the sim-day advances (works at any speed setting)
+    const currentDay = (world.year - 1) * 360 + world.day
+    if (currentDay !== _lastSimDay) {
+      _lastSimDay = currentDay
       updateDemographics()
       updateRumors()
       updateEconomicsPanel()
