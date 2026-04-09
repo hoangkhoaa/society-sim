@@ -504,6 +504,7 @@ export interface NPCIntervention {
 
   // Direct effects
   kill?: boolean
+  kill_pct?: number    // 0-100: kill this % of selected candidates randomly (use instead of count for percentage-based kills)
   kill_cause?: DeathCause
   action_state?: ActionState
 
@@ -522,11 +523,44 @@ export interface NPCIntervention {
     time_preference?: number
   }
 
+  // Extended NPC fields
+  wealth_delta?: number                   // additive, clamped min 0
+  work_motivation?: WorkMotivationType    // override work motivation type directly
+  trust_delta?: {                         // per-institution trust nudge
+    institution: InstitutionId
+    competence?: number                   // -1..1
+    intention?: number                    // -1..1
+  }
+  sick?: boolean                          // infect (true) or cure (false)
+  exhaustion_delta?: number               // additive, clamped 0-100
+  capital_delta?: number                  // additive, clamped 0-100
+
   // Inject a memory entry
   memory?: {
     type: MemoryType
     emotional_weight: number
   }
+}
+
+export interface WorldDelta {
+  food_stock_delta?: number
+  natural_resources_delta?: number
+  tax_pool_delta?: number
+  quarantine_add?: string[]
+  quarantine_remove?: string[]
+  seed_rumor?: {
+    content: string
+    subject: 'government' | 'guard' | 'market' | 'community'
+    effect: 'trust_down' | 'trust_up' | 'fear_up' | 'grievance_up'
+    duration_days?: number
+  }
+}
+
+export interface InstitutionDelta {
+  id: InstitutionId
+  power_delta?: number        // additive, clamped 0-1
+  resources_delta?: number    // additive
+  legitimacy_delta?: number   // additive, clamped 0-1
 }
 
 export interface GodResponse {
@@ -536,12 +570,19 @@ export interface GodResponse {
   answer: string
   requires_confirm: boolean
   warning?: string
-  constitution?: Partial<Constitution>  // when type === 'setup'
+  constitution?: Partial<Constitution>  // live constitution reform (was dead code — now applied)
+  world_delta?: WorldDelta              // macro world changes (food, resources, tax, quarantine, rumors)
+  institution_deltas?: InstitutionDelta[] // institution power/legitimacy/resources shifts
 }
 
 export interface ConversationMessage {
   role: 'user' | 'assistant'
   content: string
+}
+
+export interface NPCChatTurn {
+  speaker: 'player' | 'npc'
+  text: string
 }
 
 // ── UI Types ───────────────────────────────────────────────────────────────
@@ -595,6 +636,16 @@ export const ZONE_LABELS: Record<string, string> = {
   residential_west: 'West Village',
   guard_post: 'The Garrison',
   plaza: 'Town Square',
+}
+
+export interface GameSettings {
+  // AI-Driven features
+  enable_human_elections:        boolean   // Step 6: NPCs elect a real leader NPC
+  election_cycle_days:           number    // how often elections happen (sim-days)
+  enable_government_ai:          boolean   // LLM drives policy generation
+  enable_npc_thoughts:           boolean   // LLM generates spotlight daily thoughts
+  enable_press_ai:               boolean   // LLM generates press headlines
+  enable_consequence_prediction: boolean   // LLM predicts event ripple effects
 }
 
 export const FEED_ICONS: Record<string, string> = {

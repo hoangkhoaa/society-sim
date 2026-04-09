@@ -3,6 +3,7 @@
 // provides getSettings() for other modules to read current preferences.
 
 import { getLang, t, type Lang } from '../i18n'
+import type { GameSettings } from '../types'
 import type { RegimeProfile, SimRestrictions } from '../sim/regime-config'
 import {
   settingsTabRegime,
@@ -19,17 +20,6 @@ import {
   settingsToggleCopy,
 } from '../local/ui'
 
-// ── Types ──────────────────────────────────────────────────────────────────────
-
-export interface GameSettings {
-  // AI-Driven features
-  enable_human_elections:        boolean   // Step 6: NPCs elect a real leader NPC
-  election_cycle_days:           number    // how often elections happen (sim-days)
-  enable_government_ai:          boolean   // LLM drives policy generation
-  enable_npc_thoughts:           boolean   // LLM generates spotlight daily thoughts
-  enable_press_ai:               boolean   // LLM generates press headlines
-  enable_consequence_prediction: boolean   // LLM predicts event ripple effects
-}
 
 const SETTINGS_KEY = 'game_settings_v1'
 

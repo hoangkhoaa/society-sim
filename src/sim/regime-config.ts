@@ -9,8 +9,7 @@
 //   • Default GameSettings for this regime
 //   • Which GameSettings are structurally locked by this regime
 
-import type { Constitution } from '../types'
-import type { GameSettings }  from '../ui/settings-panel'
+import type { Constitution, GameSettings } from '../types'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 

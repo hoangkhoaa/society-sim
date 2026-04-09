@@ -12,6 +12,7 @@ import {
   langDirective,
   writingDirective,
 } from '../local/ai'
+import { getRegimeProfile } from '../sim/regime-config'
 
 // ── Conversation history (persists for the session) ────────────────────────
 
@@ -48,6 +49,17 @@ On confirmation, return (MUST include "confirmed": true):
   "description":"short description",
   "work_schedule":{"work_days_per_week":5-7,"work_start_hour":5-10,"work_end_hour":14-22}}}
 
+ROLES — internal names that drive simulation mechanics (display names auto-derive from regime):
+• farmer    — food production. Renamed: Serf/Villein (feudal), Monk/Novice (theocracy), Collective Worker (marxist), Engineer (technocracy)
+• craftsman — goods & tools. Renamed: Artisan, Blacksmith, Forgehand; absent in pure marxist (absorbed into worker)
+• merchant  — trade, finance, lending. Renamed: Steward (feudal), Trader-Brother (theocracy). Absent in marxist/state economies (merchant ratio → 0)
+• scholar   — literacy, medicine, research. Renamed: Scribe/High Priest (theocracy), Scientist (technocracy), Party Intellectual (collective)
+• guard     — enforcement, security. Renamed: Soldier/Conscript (warlord), Temple Guard (theocracy)
+• leader    — governance, administration. Renamed: Lord/Noble (feudal), High Priest (theocracy), Party Secretary (collective)
+Role ratios must sum to 1.0. High farmer + low merchant → subsistence economy. High guard → militarized.
+
+Capital distribution auto-derived: feudal/warlord → lords own ~80%; marxist/collective → state owns all; default → Pareto spread.
+
 Presets: nordic, capitalist, socialist, feudal, theocracy, technocracy, warlord, commune, marxist — adapt and explain trade-offs.
 If not yet confirmed, reply conversationally — concise but insightful.
 
@@ -64,29 +76,70 @@ RESPONSE TYPES (always return valid JSON):
   "type":"storm"|"drought"|"flood"|"tsunami"|"epidemic"|"resource_boom"|"harsh_winter"|"trade_offer"|
          "refugee_wave"|"ideology_import"|"external_threat"|"blockade"|"scandal_leak"|"charismatic_npc"|
          "martyr"|"tech_shift"|"wildfire"|"earthquake"|"nuclear_explosion"|"bombing"|"meteor_strike"|"volcanic_eruption",
-  "intensity":0.0-1.0,"zones":[...],"duration_ticks":<n>,"narrative_open":"vivid opening"},
+  "intensity":0.0-1.0,"zones":[...],"duration_ticks":<n>,"narrative_open":"vivid opening",
+  "effects_per_tick":{"instant_kill_rate":0.0-1.0,"instant_kill_cause":"violence"|"accident"|"disease"|"starvation"|"natural","food_stock_delta":<n>,"stress_delta":<n>,"trust_delta":<n>,"displacement_chance":0.0-1.0}},
 "interventions":null,"answer":"brief","requires_confirm":true|false,"warning":"if catastrophic"}
+NOTE: effects_per_tick overrides default event effects. Use instant_kill_rate to specify exact death fraction (0.99 = 99% die instantly).
 
 2. NPC INTERVENTION — targeted stat/kill/behavior changes; can include companion event:
 {"type":"intervention","event":<event|null>,"interventions":[{
-  "target":"all"|"zone"|"role"|"id_list","zones":[...],"roles":[...],"npc_ids":[...],"count":<n>,
-  "kill":false,"kill_cause":"violence"|"disease"|"accident"|"natural",
+  "target":"all"|"zone"|"role"|"id_list","zones":[...],"npc_ids":[...],"count":<n>,
+  "roles":["farmer"|"craftsman"|"scholar"|"merchant"|"guard"|"leader"],
+  "kill":false,"kill_pct":0-100,"kill_cause":"violence"|"disease"|"accident"|"starvation"|"natural",
   "action_state":"working"|"resting"|"socializing"|"organizing"|"fleeing"|"complying"|"confront",
   "stress_delta":<-100..100>,"fear_delta":<-100..100>,"hunger_delta":<-100..100>,
   "grievance_delta":<-100..100>,"happiness_delta":<-100..100>,
+  "solidarity_delta":<-100..100>,
+  "wealth_delta":<number>,
+  "work_motivation":"survival"|"coerced"|"mandatory"|"happiness"|"achievement"|"duty",
+  "trust_delta":{"institution":"government"|"market"|"opposition"|"community"|"guard","competence":<-1..1>,"intention":<-1..1>},
+  "sick":true|false,
+  "exhaustion_delta":<-100..100>,
+  "capital_delta":<-100..100>,
   "worldview_delta":{"collectivism":<-1..1>,"authority_trust":<-1..1>,"risk_tolerance":<-1..1>,"time_preference":<-1..1>},
-  "memory":{"type":"crisis"|"harmed"|"helped"|"trust_broken"|"windfall"|"loss","emotional_weight":<-100..100>},
-  "solidarity_delta":<-100..100>}],
+  "memory":{"type":"crisis"|"harmed"|"helped"|"trust_broken"|"windfall"|"loss","emotional_weight":<-100..100>}}],
 "answer":"brief","requires_confirm":true|false,"warning":"if catastrophic"}
+NOTE: roles use internal names (farmer/craftsman/scholar/merchant/guard/leader), never display names (Serf, Lord, etc.).
 
 3. ANSWER — pure Q&A only:
 {"type":"answer","event":null,"interventions":null,"answer":"answer","requires_confirm":false}
 
+4. CONSTITUTION REFORM — live policy change (laws, rights, economic system shifts):
+{"type":"intervention","event":null,"interventions":null,
+"constitution":{"market_freedom":0-1,"state_power":0-1,"safety_net":0-1,
+  "individual_rights_floor":0-1,"base_trust":0-1,"network_cohesion":0-1,
+  "resource_scarcity":0-1,"gini_start":0-1,
+  "value_priority":["security"|"equality"|"freedom"|"growth",...4 items]},
+"answer":"brief","requires_confirm":true,"warning":"constitutional changes are immediate and irreversible"}
+NOTE: role_ratios cannot change mid-game (NPCs already exist). Only numeric constitution fields apply.
+
+5. MACRO WORLD CHANGES — food, resources, treasury, quarantine, information warfare:
+{"type":"intervention","event":null,"interventions":null,
+"world_delta":{
+  "food_stock_delta":<number>,
+  "natural_resources_delta":<number>,
+  "tax_pool_delta":<number>,
+  "quarantine_add":["zone",...],
+  "quarantine_remove":["zone",...],
+  "seed_rumor":{"content":"text","subject":"government"|"guard"|"market"|"community",
+    "effect":"trust_down"|"trust_up"|"fear_up"|"grievance_up","duration_days":1-30}},
+"answer":"brief","requires_confirm":true|false}
+Scales: food_stock ~500 = 1 day for 500 pop, ~15000 = a season; natural_resources max 100000; tax 200-1000 per day typical.
+
+6. INSTITUTION POWER SHIFTS — shift government/market/opposition/community/guard:
+{"type":"intervention","event":null,"interventions":null,
+"institution_deltas":[{"id":"government"|"market"|"opposition"|"community"|"guard",
+  "power_delta":<-1..1>,"legitimacy_delta":<-1..1>,"resources_delta":<-500..500>}],
+"answer":"brief","requires_confirm":true|false}
+
 RULES:
-- Convert policies/reforms/inventions into event or intervention; use "answer" only for pure Q&A.
-- Natural disasters use type "event" with built-in instant kills: nuclear_explosion~55%, tsunami~35%, meteor_strike~45%, volcanic_eruption~40%, bombing~30%, earthquake~15%.
-- Targeted kills (massacre/execution/assassination): use type "intervention" with kill:true + kill_cause.
-- Scale (pop ~500): minor=5–20 kills, disaster=30–80, catastrophe=150–280 (auto via event), extinction=350–450.
+- Convert policies/reforms/inventions into the most appropriate type; use "answer" only for pure Q&A.
+- To kill an exact percentage: use intervention with kill:true + kill_pct:<0-100>. Example: kill_pct:99 kills 99% of targeted NPCs.
+- To kill specific people (assassination, execution): intervention with kill:true + target:"id_list" or target:"role".
+- For events: use effects_per_tick.instant_kill_rate to override default kill fraction (e.g. 0.99 for 99% instant death).
+- Default event kill rates: nuclear_explosion~55%, tsunami~35%, meteor_strike~45%, volcanic_eruption~40%, bombing~30%, earthquake~15% — these are DEFAULTS, override via effects_per_tick if needed.
+- Multiple side-channels can combine: e.g. interventions[] + world_delta + constitution in one response.
+- Constitution reform: always set requires_confirm:true.
 
 ZONES: "north_farm","south_farm","workshop_district","market_square","scholar_quarter","residential_east","residential_west","guard_post","plaza"
 
@@ -335,6 +388,12 @@ export async function handlePlayerChat(
       if (inGameHistory.length > 20) inGameHistory.splice(0, 1)
       return { type: 'answer', event: null, answer: blockedAnswer, requires_confirm: false }
     }
+    // Strip side-channel fields in events_only mode (even for 'event' type responses)
+    if (config.token_mode === 'events_only') {
+      delete json.world_delta
+      delete json.institution_deltas
+      delete json.constitution
+    }
     inGameHistory.push({ user: userMessage, answer: json.answer ?? raw.slice(0, 200) })
     if (inGameHistory.length > 20) inGameHistory.splice(0, 1)
     return json
@@ -364,14 +423,29 @@ export async function generateNPCThought(npc: NPC, state: WorldState, config: AI
     .map(m => `${m.type}: ${m.emotional_weight > 0 ? 'positive' : 'negative'}`)
     .join(', ')
 
-  const prompt = `NPC: ${npc.name}, age ${npc.age}, ${npc.occupation}
-State: stress ${Math.round(npc.stress)}%, happiness ${Math.round(npc.happiness)}%, grievance ${Math.round(npc.grievance)}%
-Current action: ${npc.action_state}
-Recent memories: ${recentMemory || 'nothing notable'}
-World: stability ${Math.round(state.macro.stability)}%, food ${Math.round(state.macro.food)}%
-Active events: ${state.active_events.map(e => e.type).join(', ') || 'none'}
+  // Capital / economic status
+  const capitalStatus = (npc.capital ?? 0) > 0
+    ? `owns capital (${Math.round(npc.capital)} units)`
+    : npc.capital_rents_from != null
+      ? `rents tools/land from another (pays ${npc.capital_rent_paid?.toFixed(2) ?? '?'}/tick)`
+      : 'landless — no means of production'
 
-Write 1–3 sentences of this person's inner thoughts TODAY, in first person. Be concise, authentic, reflecting their actual circumstances. No explanation — just the thought.
+  // Labor status
+  const laborStatus = npc.on_strike
+    ? 'ON STRIKE'
+    : `works to ${npc.work_motivation} (motivation type)`
+
+  const prompt = `NPC: ${npc.name}, age ${npc.age}, ${npc.occupation} (role: ${npc.role})
+State: stress ${Math.round(npc.stress)}%, happiness ${Math.round(npc.happiness)}%, grievance ${Math.round(npc.grievance)}%, fear ${Math.round(npc.fear)}%
+Current action: ${npc.action_state} | ${laborStatus}
+Economic: wealth ${Math.round(npc.wealth)} coins | ${capitalStatus}
+Class solidarity: ${Math.round(npc.class_solidarity ?? 0)}%${npc.criminal_record ? ' | has criminal record' : ''}${npc.faction_id != null ? ` | faction member` : ''}
+Recent memories: ${recentMemory || 'nothing notable'}
+World: stability ${Math.round(state.macro.stability)}%, food ${Math.round(state.macro.food)}%, gini ${state.macro.gini.toFixed(2)}
+Active events: ${state.active_events.map(e => e.type).join(', ') || 'none'}
+Active strikes: ${(state.active_strikes ?? []).map(s => s.role).join(', ') || 'none'}
+
+Write 1–3 sentences of this person's inner thoughts TODAY, in first person. Reflect their occupation, economic situation, work motivation, and any strikes or unrest. Be concise and authentic — no explanation, just the thought.
 ${langDirective(getLang())}`
 
   const thought = await callAI(
@@ -410,9 +484,30 @@ function buildWorldContext(state: WorldState, config: AIConfig): string {
     })
     .join(', ')
 
+  const regimeVariant = getRegimeProfile(state.constitution).variant
+
+  // Elected leader (if human-driven governance is active)
+  const electedLeader = state.leader_id != null
+    ? (() => {
+        const l = state.npcs[state.leader_id!]
+        return l ? { id: l.id, name: l.name, occupation: l.occupation, days_in_office: state.day - state.last_election_day } : null
+      })()
+    : null
+
   const compact = {
     time: { day: state.day, year: state.year },
-    macro: state.macro,
+    regime: regimeVariant,
+    macro: {
+      food:              state.macro.food,
+      stability:         state.macro.stability,
+      trust:             state.macro.trust,
+      gini:              state.macro.gini,
+      political_pressure: state.macro.political_pressure,
+      natural_resources: state.macro.natural_resources,
+      labor_unrest:      state.macro.labor_unrest,
+      polarization:      state.macro.polarization,
+      gdp:               Math.round(state.macro.gdp),
+    },
     stress_distribution: stressGroups,
     top_grievance_groups: topGrievance,
     active_events: state.active_events.map(e => ({ type: e.type, intensity: e.intensity, zones: e.zones })),
@@ -424,11 +519,27 @@ function buildWorldContext(state: WorldState, config: AIConfig): string {
 
   const medium = {
     ...compact,
+    elected_leader: electedLeader,
+    active_strikes: (state.active_strikes ?? []).map(s => ({
+      role: s.role,
+      demand: s.demand,
+      days_active: Math.floor((state.tick - s.start_tick) / 24),
+    })),
     key_roles_pressure: {
-      leader: Math.round(source.filter(n => n.role === 'leader').reduce((s, n) => s + n.grievance, 0) / Math.max(source.filter(n => n.role === 'leader').length, 1)),
-      guard: Math.round(source.filter(n => n.role === 'guard').reduce((s, n) => s + n.grievance, 0) / Math.max(source.filter(n => n.role === 'guard').length, 1)),
-      farmer: Math.round(source.filter(n => n.role === 'farmer').reduce((s, n) => s + n.grievance, 0) / Math.max(source.filter(n => n.role === 'farmer').length, 1)),
+      leader:    Math.round(source.filter(n => n.role === 'leader').reduce((s, n) => s + n.grievance, 0) / Math.max(source.filter(n => n.role === 'leader').length, 1)),
+      guard:     Math.round(source.filter(n => n.role === 'guard').reduce((s, n) => s + n.grievance, 0) / Math.max(source.filter(n => n.role === 'guard').length, 1)),
+      farmer:    Math.round(source.filter(n => n.role === 'farmer').reduce((s, n) => s + n.grievance, 0) / Math.max(source.filter(n => n.role === 'farmer').length, 1)),
+      craftsman: Math.round(source.filter(n => n.role === 'craftsman').reduce((s, n) => s + n.grievance, 0) / Math.max(source.filter(n => n.role === 'craftsman').length, 1)),
+      merchant:  Math.round(source.filter(n => n.role === 'merchant').reduce((s, n) => s + n.grievance, 0) / Math.max(source.filter(n => n.role === 'merchant').length, 1)),
     },
+    // Capital economy summary
+    capital_economy: (() => {
+      const workers = source.filter(n => n.role !== 'child' && n.lifecycle.is_alive)
+      const landless = workers.filter(n => (n.capital ?? 0) === 0 && n.capital_rents_from == null).length
+      const renters  = workers.filter(n => (n.capital ?? 0) === 0 && n.capital_rents_from != null).length
+      const owners   = workers.filter(n => (n.capital ?? 0) > 0).length
+      return { owners, renters, landless, on_strike: workers.filter(n => n.on_strike).length }
+    })(),
     institutions: state.institutions.map(i => ({
       id: i.id,
       legitimacy: Math.round(i.legitimacy * 100),
@@ -437,16 +548,34 @@ function buildWorldContext(state: WorldState, config: AIConfig): string {
     })),
   }
 
+  const worldEconomy = {
+    food_stock:         Math.round(state.food_stock),
+    natural_resources:  Math.round(state.natural_resources),
+    tax_pool:           Math.round(state.tax_pool),
+    quarantine_zones:   state.quarantine_zones,
+    active_rumors:      state.rumors.length,
+  }
+
+  const activeFactions = state.factions
+    .filter(f => f.power > 0.05)
+    .map(f => ({ name: f.name, members: f.member_ids.length, power: Math.round(f.power * 100) / 100 }))
+
   if (config.token_mode === 'events_plus_npc_control') {
-    return JSON.stringify(medium)
+    return JSON.stringify({ ...medium, world_economy: worldEconomy })
   }
 
   return JSON.stringify({
     ...medium,
+    world_economy: worldEconomy,
+    factions: activeFactions,
     constitution_summary: {
-      gini: state.constitution.gini_start,
-      state_power: state.constitution.state_power,
-      safety_net: state.constitution.safety_net,
+      regime_variant:    regimeVariant,
+      gini:              state.constitution.gini_start,
+      state_power:       state.constitution.state_power,
+      market_freedom:    state.constitution.market_freedom,
+      safety_net:        state.constitution.safety_net,
+      individual_rights: state.constitution.individual_rights_floor,
+      value_priority:    state.constitution.value_priority,
     },
   })
 }
@@ -483,10 +612,12 @@ const CONSEQUENCE_SYSTEM = `You are a social dynamics engine. Given a world even
 Return ONLY JSON:
 {"summary":"1-2 sentences","consequences":[{
   "label":"vivid short label","delay_days":1-30,
-  "intervention":{"target":"all"|"zone"|"role","zones":[...],"roles":[...],"count":<n>,
+  "intervention":{"target":"all"|"zone"|"role","zones":[...],"count":<n>,
+    "roles":["farmer"|"craftsman"|"scholar"|"merchant"|"guard"|"leader"],
     "action_state":"working"|"resting"|"socializing"|"organizing"|"fleeing"|"complying"|"confront",
     "stress_delta":<-50..50>,"fear_delta":<-50..50>,"hunger_delta":<-50..50>,
-    "grievance_delta":<-50..50>,"happiness_delta":<-50..50>}}]}`
+    "grievance_delta":<-50..50>,"happiness_delta":<-50..50>,
+    "solidarity_delta":<-50..50>}}]}`
 
 export async function predictConsequences(
   eventType: string,

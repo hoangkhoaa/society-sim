@@ -4,7 +4,7 @@ import { setupGreeting, setupChat, applyPreset, handlePlayerChat, resetInGameHis
 import { listAvailableModels, PROVIDER_MODELS, getAIUsage, getRemainingRPM, getWaitSeconds, initKeyRing } from './ai/provider'
 import { addFeedRaw, addFeedThinking, setFeedFilter, setChronicleFilter, refreshChronicleTimestamps } from './ui/feed'
 import { showConfirm, showInfo, showPolicyChoice, type PolicyDisplayCard } from './ui/modal'
-import { initWorld, tick, spawnEvent, applyInterventions, applyInstantEventDeaths, getIncomeTaxRate, MIN_NPC_COUNT } from './sim/engine'
+import { initWorld, tick, spawnEvent, applyInterventions, applyInstantEventDeaths, getIncomeTaxRate, MIN_NPC_COUNT, applyConstitutionPatch, applyWorldDelta, applyInstitutionDeltas } from './sim/engine'
 import {
   setLang,
   t,
@@ -14,6 +14,7 @@ import {
   isSupportedLang,
 } from './i18n'
 import { initMap, setMapPaused, setMapLegendVisible } from './ui/map'
+import { resetNPCChatHistories, registerSpotlightCallbacks } from './ui/spotlight'
 import { runGovernmentCycle, detectRegime, type GovernmentPolicyAI } from './sim/government'
 import { checkPressTrigger, resetPressRuntimeState } from './sim/press'
 import { resetNarrativeRuntimeState } from './sim/narratives'
@@ -500,6 +501,7 @@ function replaceLastMsg(text: string) {
 
 async function startGame(constitution: Constitution) {
   resetInGameHistory()
+  resetNPCChatHistories()
   lastGovernmentPeriod = -1  // reset government cycle tracker for new game
   resetNarrativeRuntimeState()
   resetPressRuntimeState()
@@ -1023,6 +1025,13 @@ let paused = false
 let speed = 1
 let simInterval: ReturnType<typeof setInterval> | null = null
 let peakPopulation = 0
+
+// ── Spotlight pause/resume ─────────────────────────────────────────────────
+let _spotlightWasPaused = false
+registerSpotlightCallbacks(
+  () => { _spotlightWasPaused = paused; if (!paused) setPaused(true) },
+  () => { if (!_spotlightWasPaused) setPaused(false) },
+)
 const btnPause = document.getElementById('btn-pause')!
 const btnToggleDemo = document.getElementById('btn-toggle-demo') as HTMLButtonElement
 const btnToggleRumors = document.getElementById('btn-toggle-rumors') as HTMLButtonElement
@@ -1178,11 +1187,12 @@ async function triggerGovernment() {
   if (!world || govBusy) return
   govBusy = true
   updateGovCooldown()
-  const settings   = getSettings()
-  const rpmBudget  = aiConfig ? getRemainingRPM(aiConfig.rpm_limit) : Infinity
-  const govConfig  = (rpmBudget >= 2 && settings.enable_government_ai) ? aiConfig : null
-  const leaderNpc  = (settings.enable_human_elections && world.leader_id != null)
-    ? world.npcs[world.leader_id] : undefined
+  const rpmBudget = aiConfig ? getRemainingRPM(aiConfig.rpm_limit) : Infinity
+  const settings = getSettings()
+  const govConfig = (settings.enable_government_ai && rpmBudget >= 2) ? aiConfig : null
+  const leaderNpc = (settings.enable_human_elections && world.leader_id != null)
+    ? world.npcs[world.leader_id] ?? undefined
+    : undefined
   lastGovernmentPeriod = Math.floor(world.day / GOV_PERIOD_DAYS)
   try {
     await runGovernmentCycle(world, govConfig, govPolicyCallback, leaderNpc)
@@ -1248,8 +1258,6 @@ function startSimLoop() {
     const govPeriod = Math.floor(world.day / GOV_PERIOD_DAYS)
     if (govPeriod !== lastGovernmentPeriod && world.day >= GOV_PERIOD_DAYS && !govBusy) {
       const govConfig  = (rpmBudget >= 2 && settings.enable_government_ai) ? aiConfig : null
-      const leaderNpc  = (settings.enable_human_elections && world.leader_id != null)
-        ? world.npcs[world.leader_id] : undefined
       if (!govConfig && aiConfig && settings.enable_government_ai) {
         const wait = getWaitSeconds(aiConfig.rpm_limit)
         addFeedRaw(
@@ -1259,7 +1267,11 @@ function startSimLoop() {
       }
       govBusy = true
       lastGovernmentPeriod = govPeriod
-      runGovernmentCycle(world, govConfig, govPolicyCallback, leaderNpc).finally(() => { govBusy = false; updateGovCooldown() })
+      const _settings = getSettings()
+      const _leaderNpc = (_settings.enable_human_elections && world.leader_id != null)
+        ? world.npcs[world.leader_id] ?? undefined
+        : undefined
+      runGovernmentCycle(world, govConfig, govPolicyCallback, _leaderNpc).finally(() => { govBusy = false; updateGovCooldown() })
     }
     updateGovCooldown()
     if (living === 0) triggerGameOver()
@@ -1428,6 +1440,31 @@ async function sendChatMessage() {
   }
 }
 
+function applySideChannels(response: Awaited<ReturnType<typeof handlePlayerChat>>): void {
+  if (!world) return
+  if (response.constitution && Object.keys(response.constitution).length) {
+    applyConstitutionPatch(world, response.constitution)
+    addFeedRaw('📜 Constitution amended.', 'political', world.year, world.day)
+  }
+  if (response.world_delta) {
+    const wd = response.world_delta
+    applyWorldDelta(world, wd)
+    const parts: string[] = []
+    if (wd.food_stock_delta)           parts.push(`food ${wd.food_stock_delta > 0 ? '+' : ''}${Math.round(wd.food_stock_delta)}`)
+    if (wd.natural_resources_delta)    parts.push(`resources ${wd.natural_resources_delta > 0 ? '+' : ''}${Math.round(wd.natural_resources_delta)}`)
+    if (wd.tax_pool_delta)             parts.push(`treasury ${wd.tax_pool_delta > 0 ? '+' : ''}${Math.round(wd.tax_pool_delta)}`)
+    if (wd.quarantine_add?.length)     parts.push(`quarantine added: ${wd.quarantine_add.join(', ')}`)
+    if (wd.quarantine_remove?.length)  parts.push(`quarantine lifted: ${wd.quarantine_remove.join(', ')}`)
+    if (wd.seed_rumor)                 parts.push(`rumor seeded`)
+    if (parts.length) addFeedRaw(`🌍 ${parts.join(' | ')}`, 'info', world.year, world.day)
+  }
+  if (response.institution_deltas?.length) {
+    applyInstitutionDeltas(world, response.institution_deltas)
+    const names = response.institution_deltas.map(d => d.id).join(', ')
+    addFeedRaw(`🏛 Institutions adjusted: ${names}`, 'political', world.year, world.day)
+  }
+}
+
 function injectEvent(response: Awaited<ReturnType<typeof handlePlayerChat>>) {
   if (!world || !response.event) return
   const narrative = response.event.narrative_open ?? response.answer
@@ -1442,6 +1479,9 @@ function injectEvent(response: Awaited<ReturnType<typeof handlePlayerChat>>) {
       'critical', world.year, world.day,
     )
   }
+
+  // Apply side-channel changes (constitution, world_delta, institution_deltas)
+  applySideChannels(response)
 
   // Async consequence prediction (non-blocking)
   void scheduleConsequences(response.event.type ?? 'event', narrative)
@@ -1484,6 +1524,9 @@ function executeIntervention(response: Awaited<ReturnType<typeof handlePlayerCha
       )
     }
   }
+
+  // Apply side-channel changes (constitution, world_delta, institution_deltas)
+  applySideChannels(response)
 
   // Async consequence prediction (non-blocking)
   void scheduleConsequences(response.event?.type ?? 'intervention', response.answer)

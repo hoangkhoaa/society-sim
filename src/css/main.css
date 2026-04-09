@@ -896,6 +896,166 @@ body[data-theme='light'] .press-censored-note { color: #a22; }
   padding: 10px 12px;
 }
 .sp-thought.loading { color: #444; }
+
+/* ── NPC Stats Editor ─────────────────────────────────────────────────────── */
+.sp-edit-toggle {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.sp-edit-toggle:hover { color: #aaa; }
+.sp-edit-chevron { font-size: 10px; opacity: 0.6; }
+.sp-edit-body { padding: 4px 0 2px; }
+.sp-edit-group-title {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #555;
+  margin: 8px 0 4px;
+  padding: 0 12px;
+}
+.sp-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 12px;
+}
+.sp-edit-label {
+  font-size: 10px;
+  color: #888;
+  width: 110px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sp-edit-range {
+  flex: 1;
+  height: 3px;
+  accent-color: #7f77dd;
+  cursor: pointer;
+}
+.sp-edit-num {
+  width: 52px;
+  background: #111;
+  border: 1px solid #2a2a2a;
+  color: #ccc;
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  text-align: right;
+}
+.sp-edit-num:focus { outline: none; border-color: #555; }
+.sp-edit-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding: 4px 12px;
+}
+.sp-edit-check-label {
+  font-size: 10px;
+  color: #999;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.sp-edit-check-label:hover { color: #ccc; }
+.sp-edit-select {
+  flex: 1;
+  background: #111;
+  border: 1px solid #2a2a2a;
+  color: #ccc;
+  padding: 3px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  width: 100%;
+}
+.sp-edit-select:focus { outline: none; border-color: #555; }
+/* Light theme */
+body[data-theme='light'] .sp-edit-group-title { color: #aaa; }
+body[data-theme='light'] .sp-edit-label { color: #888; }
+body[data-theme='light'] .sp-edit-num { background: #f5f7fa; border-color: #c8d0da; color: #222; }
+body[data-theme='light'] .sp-edit-select { background: #f5f7fa; border-color: #c8d0da; color: #222; }
+body[data-theme='light'] .sp-edit-check-label { color: #666; }
+body[data-theme='light'] .sp-edit-check-label:hover { color: #333; }
+
+/* ── NPC Direct Conversation ──────────────────────────────────────────────── */
+.sp-chat-section { padding-bottom: 8px; }
+.sp-chat-thread {
+  max-height: 180px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 12px 4px;
+}
+.sp-chat-empty { font-size: 11px; color: #444; font-style: italic; text-align: center; padding: 8px 0; }
+.sp-chat-bubble {
+  padding: 5px 9px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.45;
+  max-width: 88%;
+  word-break: break-word;
+}
+.sp-chat-player {
+  background: #162316;
+  color: #7ed87e;
+  align-self: flex-end;
+  border-bottom-right-radius: 2px;
+}
+.sp-chat-npc {
+  background: #1a1a2a;
+  color: #b0b0d0;
+  align-self: flex-start;
+  border-bottom-left-radius: 2px;
+}
+.sp-chat-npc b { color: #8888cc; font-weight: 600; }
+.sp-chat-thinking em { opacity: 0.45; animation: pulse 1.2s ease-in-out infinite; }
+.sp-chat-input-row {
+  display: flex;
+  gap: 5px;
+  padding: 4px 12px 2px;
+}
+.sp-chat-input {
+  flex: 1;
+  background: #111;
+  border: 1px solid #2a2a2a;
+  color: #ccc;
+  padding: 5px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-family: inherit;
+}
+.sp-chat-input:focus { outline: none; border-color: #444; }
+.sp-chat-input:disabled { opacity: 0.4; }
+.sp-chat-send-btn { padding: 4px 10px; font-size: 13px; }
+.sp-chat-ai-btn { padding: 4px 8px; font-size: 13px; opacity: 0.85; }
+.sp-chat-ai-btn.sp-chat-ai-off { opacity: 0.35; filter: grayscale(1); }
+/* NPC name links (spouse / romance target) */
+.sp-npc-link {
+  background: none;
+  border: none;
+  color: #e87ca0;
+  cursor: pointer;
+  font-size: inherit;
+  font-family: inherit;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.sp-npc-link:hover { color: #ff9ec0; }
+body[data-theme='light'] .sp-npc-link { color: #c0446a; }
+body[data-theme='light'] .sp-npc-link:hover { color: #a02050; }
+/* Light theme overrides */
+body[data-theme='light'] .sp-chat-player { background: #d4f0d4; color: #1a4f1a; }
+body[data-theme='light'] .sp-chat-npc { background: #eaebf5; color: #2a2a4a; }
+body[data-theme='light'] .sp-chat-npc b { color: #4444aa; }
+body[data-theme='light'] .sp-chat-input { background: #f5f7fa; border-color: #c0cad8; color: #222; }
+body[data-theme='light'] .sp-chat-empty { color: #aaa; }
 .sp-description {
   font-size: 11px;
   color: #666;

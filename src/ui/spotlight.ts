@@ -1,7 +1,9 @@
-import type { NPC, WorldState, AIConfig } from '../types'
+import type { NPC, WorldState, AIConfig, NPCChatTurn } from '../types'
 import { generateNPCThought } from '../ai/god-agent'
+import { handleNPCChat } from '../ai/npc-agent'
 import { t, tf, getLang } from '../i18n'
 import { getSettings } from './settings-panel'
+import { clamp } from '../sim/constitution'
 import {
   spLifeStoryTitle,
   spLegendary,
@@ -34,15 +36,239 @@ spClose.addEventListener('click', () => close())
 
 export function close() {
   panel.classList.add('hidden')
+  _onClose?.()
+}
+
+// ── Pause/resume callbacks (set by main.ts to avoid circular dep) ──────────
+let _onOpen:  (() => void) | null = null
+let _onClose: (() => void) | null = null
+
+export function registerSpotlightCallbacks(onOpen: () => void, onClose: () => void): void {
+  _onOpen  = onOpen
+  _onClose = onClose
+}
+
+// ── NPC conversation state ─────────────────────────────────────────────────
+const npcChatHistories = new Map<number, NPCChatTurn[]>()
+let _chatNpc:    NPC | null = null
+let _chatState:  WorldState | null = null
+let _chatConfig: AIConfig | null = null
+let _useAI = true   // player-controlled AI toggle (persists across NPCs)
+
+export function resetNPCChatHistories(): void {
+  npcChatHistories.clear()
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function renderNPCChatThread(history: NPCChatTurn[], npcName: string): void {
+  const thread = document.getElementById('sp-chat-thread')
+  if (!thread) return
+  if (history.length === 0) {
+    thread.innerHTML = `<div class="sp-chat-empty">No conversation yet.</div>`
+  } else {
+    thread.innerHTML = history.map(turn =>
+      turn.speaker === 'player'
+        ? `<div class="sp-chat-bubble sp-chat-player">${escapeHtml(turn.text)}</div>`
+        : `<div class="sp-chat-bubble sp-chat-npc"><b>${escapeHtml(npcName)}:</b> ${escapeHtml(turn.text)}</div>`
+    ).join('')
+  }
+  thread.scrollTop = thread.scrollHeight
+}
+
+function getFallbackResponse(npc: NPC): string {
+  if (npc.fear > 70)      return "I... I don't want any trouble. Please leave me alone."
+  if (npc.grievance > 75) return "What do you want? We're barely surviving as it is."
+  if (npc.stress > 70)    return "I'm too exhausted to talk right now."
+  if (npc.happiness > 65) return "Good day! Things are going well enough, can't complain."
+  return "Hmm. I'm not sure what to say to you."
+}
+
+/** Sync a range + number pair and call onChange with the new value. */
+function wireSlider(id: string, onChange: (v: number) => void): void {
+  const range  = document.getElementById(`sp-edit-${id}-range`) as HTMLInputElement | null
+  const num    = document.getElementById(`sp-edit-${id}-num`)   as HTMLInputElement | null
+  if (!range || !num) return
+
+  range.addEventListener('input', () => {
+    num.value = range.value
+    onChange(parseFloat(range.value))
+  })
+  num.addEventListener('change', () => {
+    const v = Math.min(parseFloat(num.max), Math.max(parseFloat(num.min), parseFloat(num.value) || 0))
+    num.value   = String(v)
+    range.value = String(v)
+    onChange(v)
+  })
+}
+
+function wireStatsEditor(npc: NPC): void {
+  // Collapsible toggle
+  const toggle = document.getElementById('sp-edit-toggle')
+  const body   = document.getElementById('sp-edit-body')
+  const chevron = toggle?.querySelector('.sp-edit-chevron') as HTMLElement | null
+  toggle?.addEventListener('click', () => {
+    const open = body?.style.display === 'none'
+    if (body) body.style.display = open ? '' : 'none'
+    if (chevron) chevron.textContent = open ? '▼' : '▶'
+  })
+
+  // Emotional stats (0–100)
+  wireSlider('stress',     v => { npc.stress     = clamp(v, 0, 100) })
+  wireSlider('happiness',  v => { npc.happiness  = clamp(v, 0, 100) })
+  wireSlider('grievance',  v => { npc.grievance  = clamp(v, 0, 100) })
+  wireSlider('fear',       v => { npc.fear       = clamp(v, 0, 100) })
+  wireSlider('hunger',     v => { npc.hunger     = clamp(v, 0, 100) })
+  wireSlider('exhaustion', v => { npc.exhaustion = clamp(v, 0, 100) })
+  wireSlider('isolation',  v => { npc.isolation  = clamp(v, 0, 100) })
+  wireSlider('solidarity', v => {
+    npc.class_solidarity = clamp(v, 0, 100)
+    if (npc.class_solidarity < 45 && npc.on_strike) npc.on_strike = false
+  })
+
+  // Worldview (0–100 → 0–1)
+  wireSlider('wv-collectivism', v => { npc.worldview.collectivism    = clamp(v / 100, 0, 1) })
+  wireSlider('wv-authority',    v => { npc.worldview.authority_trust = clamp(v / 100, 0, 1) })
+  wireSlider('wv-risk',         v => { npc.worldview.risk_tolerance  = clamp(v / 100, 0, 1) })
+  wireSlider('wv-time',         v => { npc.worldview.time_preference = clamp(v / 100, 0, 1) })
+
+  // Economy
+  wireSlider('wealth',  v => { npc.wealth          = Math.max(0, v) })
+  wireSlider('capital', v => { npc.capital         = clamp(v, 0, 100) })
+
+  // Flags
+  const sickCb    = document.getElementById('sp-edit-sick')            as HTMLInputElement | null
+  const strikeCb  = document.getElementById('sp-edit-on-strike')       as HTMLInputElement | null
+  const crimeCb   = document.getElementById('sp-edit-criminal-record') as HTMLInputElement | null
+
+  sickCb?.addEventListener('change',   () => {
+    npc.sick = sickCb.checked
+    if (npc.sick && npc.sick_ticks < 48) npc.sick_ticks = 48
+  })
+  strikeCb?.addEventListener('change', () => { npc.on_strike       = strikeCb.checked })
+  crimeCb?.addEventListener('change',  () => { npc.criminal_record = crimeCb.checked })
+
+  // Work motivation
+  const motSel = document.getElementById('sp-edit-work-motivation') as HTMLSelectElement | null
+  motSel?.addEventListener('change', () => {
+    npc.work_motivation = motSel.value as NPC['work_motivation']
+  })
 }
 
 export async function openSpotlight(npc: NPC, state: WorldState, config: AIConfig | null) {
   panel.classList.remove('hidden')
   spName.textContent = `${npc.name} · ${npc.occupation}`
+  _onOpen?.()
+
+  // Save refs for NPC chat
+  _chatNpc    = npc
+  _chatState  = state
+  _chatConfig = config
 
   // Render static info immediately, then load the daily thought async
   spBody.innerHTML = renderStatic(npc, state)
 
+  // Restore conversation history
+  const history = npcChatHistories.get(npc.id) ?? []
+  renderNPCChatThread(history, npc.name)
+
+  // Wire up NPC chat input
+  const chatInput  = document.getElementById('sp-chat-input') as HTMLInputElement | null
+  const chatSend   = document.getElementById('sp-chat-send')  as HTMLButtonElement | null
+  const chatThread = document.getElementById('sp-chat-thread') as HTMLElement | null
+
+  // Wire stats editor (collapsible + live-edit inputs)
+  wireStatsEditor(npc)
+
+  // Wire NPC name links (spouse / romance target → open their spotlight)
+  spBody.querySelectorAll<HTMLButtonElement>('[data-npc-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = parseInt(btn.dataset.npcId ?? '', 10)
+      const linked = state.npcs.find(n => n.id === id)
+      if (linked) openSpotlight(linked, state, config)
+    })
+  })
+
+  // Wire AI toggle button
+  const aiToggle = document.getElementById('sp-chat-ai-toggle') as HTMLButtonElement | null
+  const updateAIToggle = () => {
+    if (!aiToggle) return
+    aiToggle.textContent = _useAI ? '🤖' : '💬'
+    aiToggle.title = _useAI ? 'AI responses ON — click to use scripted replies' : 'AI responses OFF — click to use AI'
+    aiToggle.classList.toggle('sp-chat-ai-off', !_useAI)
+  }
+  updateAIToggle()
+  aiToggle?.addEventListener('click', () => {
+    _useAI = !_useAI
+    updateAIToggle()
+  })
+
+  if (chatInput && chatSend && chatThread) {
+    const doSend = async () => {
+      const msg = chatInput.value.trim()
+      if (!msg || !_chatNpc || !_chatState) return
+      chatInput.value = ''
+      chatSend.disabled = true
+      chatInput.disabled = true
+
+      const turns = npcChatHistories.get(_chatNpc.id) ?? []
+      turns.push({ speaker: 'player', text: msg })
+      renderNPCChatThread(turns, _chatNpc.name)
+
+      // Thinking bubble
+      const thinkEl = document.createElement('div')
+      thinkEl.className = 'sp-chat-bubble sp-chat-npc sp-chat-thinking'
+      thinkEl.innerHTML = `<b>${escapeHtml(_chatNpc.name)}:</b> <em>...</em>`
+      chatThread.appendChild(thinkEl)
+      chatThread.scrollTop = chatThread.scrollHeight
+
+      let replyText: string
+      if (_useAI && _chatConfig) {
+        try {
+          const result = await handleNPCChat(_chatNpc, msg, turns, _chatState, _chatConfig)
+          replyText = result.text
+
+          // Apply conversational stat effects
+          const e = result.effect
+          if (e) {
+            if (e.grievance_delta != null) _chatNpc.grievance  = clamp(_chatNpc.grievance  + e.grievance_delta,  0, 100)
+            if (e.fear_delta != null)      _chatNpc.fear       = clamp(_chatNpc.fear       + e.fear_delta,       0, 100)
+            if (e.happiness_delta != null) _chatNpc.happiness  = clamp(_chatNpc.happiness  + e.happiness_delta,  0, 100)
+            if (e.trust_delta != null) {
+              const gov = _chatNpc.trust_in['government']
+              if (gov) gov.intention = clamp(gov.intention + e.trust_delta, 0, 1)
+            }
+          }
+        } catch {
+          replyText = getFallbackResponse(_chatNpc)
+        }
+      } else {
+        replyText = getFallbackResponse(_chatNpc)
+      }
+
+      turns.push({ speaker: 'npc', text: replyText })
+      npcChatHistories.set(_chatNpc.id, turns.slice(-20))
+
+      thinkEl.remove()
+      renderNPCChatThread(turns, _chatNpc.name)
+      chatSend.disabled  = false
+      chatInput.disabled = false
+      chatInput.focus()
+    }
+
+    chatSend.addEventListener('click', doSend)
+    chatInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.isComposing) doSend()
+    })
+  }
+
+  // Async: daily thought
   const thoughtEl = document.getElementById('sp-thought-text')!
   thoughtEl.textContent = t('sp.thought_loading') as string
   thoughtEl.className   = 'sp-thought loading'
@@ -62,6 +288,22 @@ export async function openSpotlight(npc: NPC, state: WorldState, config: AIConfi
     thoughtEl.className   = 'sp-thought'
     console.error('Thought generation failed:', e)
   }
+}
+
+function editSlider(id: string, label: string, value: number, min: number, max: number, step = 1): string {
+  return `
+    <div class="sp-edit-row">
+      <span class="sp-edit-label">${label}</span>
+      <input type="range"  id="sp-edit-${id}-range" class="sp-edit-range" min="${min}" max="${max}" step="${step}" value="${value}">
+      <input type="number" id="sp-edit-${id}-num"   class="sp-edit-num"   min="${min}" max="${max}" step="${step}" value="${value}">
+    </div>`
+}
+
+function editCheckbox(id: string, label: string, checked: boolean): string {
+  return `
+    <label class="sp-edit-check-label">
+      <input type="checkbox" id="sp-edit-${id}" ${checked ? 'checked' : ''}> ${label}
+    </label>`
 }
 
 function lifeStory(npc: NPC, state: WorldState): string {
@@ -130,11 +372,14 @@ function renderStatic(npc: NPC, state: WorldState): string {
   // Marital / romance status label
   let marital: string
   if (npc.lifecycle.spouse_id !== null) {
-    marital = t('sp.married') as string
+    const spouse = state.npcs.find(n => n.id === npc.lifecycle.spouse_id)
+    marital = spouse
+      ? `${t('sp.married')} <button class="sp-npc-link" data-npc-id="${spouse.id}">${escapeHtml(spouse.name)}</button>`
+      : t('sp.married') as string
   } else if (npc.lifecycle.romance_target_id !== null) {
     const target = state.npcs.find(n => n.id === npc.lifecycle.romance_target_id)
     marital = target
-      ? `${t('sp.in_love')} ${target.name}`
+      ? `${t('sp.in_love')} <button class="sp-npc-link" data-npc-id="${target.id}">${escapeHtml(target.name)}</button>`
       : t('sp.single') as string
   } else if ((npc.lifecycle.heartbreak_cooldown ?? 0) > 0) {
     marital = t('sp.heartbroken') as string
@@ -160,7 +405,7 @@ function renderStatic(npc: NPC, state: WorldState): string {
     const mutualLove    = target.lifecycle.romance_target_id === npc.id
     return `
     <div class="sp-section">
-      <div class="sp-section-title">${t('sp.romance')}</div>
+      <div class="sp-section-title">${t('sp.romance')} — <button class="sp-npc-link" data-npc-id="${target.id}">${escapeHtml(target.name)}</button></div>
       <div class="sp-row" style="margin-bottom:2px">
         <span class="sp-label">${t('sp.attraction')}</span>
         <span class="sp-value">${attractionPct}%</span>
@@ -341,6 +586,57 @@ function renderStatic(npc: NPC, state: WorldState): string {
 
     ${memorySection(npc, state.tick)}
     ${lifeStory(npc, state)}
+
+    <!-- Stats editor (collapsible) -->
+    <div class="sp-section sp-edit-section">
+      <div class="sp-section-title sp-edit-toggle" id="sp-edit-toggle">
+        ✏️ Edit Stats <span class="sp-edit-chevron">▶</span>
+      </div>
+      <div class="sp-edit-body" id="sp-edit-body" style="display:none">
+        <div class="sp-edit-group-title">Emotional (0–100)</div>
+        ${editSlider('stress',      'Stress',      Math.round(npc.stress),      0, 100)}
+        ${editSlider('happiness',   'Happiness',   Math.round(npc.happiness),   0, 100)}
+        ${editSlider('grievance',   'Grievance',   Math.round(npc.grievance),   0, 100)}
+        ${editSlider('fear',        'Fear',        Math.round(npc.fear),        0, 100)}
+        ${editSlider('hunger',      'Hunger',      Math.round(npc.hunger),      0, 100)}
+        ${editSlider('exhaustion',  'Exhaustion',  Math.round(npc.exhaustion),  0, 100)}
+        ${editSlider('isolation',   'Isolation',   Math.round(npc.isolation ?? 0), 0, 100)}
+        ${editSlider('solidarity',  'Class Solidarity', Math.round(npc.class_solidarity ?? 0), 0, 100)}
+        <div class="sp-edit-group-title">Worldview (0–100%)</div>
+        ${editSlider('wv-collectivism',    'Collectivism',    Math.round(npc.worldview.collectivism    * 100), 0, 100)}
+        ${editSlider('wv-authority',       'Authority trust', Math.round(npc.worldview.authority_trust * 100), 0, 100)}
+        ${editSlider('wv-risk',            'Risk tolerance',  Math.round(npc.worldview.risk_tolerance  * 100), 0, 100)}
+        ${editSlider('wv-time',            'Time preference', Math.round(npc.worldview.time_preference * 100), 0, 100)}
+        <div class="sp-edit-group-title">Economy</div>
+        ${editSlider('wealth',   'Wealth (coins)', Math.round(npc.wealth), 0, 99999, 50)}
+        ${editSlider('capital',  'Capital (0–100)', Math.round(npc.capital ?? 0), 0, 100)}
+        <div class="sp-edit-group-title">Flags</div>
+        <div class="sp-edit-flags">
+          ${editCheckbox('sick',            'Sick',            npc.sick ?? false)}
+          ${editCheckbox('on-strike',       'On Strike',       npc.on_strike ?? false)}
+          ${editCheckbox('criminal-record', 'Criminal Record', npc.criminal_record ?? false)}
+        </div>
+        <div class="sp-edit-group-title">Work Motivation</div>
+        <div class="sp-edit-row">
+          <select id="sp-edit-work-motivation" class="sp-edit-select">
+            ${(['survival','coerced','mandatory','happiness','achievement','duty'] as const).map(v =>
+              `<option value="${v}"${npc.work_motivation === v ? ' selected' : ''}>${v}</option>`
+            ).join('')}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Direct conversation -->
+    <div class="sp-section sp-chat-section">
+      <div class="sp-section-title">💬 Talk to ${npc.name}</div>
+      <div class="sp-chat-thread" id="sp-chat-thread"></div>
+      <div class="sp-chat-input-row">
+        <button id="sp-chat-ai-toggle" class="btn-icon sp-chat-ai-btn" title="Toggle AI responses"></button>
+        <input type="text" id="sp-chat-input" class="sp-chat-input" placeholder="Say something..." maxlength="200" />
+        <button id="sp-chat-send" class="btn-icon sp-chat-send-btn">→</button>
+      </div>
+    </div>
 
     <!-- Daily thought (LLM, filled async above) -->
     <div class="sp-section">

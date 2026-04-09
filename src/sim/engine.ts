@@ -1,4 +1,4 @@
-import type { WorldState, Constitution, NPC, SimEvent, NarrativeEntry, NPCIntervention, ActiveStrike } from '../types'
+import type { WorldState, Constitution, NPC, SimEvent, NarrativeEntry, NPCIntervention, ActiveStrike, WorldDelta, InstitutionDelta } from '../types'
 import { createNPC, tickNPC, computeProductivity, RESIDENTIAL_ZONES } from './npc'
 import type { IndividualEvent, TickEventFlags } from './npc'
 import { buildNetwork, MAX_STRONG_TIES, MAX_WEAK_TIES, MAX_INFO_TIES } from './network'
@@ -419,8 +419,16 @@ export function applyInterventions(state: WorldState, interventions: NPCInterven
       candidates = candidates.filter(n => idSet.has(n.id))
     }
 
+    // kill_pct: kill a percentage of candidates (takes priority over count)
+    if (iv.kill && iv.kill_pct !== undefined) {
+      const killCount = Math.round(candidates.length * Math.min(100, Math.max(0, iv.kill_pct)) / 100)
+      candidates = candidates
+        .map(n => ({ n, r: Math.random() }))
+        .sort((a, b) => a.r - b.r)
+        .slice(0, killCount)
+        .map(x => x.n)
     // Optionally cap by count (random sample)
-    if (iv.count !== undefined && iv.count < candidates.length) {
+    } else if (iv.count !== undefined && iv.count < candidates.length) {
       candidates = candidates
         .map(n => ({ n, r: Math.random() }))
         .sort((a, b) => a.r - b.r)
@@ -477,6 +485,34 @@ function applyInterventionToNPC(npc: NPC, iv: NPCIntervention, state: WorldState
     if (npc.class_solidarity < 45 && npc.on_strike) npc.on_strike = false
   }
 
+  // Extended NPC fields
+  if (iv.wealth_delta !== undefined)
+    npc.wealth = Math.max(0, npc.wealth + iv.wealth_delta)
+
+  if (iv.work_motivation !== undefined)
+    npc.work_motivation = iv.work_motivation
+
+  if (iv.trust_delta !== undefined) {
+    const ts = npc.trust_in[iv.trust_delta.institution]
+    if (ts) {
+      if (iv.trust_delta.competence !== undefined)
+        ts.competence = clamp(ts.competence + iv.trust_delta.competence, 0, 1)
+      if (iv.trust_delta.intention !== undefined)
+        ts.intention = clamp(ts.intention + iv.trust_delta.intention, 0, 1)
+    }
+  }
+
+  if (iv.sick !== undefined) {
+    npc.sick = iv.sick
+    if (iv.sick) npc.sick_ticks = Math.max(npc.sick_ticks, 48)
+  }
+
+  if (iv.exhaustion_delta !== undefined)
+    npc.exhaustion = clamp(npc.exhaustion + iv.exhaustion_delta, 0, 100)
+
+  if (iv.capital_delta !== undefined)
+    npc.capital = clamp((npc.capital ?? 0) + iv.capital_delta, 0, 100)
+
   // Memory injection
   if (iv.memory) {
     npc.memory.push({ event_id: 'intervention', type: iv.memory.type, emotional_weight: iv.memory.emotional_weight, tick: state.tick })
@@ -484,7 +520,67 @@ function applyInterventionToNPC(npc: NPC, iv: NPCIntervention, state: WorldState
   }
 }
 
+// ── World-level intervention functions ────────────────────────────────────────
 
+/** Apply a live constitution patch. Only safe mid-game fields are applied.
+ *  role_ratios and description are blocked because they only matter at init time. */
+export function applyConstitutionPatch(state: WorldState, patch: Partial<Constitution>): void {
+  const safe: Array<keyof Constitution> = [
+    'market_freedom', 'state_power', 'safety_net',
+    'individual_rights_floor', 'base_trust', 'network_cohesion',
+    'resource_scarcity', 'gini_start',
+  ]
+  for (const key of safe) {
+    if (patch[key] !== undefined)
+      (state.constitution as unknown as Record<string, unknown>)[key] = patch[key]
+  }
+  if (patch.value_priority?.length === 4)
+    state.constitution.value_priority = patch.value_priority
+  if (patch.work_schedule)
+    state.constitution.work_schedule = { ...state.constitution.work_schedule, ...patch.work_schedule }
+}
+
+/** Apply macro-level world state changes (food, resources, treasury, quarantine, rumors). */
+export function applyWorldDelta(state: WorldState, delta: WorldDelta): void {
+  if (delta.food_stock_delta !== undefined)
+    state.food_stock = clamp(state.food_stock + delta.food_stock_delta, 0, 999999)
+  if (delta.natural_resources_delta !== undefined)
+    state.natural_resources = clamp(state.natural_resources + delta.natural_resources_delta, 0, 100000)
+  if (delta.tax_pool_delta !== undefined)
+    state.tax_pool = Math.max(0, state.tax_pool + delta.tax_pool_delta)
+  if (delta.quarantine_add?.length) {
+    for (const z of delta.quarantine_add)
+      if (!state.quarantine_zones.includes(z)) state.quarantine_zones.push(z)
+  }
+  if (delta.quarantine_remove?.length)
+    state.quarantine_zones = state.quarantine_zones.filter(z => !delta.quarantine_remove!.includes(z))
+  if (delta.seed_rumor) {
+    const r = delta.seed_rumor
+    state.rumors.push({
+      id: crypto.randomUUID(),
+      content: r.content,
+      subject: r.subject,
+      effect: r.effect,
+      reach: 0,
+      born_tick: state.tick,
+      expires_tick: state.tick + (r.duration_days ?? 15) * 24,
+    })
+  }
+}
+
+/** Apply power/legitimacy/resources changes to institutions. */
+export function applyInstitutionDeltas(state: WorldState, deltas: InstitutionDelta[]): void {
+  for (const d of deltas) {
+    const inst = state.institutions.find(i => i.id === d.id)
+    if (!inst) continue
+    if (d.power_delta !== undefined)
+      inst.power = clamp(inst.power + d.power_delta, 0, 1)
+    if (d.resources_delta !== undefined)
+      inst.resources = Math.max(0, inst.resources + d.resources_delta)
+    if (d.legitimacy_delta !== undefined)
+      inst.legitimacy = clamp(inst.legitimacy + d.legitimacy_delta, 0, 1)
+  }
+}
 
 export function computeMacroStats(state: WorldState): WorldState['macro'] {
   const scarcityFactor = 1 - state.constitution.resource_scarcity * 0.5

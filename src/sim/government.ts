@@ -156,29 +156,19 @@ function buildGovernmentSystemPrompt(state: WorldState, leaderNpc?: NPC): string
     ? 'All text fields (description, public_statement, policy_name) must be in Vietnamese.'
     : 'All text fields must be in English.'
 
-  // When human elections are enabled, personalise the prompt with the elected leader's profile
-  let leaderSection = ''
-  if (leaderNpc) {
-    const capitalDesc = (leaderNpc.capital ?? 0) > 50 ? 'major property owner'
-      : (leaderNpc.capital ?? 0) > 10 ? 'property owner' : 'working-class background'
-    const innerCircle = leaderNpc.strong_ties
-      .slice(0, 3)
-      .map(id => state.npcs[id]?.name ?? '?')
-      .filter(Boolean)
-      .join(', ') || 'none'
-    leaderSection = `You are ${leaderNpc.name}, the democratically elected leader.
-Background: ${leaderNpc.occupation}, age ${leaderNpc.age}, ${capitalDesc} (capital: ${(leaderNpc.capital ?? 0).toFixed(0)}/100).
-Worldview: collectivism ${(leaderNpc.worldview.collectivism * 100).toFixed(0)}% · authority-trust ${(leaderNpc.worldview.authority_trust * 100).toFixed(0)}% · risk-tolerance ${(leaderNpc.worldview.risk_tolerance * 100).toFixed(0)}%.
-Personal wealth: ${leaderNpc.wealth.toFixed(0)} coins. Grievance: ${Math.round(leaderNpc.grievance)}/100.
-Inner circle (strong ties): ${innerCircle}.
-Your decisions must reflect YOUR personal background, interests, and relationships — not just abstract ideology. A property-owning leader will resist land reform; a grieved working-class leader will champion redistribution.
+  // Human-elected leader flavoring: inject personal background into the prompt
+  const leaderBlock = leaderNpc ? `
+CURRENT LEADER (elected by the people): ${leaderNpc.name}, ${leaderNpc.occupation}, age ${leaderNpc.age}
+Personal wealth: ${Math.round(leaderNpc.wealth)} coins | Capital owned: ${Math.round(leaderNpc.capital ?? 0)}
+Worldview: collectivism ${Math.round(leaderNpc.worldview.collectivism * 100)}%, authority-trust ${Math.round(leaderNpc.worldview.authority_trust * 100)}%, risk-tolerance ${Math.round(leaderNpc.worldview.risk_tolerance * 100)}%
+Personal grievance: ${Math.round(leaderNpc.grievance)}% | Fear: ${Math.round(leaderNpc.fear)}%
+Inner circle: ${leaderNpc.strong_ties.slice(0, 3).map(id => state.npcs[id]?.name ?? '?').join(', ')}
+Days in office: ${state.day - state.last_election_day}
+Your decisions MUST reflect this leader's personal background, interests, and relationships. A poor leader will prioritize workers; a wealthy one will protect capital. A fearful leader may choose repression; a confident one may take bold reforms.` : ''
 
-`
-  }
-
-  return `${leaderSection}You are the Governing Council of a society simulation.
+  return `You are the Governing Council of a society simulation.
 You observe social statistics and issue policy decisions every 15 days.
-
+${leaderBlock}
 YOUR GOVERNING STYLE: ${REGIME_STYLE[regime]}
 YOUR VALUE PRIORITIES: ${c.value_priority.join(' > ')}
 State power: ${Math.round(c.state_power * 100)}% | Market freedom: ${Math.round(c.market_freedom * 100)}% | Safety net: ${Math.round(c.safety_net * 100)}%
