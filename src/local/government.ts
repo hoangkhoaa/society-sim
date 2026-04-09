@@ -426,6 +426,390 @@ export function noAlertsSummaryLine(lang: Lang): string {
     : '• No critical alerts — all indicators within acceptable range.'
 }
 
+// ── NPC Policy Reaction Templates ─────────────────────────────────────────────
+// Stance: how an NPC feels about government authority & this policy
+// PolicyType: what kind of policy it is (classified from its numeric deltas)
+
+export type PolicyStance = 'loyalist' | 'pragmatist' | 'skeptic' | 'dissident'
+export type PolicyType   = 'benefit' | 'hardship' | 'security' | 'economic' | 'generic'
+
+// Probability that a role-specific prefix line is prepended to a reaction thought.
+// At ~35% it adds occupational colour without feeling repetitive.
+const ROLE_PREFIX_PROBABILITY = 0.35
+
+const POLICY_REACTIONS: Record<PolicyStance, Record<PolicyType, Localized<string[]>>> = {
+  loyalist: {
+    benefit: {
+      en: [
+        "Finally some good news! The government is actually looking out for us.",
+        "This is exactly what we needed. I knew they'd come through.",
+        "See? The Council cares about ordinary people. This is real help.",
+        "About time! I'm glad the government is taking action to support citizens.",
+      ],
+      vi: [
+        "Cuối cùng cũng có tin tốt! Nhà nước thực sự lo cho người dân.",
+        "Đúng cái mình cần rồi. Mình biết họ sẽ làm được.",
+        "Thấy không? Hội đồng quan tâm đến người dân. Đây là sự giúp đỡ thực sự.",
+        "Muộn còn hơn không! Mừng vì nhà nước đang hành động để hỗ trợ người dân.",
+      ],
+    },
+    hardship: {
+      en: [
+        "These measures are necessary. We need order and discipline to get through this.",
+        "Hard choices for hard times. I trust the Council knows what it's doing.",
+        "Not easy, but the government is right to take a firm hand when needed.",
+        "Stability requires sacrifice sometimes. I'll do my part.",
+      ],
+      vi: [
+        "Các biện pháp này là cần thiết. Chúng ta cần trật tự và kỷ luật để vượt qua.",
+        "Quyết định khó cho thời điểm khó. Tôi tin Hội đồng biết họ đang làm gì.",
+        "Không dễ, nhưng nhà nước có lý khi cần tay cứng rắn.",
+        "Ổn định đôi khi đòi hỏi hy sinh. Tôi sẽ làm phần của mình.",
+      ],
+    },
+    security: {
+      en: [
+        "Order must be maintained. Those stirring up trouble only hurt everyone.",
+        "Strong measures are what keeps society from falling apart.",
+        "The troublemakers brought this on themselves. The Council is right.",
+        "I stand with the government on this. Unity is what we need.",
+      ],
+      vi: [
+        "Trật tự phải được duy trì. Những kẻ kích động chỉ gây hại cho mọi người.",
+        "Các biện pháp mạnh là thứ giữ cho xã hội không tan rã.",
+        "Những kẻ gây rối tự chuốc lấy hậu quả này. Hội đồng đúng.",
+        "Tôi đứng về phía nhà nước trong chuyện này. Đoàn kết là thứ chúng ta cần.",
+      ],
+    },
+    economic: {
+      en: [
+        "Good policy for the economy. The government knows how to keep things running.",
+        "Economic stability benefits everyone. I'm glad they're managing this well.",
+        "A clear plan for growth. I trust the Council's economic judgment.",
+        "The government is investing in our future. That's the right move.",
+      ],
+      vi: [
+        "Chính sách kinh tế tốt. Nhà nước biết cách giữ cho mọi thứ vận hành.",
+        "Ổn định kinh tế có lợi cho tất cả. Mừng vì họ đang xử lý tốt.",
+        "Kế hoạch rõ ràng cho tăng trưởng. Tôi tin vào phán đoán kinh tế của Hội đồng.",
+        "Nhà nước đang đầu tư vào tương lai chúng ta. Đó là bước đi đúng.",
+      ],
+    },
+    generic: {
+      en: [
+        "The government is acting decisively. I trust they know what they're doing.",
+        "Another policy from the Council. Whatever it takes to keep things stable.",
+        "I follow what the government decides. They see the bigger picture.",
+        "The Council is managing things — that's their job and I trust them to do it.",
+      ],
+      vi: [
+        "Nhà nước đang hành động quyết đoán. Tôi tin họ biết họ đang làm gì.",
+        "Một chính sách khác từ Hội đồng. Dù sao cũng cần giữ cho mọi thứ ổn định.",
+        "Tôi làm theo quyết định của nhà nước. Họ thấy bức tranh toàn cảnh hơn.",
+        "Hội đồng đang quản lý mọi thứ — đó là việc của họ và tôi tin họ làm được.",
+      ],
+    },
+  },
+
+  pragmatist: {
+    benefit: {
+      en: [
+        "Sounds reasonable. Let's see if they actually deliver on this one.",
+        "A welcome change. I'm cautiously optimistic it'll make a difference.",
+        "Not bad. The government did something useful for once — I'll take it.",
+        "This could help. I hope it's not just words; time will tell.",
+      ],
+      vi: [
+        "Có vẻ hợp lý. Xem họ có thực sự thực hiện lần này không.",
+        "Một thay đổi đáng mừng. Tôi thận trọng lạc quan rằng nó sẽ tạo ra sự khác biệt.",
+        "Không tệ. Nhà nước đã làm được gì đó hữu ích một lần — tôi chấp nhận.",
+        "Cái này có thể giúp ích. Hy vọng không chỉ là lời nói — thời gian sẽ trả lời.",
+      ],
+    },
+    hardship: {
+      en: [
+        "Hard measures, but maybe necessary. I'll adapt and get through it.",
+        "Not ideal, but I understand why. I'll manage as best I can.",
+        "Tough times ahead. I'll cut back where I can and keep going.",
+        "I don't love this policy, but I'm not going to fight it either.",
+      ],
+      vi: [
+        "Biện pháp cứng rắn, nhưng có thể cần thiết. Tôi sẽ thích nghi và vượt qua.",
+        "Không lý tưởng, nhưng tôi hiểu tại sao. Tôi sẽ xoay sở tốt nhất có thể.",
+        "Thời gian khó phía trước. Tôi sẽ cắt giảm chỗ nào có thể và tiếp tục.",
+        "Tôi không thích chính sách này, nhưng tôi cũng sẽ không chống lại.",
+      ],
+    },
+    security: {
+      en: [
+        "Stability has to come first I suppose. Hopefully this settles things down.",
+        "A firm hand might be needed. I'll keep my head down and keep working.",
+        "Not sure this fixes the root problem, but maybe it buys some time.",
+        "I can see both sides of this. For now I'll just stay out of it.",
+      ],
+      vi: [
+        "Ổn định phải được đặt lên hàng đầu tôi đoán vậy. Hy vọng điều này giải quyết mọi thứ.",
+        "Tay cứng rắn có thể cần thiết. Tôi sẽ cúi đầu và tiếp tục làm việc.",
+        "Không chắc cái này giải quyết vấn đề gốc rễ, nhưng có thể mua thêm thời gian.",
+        "Tôi thấy cả hai phía của điều này. Bây giờ tôi chỉ đứng ngoài.",
+      ],
+    },
+    economic: {
+      en: [
+        "Could be worse. I'll adjust my plans and see what opportunities arise.",
+        "Economic policy is always complicated. I'll wait and see how this plays out.",
+        "I can work with this. Every policy has winners and losers; I'll try to be a winner.",
+        "Reasonable enough. As long as it doesn't hit my income too hard.",
+      ],
+      vi: [
+        "Có thể tệ hơn. Tôi sẽ điều chỉnh kế hoạch và xem cơ hội nào xuất hiện.",
+        "Chính sách kinh tế luôn phức tạp. Tôi sẽ chờ xem điều này diễn ra thế nào.",
+        "Tôi có thể làm việc với điều này. Mọi chính sách đều có kẻ thắng người thua — tôi sẽ cố làm kẻ thắng.",
+        "Hợp lý đủ. Miễn là không ảnh hưởng quá nhiều đến thu nhập của tôi.",
+      ],
+    },
+    generic: {
+      en: [
+        "Another announcement. I'll wait and see what actually changes in practice.",
+        "Government policy. I neither cheer nor protest — I just keep going.",
+        "Could help, could hurt, hard to say. I'll adapt either way.",
+        "I don't pay too much attention to politics. I just focus on my own life.",
+      ],
+      vi: [
+        "Một thông báo khác. Tôi sẽ chờ xem thực tế có gì thay đổi.",
+        "Chính sách nhà nước. Tôi không hò reo cũng không phản đối — tôi chỉ tiếp tục.",
+        "Có thể giúp, có thể hại, khó nói. Tôi sẽ thích nghi dù sao.",
+        "Tôi không chú ý quá nhiều đến chính trị. Tôi chỉ tập trung vào cuộc sống của mình.",
+      ],
+    },
+  },
+
+  skeptic: {
+    benefit: {
+      en: [
+        "Sounds nice, but I'll believe it when I actually see the benefits.",
+        "They say it'll help, but government promises rarely match reality.",
+        "Nice words. Whether it actually reaches ordinary people is another question.",
+        "I want to believe it, but this government has let us down before.",
+      ],
+      vi: [
+        "Nghe hay, nhưng tôi sẽ tin khi thực sự thấy lợi ích.",
+        "Họ nói nó sẽ giúp ích, nhưng lời hứa của nhà nước hiếm khi khớp thực tế.",
+        "Lời hay. Liệu nó có thực sự đến được người dân bình thường hay không lại là chuyện khác.",
+        "Tôi muốn tin, nhưng nhà nước này đã làm chúng tôi thất vọng trước đây.",
+      ],
+    },
+    hardship: {
+      en: [
+        "More restrictions and burdens. I doubt this will actually fix anything.",
+        "They always find ways to make life harder instead of solving the real problem.",
+        "The government is squeezing people rather than addressing the actual issue.",
+        "I'm not convinced this is the right answer — but what choice do I have?",
+      ],
+      vi: [
+        "Thêm hạn chế và gánh nặng. Tôi nghi ngờ điều này sẽ giải quyết được gì.",
+        "Họ luôn tìm cách làm cuộc sống khó hơn thay vì giải quyết vấn đề thực sự.",
+        "Nhà nước đang bóp nghẹt người dân thay vì giải quyết vấn đề thực tế.",
+        "Tôi không bị thuyết phục đây là câu trả lời đúng — nhưng tôi có lựa chọn nào không?",
+      ],
+    },
+    security: {
+      en: [
+        "Cracking down on people doesn't fix the underlying issues that caused the unrest.",
+        "They're treating symptoms, not causes. This buys time but solves nothing.",
+        "Control and fear — that's always their answer. Until it isn't enough.",
+        "I keep quiet and stay out of trouble. But I notice what's happening.",
+      ],
+      vi: [
+        "Đàn áp người dân không giải quyết các vấn đề cơ bản dẫn đến bất ổn.",
+        "Họ đang trị triệu chứng, không phải nguyên nhân. Mua thêm thời gian nhưng không giải quyết gì.",
+        "Kiểm soát và sợ hãi — đó luôn là câu trả lời của họ. Cho đến khi không còn đủ.",
+        "Tôi giữ im lặng và tránh rắc rối. Nhưng tôi nhận thấy điều đang xảy ra.",
+      ],
+    },
+    economic: {
+      en: [
+        "Economic policies always seem to benefit the powerful more than ordinary folk.",
+        "Let's see who actually profits from this. Usually not people like me.",
+        "The numbers sound good on paper. The reality is usually more complicated.",
+        "I'll adjust what I can. It's not like I have much say in what policies they choose.",
+      ],
+      vi: [
+        "Chính sách kinh tế luôn có vẻ mang lại lợi ích cho người có quyền lực hơn là người bình thường.",
+        "Hãy xem ai thực sự được lợi từ điều này. Thường không phải người như tôi.",
+        "Các con số nghe hay trên giấy. Thực tế thường phức tạp hơn.",
+        "Tôi sẽ điều chỉnh những gì có thể. Không như tôi có nhiều tiếng nói trong chính sách họ chọn.",
+      ],
+    },
+    generic: {
+      en: [
+        "Yet another policy. I'll wait and see if this one actually changes anything.",
+        "Words are cheap. Show me results and then I'll form an opinion.",
+        "I've heard enough government announcements — it's always more complicated than it sounds.",
+        "I pay attention, but I'm not hopeful. They rarely deliver what they promise.",
+      ],
+      vi: [
+        "Lại thêm một chính sách nữa. Tôi sẽ chờ xem cái này có thực sự thay đổi gì không.",
+        "Lời nói rẻ. Cho tôi xem kết quả rồi tôi mới có ý kiến.",
+        "Tôi đã nghe đủ thông báo từ nhà nước rồi — luôn phức tạp hơn so với nghe.",
+        "Tôi chú ý, nhưng không kỳ vọng. Họ hiếm khi thực hiện điều họ hứa.",
+      ],
+    },
+  },
+
+  dissident: {
+    benefit: {
+      en: [
+        "All talk, no action. I've heard this kind of announcement before — nothing ever changes.",
+        "Probably just a political stunt to calm people down before the next crackdown.",
+        "This government has never truly cared about people like me. I won't hold my breath.",
+        "If it sounds too good to be true, it usually is. What's the catch?",
+      ],
+      vi: [
+        "Nói nhiều, làm ít. Tôi đã nghe loại thông báo này trước — không có gì thay đổi.",
+        "Có lẽ chỉ là trò chính trị để xoa dịu người dân trước đợt đàn áp tiếp theo.",
+        "Nhà nước này chưa bao giờ thực sự quan tâm đến người như tôi. Tôi sẽ không hi vọng.",
+        "Nếu nghe có vẻ quá tốt để là sự thật, thường là như vậy. Điều kiện gì đây?",
+      ],
+    },
+    hardship: {
+      en: [
+        "This is just another way to control and squeeze ordinary people. Enough is enough.",
+        "They keep adding burdens while the privileged suffer nothing. This system is broken.",
+        "I'm done pretending this is acceptable. Something has to change.",
+        "More suffering for us, more power for them. Same old story.",
+      ],
+      vi: [
+        "Đây chỉ là một cách khác để kiểm soát và bóp nghẹt người dân bình thường. Đủ rồi.",
+        "Họ tiếp tục thêm gánh nặng trong khi người có đặc quyền không chịu thiệt. Hệ thống này đã hỏng.",
+        "Tôi mệt với việc giả vờ điều này có thể chấp nhận được. Phải có điều gì đó thay đổi.",
+        "Thêm đau khổ cho chúng ta, thêm quyền lực cho họ. Câu chuyện cũ.",
+      ],
+    },
+    security: {
+      en: [
+        "They silence voices they don't like and call it 'order'. This is oppression.",
+        "The powerful protecting themselves from accountability. Nothing new.",
+        "Crushing dissent isn't governance — it's fear. And they know it.",
+        "Every crackdown only proves their weakness. A truly strong government wouldn't need this.",
+      ],
+      vi: [
+        "Họ bịt miệng những tiếng nói họ không thích và gọi đó là 'trật tự'. Đây là đàn áp.",
+        "Kẻ mạnh tự bảo vệ mình khỏi trách nhiệm. Không có gì mới.",
+        "Dẹp bỏ bất đồng không phải quản trị — đó là sợ hãi. Và họ biết điều đó.",
+        "Mỗi đợt đàn áp chỉ chứng minh sự yếu đuối của họ. Chính phủ thực sự mạnh không cần điều này.",
+      ],
+    },
+    economic: {
+      en: [
+        "Another policy that benefits the wealthy and leaves ordinary workers worse off.",
+        "I can read between the lines. This is designed to serve the powerful, not us.",
+        "The economy works great — for them. For people like me, it's a very different story.",
+        "They dress up exploitation as opportunity. I'm not fooled.",
+      ],
+      vi: [
+        "Một chính sách khác mang lại lợi ích cho người giàu và để người lao động tệ hơn.",
+        "Tôi có thể đọc giữa các dòng chữ. Đây được thiết kế để phục vụ người có quyền lực, không phải chúng ta.",
+        "Kinh tế hoạt động tốt — cho họ. Đối với người như tôi, đó là một câu chuyện rất khác.",
+        "Họ ngụy trang bóc lột thành cơ hội. Tôi không bị lừa.",
+      ],
+    },
+    generic: {
+      en: [
+        "Same propaganda, different day. I've stopped believing any of it.",
+        "Nothing this government says or does will improve things for ordinary people.",
+        "I refuse to pretend this policy means anything. We need real change.",
+        "They announce. We suffer. That's how it always works.",
+      ],
+      vi: [
+        "Cùng một tuyên truyền, ngày khác nhau. Tôi đã ngừng tin bất kỳ điều gì.",
+        "Không có gì nhà nước này nói hoặc làm sẽ cải thiện tình hình cho người dân bình thường.",
+        "Tôi từ chối giả vờ chính sách này có ý nghĩa gì. Chúng ta cần sự thay đổi thực sự.",
+        "Họ công bố. Chúng ta chịu đựng. Đó là cách nó luôn hoạt động.",
+      ],
+    },
+  },
+}
+
+// Role-specific reaction prefixes that prepend context to the thought (applied ~35% of the time)
+const ROLE_REACTION_PREFIX: Partial<Record<string, Localized<Record<PolicyStance, string>>>> = {
+  farmer: {
+    en: {
+      loyalist:   'As a farmer, I\'m glad the government is looking after us.',
+      pragmatist: 'As a farmer, this policy will affect my harvest.',
+      skeptic:    'As a farmer, I\'ve heard promises like this before.',
+      dissident:  'As a farmer — we do all the work and get the least.',
+    },
+    vi: {
+      loyalist:   'Là nông dân, tôi mừng vì nhà nước đang chăm lo cho chúng tôi.',
+      pragmatist: 'Là nông dân, chính sách này sẽ ảnh hưởng đến vụ mùa của tôi.',
+      skeptic:    'Là nông dân, tôi đã thấy những lời hứa như thế này trước đây.',
+      dissident:  'Là nông dân — chúng tôi làm tất cả công việc và nhận được ít nhất.',
+    },
+  },
+  merchant: {
+    en: {
+      loyalist:   'Good for business stability.',
+      pragmatist: 'I\'ll have to adjust my trade routes accordingly.',
+      skeptic:    'Trade policy is always risky — I\'ll hedge my bets.',
+      dissident:  'They regulate what\'s profitable and tax what remains.',
+    },
+    vi: {
+      loyalist:   'Tốt cho sự ổn định kinh doanh.',
+      pragmatist: 'Tôi sẽ phải điều chỉnh tuyến thương mại của mình cho phù hợp.',
+      skeptic:    'Chính sách thương mại luôn có rủi ro — tôi sẽ phòng ngừa.',
+      dissident:  'Họ điều tiết những gì có lợi và đánh thuế những gì còn lại.',
+    },
+  },
+  guard: {
+    en: {
+      loyalist:   'My duty is clear — I\'ll enforce this policy as ordered.',
+      pragmatist: 'Orders are orders. I\'ll do my job and let the politicians worry about the rest.',
+      skeptic:    'They give the orders; we do the work. I just hope it\'s worth it.',
+      dissident:  'Even guards can see when policies are wrong. But I follow orders.',
+    },
+    vi: {
+      loyalist:   'Nhiệm vụ của tôi rõ ràng — tôi sẽ thực thi chính sách này theo lệnh.',
+      pragmatist: 'Lệnh là lệnh. Tôi sẽ làm công việc của mình và để các chính khách lo phần còn lại.',
+      skeptic:    'Họ ra lệnh; chúng tôi làm việc. Tôi chỉ hy vọng điều đó đáng công.',
+      dissident:  'Ngay cả lính canh cũng có thể thấy khi chính sách sai. Nhưng tôi tuân lệnh.',
+    },
+  },
+  scholar: {
+    en: {
+      loyalist:   'The policy framework is analytically sound.',
+      pragmatist: 'The data suggests this could work with some adjustments.',
+      skeptic:    'The evidence supporting this policy is, at best, inconclusive.',
+      dissident:  'This is ideological governance, not evidence-based policy.',
+    },
+    vi: {
+      loyalist:   'Khung chính sách này hợp lý từ góc độ phân tích.',
+      pragmatist: 'Dữ liệu cho thấy điều này có thể hiệu quả với một số điều chỉnh.',
+      skeptic:    'Bằng chứng hỗ trợ chính sách này, tốt nhất là, không thuyết phục.',
+      dissident:  'Đây là quản trị ý thức hệ, không phải chính sách dựa trên bằng chứng.',
+    },
+  },
+}
+
+export function getNPCPolicyReactionThought(
+  lang: Lang,
+  stance: PolicyStance,
+  policyType: PolicyType,
+  role: string,
+): string {
+  const pool = pick(lang, POLICY_REACTIONS[stance][policyType])
+  let thought = pool[Math.floor(Math.random() * pool.length)]
+
+  // Optionally prepend a role-specific context line
+  const rolePrefix = ROLE_REACTION_PREFIX[role]
+  if (rolePrefix && Math.random() < ROLE_PREFIX_PROBABILITY) {
+    const prefixMap = pick(lang, rolePrefix)
+    thought = prefixMap[stance] + ' ' + thought
+  }
+
+  return thought
+}
+
 export function describeAlert(lang: Lang, kind: 'food' | 'stability' | 'trust' | 'pressure' | 'resources' | 'labor_unrest', level: 'critical' | 'warning', pct: number): string {
   const p = Math.round(pct)
   if (lang === 'vi') {

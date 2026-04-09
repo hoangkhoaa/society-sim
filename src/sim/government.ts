@@ -3,14 +3,15 @@
 // With AI: calls LLM for contextual, regime-aware policy.
 // Without AI: deterministic fallbacks + witty routine messages.
 
-import type { WorldState, AIConfig, NPCIntervention, Constitution } from '../types'
+import type { WorldState, AIConfig, NPCIntervention, Constitution, NPC } from '../types'
 import { callAI, extractJSON } from '../ai/provider'
 import { addFeedRaw, addChronicle } from '../ui/feed'
 import { applyInterventions } from './engine'
 import { clamp } from './constitution'
 import { getLang, tf } from '../i18n'
 import { getLatestHeadlines } from './press'
-import { describeAlert, noAlertsSummaryLine, pickRoutineMessage, getFallbackPolicy } from '../local/government'
+import { describeAlert, noAlertsSummaryLine, pickRoutineMessage, getFallbackPolicy, getNPCPolicyReactionThought } from '../local/government'
+import type { PolicyStance, PolicyType } from '../local/government'
 import { showStoryCard } from '../ui/story-card'
 
 // ── Alert thresholds ──────────────────────────────────────────────────────────
@@ -516,6 +517,217 @@ function emitFactionReactions(state: WorldState, policy: GovernmentPolicyAI): vo
   }
 }
 
+// ── NPC Policy Reaction System ────────────────────────────────────────────────
+
+// Named constants for stance-classification thresholds
+const LOYALIST_AUTHORITY_FLOOR = 0.65     // worldview.authority_trust minimum for loyalist
+const LOYALIST_GOV_TRUST_FLOOR = 0.55     // combined government trust minimum for loyalist
+const DISSIDENT_AUTHORITY_CEIL  = 0.30    // below this authority → dissident
+const DISSIDENT_GOV_TRUST_CEIL  = 0.28    // below this gov trust → dissident
+const SKEPTIC_AUTHORITY_CEIL    = 0.44    // below this authority (but above dissident) → skeptic
+const SKEPTIC_GOV_TRUST_CEIL    = 0.42    // below this gov trust → skeptic
+
+// Network spread constants
+// Influence is capped at this many info_ties to keep computation proportional
+// and model diminishing social influence beyond immediate ideological circles.
+const MAX_INFLUENCE_TIES = 10
+// NPCs with worldview difference exceeding this value resist network influence (echo chamber cap)
+const POLARIZATION_RESISTANCE_THRESHOLD = 0.45
+const LOYALIST_AUTHORITY_INFLUENCE   =  0.003
+const DISSIDENT_AUTHORITY_INFLUENCE  = -0.003
+const DISSIDENT_GRIEVANCE_INFLUENCE  =  1.5
+const SKEPTIC_GRIEVANCE_INFLUENCE    = -0.5
+
+// Reaction thought sampling parameters
+const THOUGHT_SAMPLE_RATE = 0.10          // fraction of live NPCs to receive a thought
+const MIN_THOUGHT_SAMPLE  = 5             // always set at least this many thoughts
+const MAX_THOUGHT_SAMPLE  = 50            // cap to avoid O(n) feed spam
+
+// Probability that a high-grievance dissident NPC switches to 'organizing' on policy announcement
+const DISSIDENT_ORGANIZING_PROBABILITY = 0.08
+
+// Classify an NPC's stance toward government policy.
+// Based on worldview.authority_trust and trust_in.government composite score.
+function classifyNPCPolicyStance(npc: NPC): PolicyStance {
+  const govTrust = (npc.trust_in.government.competence + npc.trust_in.government.intention) / 2
+  const authority = npc.worldview.authority_trust
+
+  if (authority > LOYALIST_AUTHORITY_FLOOR && govTrust > LOYALIST_GOV_TRUST_FLOOR) return 'loyalist'
+  if (authority < DISSIDENT_AUTHORITY_CEIL  || govTrust < DISSIDENT_GOV_TRUST_CEIL) return 'dissident'
+  if (authority < SKEPTIC_AUTHORITY_CEIL    || govTrust < SKEPTIC_GOV_TRUST_CEIL)   return 'skeptic'
+  return 'pragmatist'
+}
+
+// Classify the policy type from its numeric deltas.
+// 'security' covers policies that suppress dissent / solidarity (control-first, not just safety).
+function detectPolicyType(policy: GovernmentPolicyAI): PolicyType {
+  const isBenefit =
+    (policy.food_delta ?? 0) > 500 ||
+    (policy.npc_hunger_delta ?? 0) < -5 ||
+    (policy.npc_happiness_delta ?? 0) > 5 ||
+    (policy.npc_grievance_delta ?? 0) < -10 ||
+    (policy.npc_stress_delta ?? 0) < -8
+
+  const isHardship =
+    (policy.npc_fear_delta ?? 0) > 8 ||
+    (policy.npc_stress_delta ?? 0) > 10 ||
+    (policy.npc_grievance_delta ?? 0) > 10
+
+  // 'security': solidarity suppression (labor crackdown) or combined fear+stress increase
+  // (includes both repressive and order-enforcement policies)
+  const isControl =
+    (policy.npc_solidarity_delta ?? 0) < -8 ||
+    ((policy.npc_fear_delta ?? 0) > 5 && (policy.npc_stress_delta ?? 0) > 5)
+
+  const isEconomic =
+    (policy.resource_delta ?? 0) !== 0 ||
+    policy.merchant_stress_delta !== undefined ||
+    policy.merchant_grievance_delta !== undefined ||
+    policy.farmer_stress_delta !== undefined ||
+    policy.farmer_hunger_delta !== undefined
+
+  if (isControl)  return 'security'
+  if (isHardship) return 'hardship'
+  if (isBenefit)  return 'benefit'
+  if (isEconomic) return 'economic'
+  return 'generic'
+}
+
+// Apply stance-based behavioral effects to a single NPC.
+function applyStanceBehavioralEffect(npc: NPC, stance: PolicyStance): void {
+  switch (stance) {
+    case 'loyalist':
+      npc.trust_in.government.intention = clamp(npc.trust_in.government.intention + 0.015, 0, 1)
+      npc.trust_in.government.competence = clamp(npc.trust_in.government.competence + 0.008, 0, 1)
+      npc.happiness  = clamp(npc.happiness  + 2, 0, 100)
+      npc.grievance  = clamp(npc.grievance  - 3, 0, 100)
+      break
+    case 'pragmatist':
+      npc.happiness  = clamp(npc.happiness  + 1, 0, 100)
+      break
+    case 'skeptic':
+      npc.dissonance_acc = clamp((npc.dissonance_acc ?? 0) + 3, 0, 100)
+      npc.trust_in.government.intention = clamp(npc.trust_in.government.intention - 0.010, 0, 1)
+      break
+    case 'dissident':
+      npc.grievance  = clamp(npc.grievance  + 5, 0, 100)
+      npc.trust_in.government.intention  = clamp(npc.trust_in.government.intention  - 0.025, 0, 1)
+      npc.trust_in.government.competence = clamp(npc.trust_in.government.competence - 0.015, 0, 1)
+      npc.dissonance_acc = clamp((npc.dissonance_acc ?? 0) + 6, 0, 100)
+      break
+  }
+  // Dissidents may switch to organizing if they are already at high grievance
+  if (stance === 'dissident' && npc.grievance > 60 && npc.action_state === 'working') {
+    if (Math.random() < DISSIDENT_ORGANIZING_PROBABILITY) npc.action_state = 'organizing'
+  }
+}
+
+// Spread attitude influence through info_ties (1 hop, dampened).
+// Strong-stance NPCs nudge their network neighbors slightly in the same direction.
+function spreadPolicyAttitudeThroughNetwork(
+  living: NPC[],
+): void {
+  const npcById = new Map<number, NPC>()
+  for (const n of living) npcById.set(n.id, n)
+
+  for (const npc of living) {
+    const stance = classifyNPCPolicyStance(npc)
+    if (stance === 'pragmatist') continue  // neutral NPCs don't propagate
+
+    const authorityDelta = stance === 'loyalist' ? LOYALIST_AUTHORITY_INFLUENCE : DISSIDENT_AUTHORITY_INFLUENCE
+    const grievanceDelta = stance === 'dissident' ? DISSIDENT_GRIEVANCE_INFLUENCE : SKEPTIC_GRIEVANCE_INFLUENCE
+
+    // Propagate only through the closest info_ties (ideological network)
+    const tiesToCheck = npc.info_ties.slice(0, MAX_INFLUENCE_TIES)
+    for (const neighborId of tiesToCheck) {
+      const neighbor = npcById.get(neighborId)
+      if (!neighbor) continue
+
+      // Influence is stronger when worldviews are already similar; cap at threshold
+      const authorityDiff = Math.abs(npc.worldview.authority_trust - neighbor.worldview.authority_trust)
+      if (authorityDiff > POLARIZATION_RESISTANCE_THRESHOLD) continue
+
+      const weight = 1 - authorityDiff / POLARIZATION_RESISTANCE_THRESHOLD   // 0→1 as similarity grows
+      neighbor.worldview.authority_trust = clamp(
+        neighbor.worldview.authority_trust + authorityDelta * weight,
+        0, 1,
+      )
+      neighbor.grievance = clamp(neighbor.grievance + grievanceDelta * weight, 0, 100)
+    }
+  }
+}
+
+// Shuffle array in place (Fisher-Yates)
+function shuffleArray<T>(arr: T[]): T[] {
+  const out = arr.slice()
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[out[i], out[j]] = [out[j], out[i]]
+  }
+  return out
+}
+
+// Main reaction orchestrator: called after a policy is committed.
+function generateNPCPolicyReactions(state: WorldState, policy: GovernmentPolicyAI): void {
+  const living = state.npcs.filter(n => n.lifecycle.is_alive)
+  if (living.length === 0) return
+
+  const lang     = getLang()
+  const policyType = detectPolicyType(policy)
+
+  // 1. Apply behavioral effects to every live NPC based on their stance
+  for (const npc of living) {
+    const stance = classifyNPCPolicyStance(npc)
+    applyStanceBehavioralEffect(npc, stance)
+  }
+
+  // 2. Generate reaction thoughts for a stratified sample
+  const sampleSize = Math.min(MAX_THOUGHT_SAMPLE, Math.max(MIN_THOUGHT_SAMPLE, Math.ceil(living.length * THOUGHT_SAMPLE_RATE)))
+  const sampled    = shuffleArray(living).slice(0, sampleSize)
+
+  const feedCandidates: Array<{ npc: NPC; stance: PolicyStance; thought: string }> = []
+  for (const npc of sampled) {
+    const stance = classifyNPCPolicyStance(npc)
+    const thought = getNPCPolicyReactionThought(lang, stance, policyType, npc.role)
+    npc.daily_thought  = thought
+    npc.last_thought_tick = state.tick
+    feedCandidates.push({ npc, stance, thought })
+  }
+
+  // 3. Emit 4–5 feed entries covering a spread of stances
+  const stanceOrder: PolicyStance[] = ['loyalist', 'dissident', 'skeptic', 'pragmatist']
+  const feedPicked: typeof feedCandidates = []
+  for (const s of stanceOrder) {
+    const match = feedCandidates.find(c => c.stance === s && !feedPicked.includes(c))
+    if (match) feedPicked.push(match)
+    if (feedPicked.length >= 5) break
+  }
+  // Fill remaining slots if fewer than 4 distinct stances
+  for (const c of feedCandidates) {
+    if (feedPicked.length >= 5) break
+    if (!feedPicked.includes(c)) feedPicked.push(c)
+  }
+
+  const STANCE_ICONS: Record<PolicyStance, string> = {
+    loyalist:   '🙌',
+    pragmatist: '🤔',
+    skeptic:    '😒',
+    dissident:  '✊',
+  }
+
+  for (const { npc, stance, thought } of feedPicked) {
+    addFeedRaw(
+      `${STANCE_ICONS[stance]} ${npc.name} (${npc.role}): "${thought}"`,
+      'info',
+      state.year,
+      state.day,
+    )
+  }
+
+  // 4. Spread attitude through info_ties network (1 hop, dampened)
+  spreadPolicyAttitudeThroughNetwork(living)
+}
+
 // ── Main entry point ──────────────────────────────────────────────────────────
 
 let _governmentBusy = false
@@ -537,10 +749,11 @@ export async function runGovernmentCycle(
       ? alerts.map(a => `• ${a.description}`).join('\n')
       : noAlertsSummaryLine(lang)
 
-    // Helper: apply a chosen policy, emit story card + faction reactions + feed
+    // Helper: apply a chosen policy, emit story card + faction reactions + NPC reactions
     const commitPolicy = (policy: GovernmentPolicyAI) => {
       applyPolicy(state, policy)
       emitFactionReactions(state, policy)
+      generateNPCPolicyReactions(state, policy)
       showStoryCard(
         `${policy.policy_name} — ${policy.public_statement}`,
         '🏛',
