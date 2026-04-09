@@ -42,7 +42,6 @@ sideClose?.addEventListener('click', () => closeSubPanel())
 export function close() {
   closeSubPanel()
   panel.classList.add('hidden')
-  _onClose?.()
 }
 
 // ── Pause/resume callbacks (set by main.ts to avoid circular dep) ──────────
@@ -55,14 +54,17 @@ export function registerSpotlightCallbacks(onOpen: () => void, onClose: () => vo
 }
 
 function openSubPanel(title: string, bodyHtml: string): void {
+  if (sidePanel.classList.contains('hidden')) _onOpen?.()
   sideTitle.textContent = title
   sideBody.innerHTML = bodyHtml
   sidePanel.classList.remove('hidden')
 }
 
 function closeSubPanel(): void {
+  const wasOpen = !sidePanel.classList.contains('hidden')
   sidePanel.classList.add('hidden')
   sideBody.innerHTML = ''
+  if (wasOpen) _onClose?.()
 }
 
 // ── NPC conversation state ─────────────────────────────────────────────────
@@ -239,7 +241,6 @@ export async function openSpotlight(npc: NPC, state: WorldState, config: AIConfi
   closeSubPanel()
   panel.classList.remove('hidden')
   spName.textContent = `${npc.name} · ${npc.occupation}`
-  _onOpen?.()
 
   // Save refs for NPC chat
   _chatNpc    = npc
