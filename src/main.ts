@@ -578,43 +578,114 @@ async function startGame(constitution: Constitution) {
 // Track macro stats from the previous daily tick to compute deltas
 let _prevDailyMacro: { stability: number; food: number; natural_resources: number; energy: number; trust: number } | null = null
 
+function getTopbarLevelKey(value: number, warnAt: number, dangerAt: number): 'tip-healthy' | 'tip-warning' | 'tip-danger' | 'tip-critical' {
+  if (value <= 20) return 'tip-critical'
+  if (value <= dangerAt) return 'tip-danger'
+  if (value <= warnAt) return 'tip-warning'
+  return 'tip-healthy'
+}
+
 function getTopbarLevel(value: number, warnAt: number, dangerAt: number): string {
-  if (value <= 20) return t('topbar.tip_level_critical') as string
-  if (value <= dangerAt) return t('topbar.tip_level_danger') as string
-  if (value <= warnAt) return t('topbar.tip_level_warning') as string
-  return t('topbar.tip_level_healthy') as string
+  const key = getTopbarLevelKey(value, warnAt, dangerAt)
+  return t(`topbar.tip_level_${key.replace('tip-', '')}`) as string
+}
+
+function buildStatTooltip(opts: {
+  name: string
+  value: string
+  desc: string
+  factors: string[]
+  levelCls: string
+  levelLabel: string
+}): string {
+  const factorsHtml = opts.factors.length
+    ? `<div class="stat-tooltip-factors">${opts.factors.map(f => `<div class="stat-tooltip-factor">${f}</div>`).join('')}</div>`
+    : ''
+  return `
+    <div class="stat-tooltip">
+      <div class="stat-tooltip-name">${opts.name}</div>
+      <div class="stat-tooltip-value ${opts.levelCls}">${opts.value}</div>
+      <div class="stat-tooltip-desc">${opts.desc}</div>
+      ${factorsHtml}
+      <div class="stat-tooltip-status ${opts.levelCls}">${opts.levelLabel}</div>
+    </div>`
 }
 
 function updateTopbarTooltips(macro: WorldState['macro']) {
-  const setTip = (id: string, text: string) => {
+  const setTip = (id: string, html: string) => {
     const el = document.getElementById(id)
-    if (el) el.title = text
+    if (!el) return
+    const existing = el.querySelector('.stat-tooltip')
+    if (existing) {
+      existing.outerHTML = html
+    } else {
+      const tmp = document.createElement('div')
+      tmp.innerHTML = html
+      if (tmp.firstElementChild) el.appendChild(tmp.firstElementChild)
+    }
   }
 
-  setTip(
-    'stat-stability',
-    `${t('topbar.tip_stability') as string}\n${t('topbar.stat_stability') as string}: ${Math.round(macro.stability)}%\n${getTopbarLevel(macro.stability, 40, 25)}`,
-  )
-  setTip(
-    'stat-food',
-    `${t('topbar.tip_food') as string}\n${t('topbar.stat_food') as string}: ${Math.round(macro.food)}%\n${getTopbarLevel(macro.food, 35, 20)}`,
-  )
-  setTip(
-    'stat-resources',
-    `${t('topbar.tip_resources') as string}\n${t('topbar.stat_resources') as string}: ${Math.round(macro.natural_resources)}%\n${getTopbarLevel(macro.natural_resources, 30, 15)}`,
-  )
-  setTip(
-    'stat-energy',
-    `${t('topbar.tip_energy') as string}\n${t('topbar.stat_energy') as string}: ${Math.round(macro.energy)}%\n${getTopbarLevel(macro.energy, 35, 20)}`,
-  )
-  setTip(
-    'stat-trust',
-    `${t('topbar.tip_trust') as string}\n${t('topbar.stat_trust') as string}: ${Math.round(macro.trust)}%\n${getTopbarLevel(macro.trust, 35, 20)}`,
-  )
-  setTip(
-    'stat-gini',
-    `${t('topbar.tip_gini') as string}\n${t('topbar.stat_gini') as string}: ${macro.gini.toFixed(2)}`,
-  )
+  const stabilityLvl = getTopbarLevelKey(macro.stability, 40, 25)
+  setTip('stat-stability', buildStatTooltip({
+    name: t('topbar.stat_stability') as string,
+    value: `${Math.round(macro.stability)}%`,
+    desc: t('topbar.tip_stability') as string,
+    factors: (t('topbar.tip_stability_factors') as string).split('|'),
+    levelCls: stabilityLvl,
+    levelLabel: getTopbarLevel(macro.stability, 40, 25),
+  }))
+
+  const foodLvl = getTopbarLevelKey(macro.food, 35, 20)
+  setTip('stat-food', buildStatTooltip({
+    name: t('topbar.stat_food') as string,
+    value: `${Math.round(macro.food)}%`,
+    desc: t('topbar.tip_food') as string,
+    factors: (t('topbar.tip_food_factors') as string).split('|'),
+    levelCls: foodLvl,
+    levelLabel: getTopbarLevel(macro.food, 35, 20),
+  }))
+
+  const resLvl = getTopbarLevelKey(macro.natural_resources, 30, 15)
+  setTip('stat-resources', buildStatTooltip({
+    name: t('topbar.stat_resources') as string,
+    value: `${Math.round(macro.natural_resources)}%`,
+    desc: t('topbar.tip_resources') as string,
+    factors: (t('topbar.tip_resources_factors') as string).split('|'),
+    levelCls: resLvl,
+    levelLabel: getTopbarLevel(macro.natural_resources, 30, 15),
+  }))
+
+  const energyLvl = getTopbarLevelKey(macro.energy, 35, 20)
+  setTip('stat-energy', buildStatTooltip({
+    name: t('topbar.stat_energy') as string,
+    value: `${Math.round(macro.energy)}%`,
+    desc: t('topbar.tip_energy') as string,
+    factors: (t('topbar.tip_energy_factors') as string).split('|'),
+    levelCls: energyLvl,
+    levelLabel: getTopbarLevel(macro.energy, 35, 20),
+  }))
+
+  const trustLvl = getTopbarLevelKey(macro.trust, 35, 20)
+  setTip('stat-trust', buildStatTooltip({
+    name: t('topbar.stat_trust') as string,
+    value: `${Math.round(macro.trust)}%`,
+    desc: t('topbar.tip_trust') as string,
+    factors: (t('topbar.tip_trust_factors') as string).split('|'),
+    levelCls: trustLvl,
+    levelLabel: getTopbarLevel(macro.trust, 35, 20),
+  }))
+
+  const giniLvl: 'tip-healthy' | 'tip-warning' | 'tip-danger' | 'tip-critical' =
+    macro.gini >= 0.65 ? 'tip-critical' : macro.gini >= 0.50 ? 'tip-danger' : macro.gini >= 0.35 ? 'tip-warning' : 'tip-healthy'
+  const giniLabel = t(`topbar.tip_level_${giniLvl.replace('tip-', '')}`) as string
+  setTip('stat-gini', buildStatTooltip({
+    name: t('topbar.stat_gini') as string,
+    value: macro.gini.toFixed(2),
+    desc: t('topbar.tip_gini') as string,
+    factors: (t('topbar.tip_gini_factors') as string).split('|'),
+    levelCls: giniLvl,
+    levelLabel: giniLabel,
+  }))
 }
 
 function updateTopbar() {
@@ -812,31 +883,32 @@ function updateDemographics() {
 
   let pop = 0
   let males = 0
-  let leaving = 0
+  let leavingNow = 0   // currently fleeing (still alive)
+  let fled = 0         // permanently emigrated (removed from population)
+  let deaths = 0       // died from causes other than fleeing
   const ageCounts = [0, 0, 0, 0, 0]
 
   for (const n of world.npcs) {
-    if (!n.lifecycle.is_alive) continue
-    pop++
-    if (n.gender === 'male') males++
-    if (n.action_state === 'fleeing') leaving++
-    const a = n.age
-    for (let i = 0; i < AGE_GROUPS.length; i++) {
-      const g = AGE_GROUPS[i]
-      if (a >= g.min && a <= g.max) {
-        ageCounts[i]++
-        break
+    if (n.lifecycle.is_alive) {
+      pop++
+      if (n.gender === 'male') males++
+      if (n.action_state === 'fleeing') leavingNow++
+      const a = n.age
+      for (let i = 0; i < AGE_GROUPS.length; i++) {
+        const g = AGE_GROUPS[i]
+        if (a >= g.min && a <= g.max) { ageCounts[i]++; break }
       }
+    } else {
+      if (n.lifecycle.death_cause === 'fled') fled++
+      else deaths++
     }
   }
-
-  const dead = world.npcs.length - pop
 
   document.getElementById('d-pop')!.textContent    = `${pop}`
   document.getElementById('d-male')!.textContent   = `${males}`
   document.getElementById('d-female')!.textContent = `${pop - males}`
-  document.getElementById('d-deaths')!.textContent = `${dead}`
-  document.getElementById('d-leaving')!.textContent = `${leaving}`
+  document.getElementById('d-deaths')!.textContent = `${deaths}`
+  document.getElementById('d-leaving')!.textContent = `${leavingNow + fled}`
   document.getElementById('d-born')!.textContent = `${world.births_total ?? 0}`
   document.getElementById('d-immigrants')!.textContent = `${world.immigration_total ?? 0}`
 
@@ -952,12 +1024,13 @@ function buildRumorRows(active: WorldState['rumors'], totalNpcs: number, tickNow
     const reachPct = Math.round(Math.min(100, (r.reach / totalNpcs) * 100))
     const daysLeft = Math.max(0, Math.ceil((r.expires_tick - tickNow) / 24))
     const safeText = escapeHtml(r.content)
-    const longText = r.content.length > 52
-    const duration = Math.max(8, Math.min(24, r.content.length / 5))
+    const longText = r.content.length > 40
+    // ~60px per second reading speed — longer text scrolls proportionally slower
+    const duration = Math.max(10, Math.min(32, r.content.length / 4))
 
     const textHtml = longText
-      ? `<span class="rumor-text rumor-text-marquee" title="${safeText}" style="--rumor-dur:${duration}s"><span class="rumor-track"><span class="rumor-copy">${safeText}</span><span class="rumor-gap">•</span><span class="rumor-copy">${safeText}</span></span></span>`
-      : `<span class="rumor-text" title="${safeText}">${safeText}</span>`
+      ? `<span class="rumor-text rumor-text-marquee" style="--rumor-dur:${duration}s"><span class="rumor-track"><span class="rumor-copy">${safeText}</span><span class="rumor-gap">·</span><span class="rumor-copy">${safeText}</span></span></span>`
+      : `<span class="rumor-text">${safeText}</span>`
 
     return `<div class="rumor-row">
       <span class="rumor-effect">${icon}</span>
@@ -969,24 +1042,18 @@ function buildRumorRows(active: WorldState['rumors'], totalNpcs: number, tickNow
 
 function updateRumors() {
   if (!world) return
-  const chroniclePanel = document.getElementById('chronicle-rumors')
-  const chronicleLog = document.getElementById('rumor-log')
   const overlayLog = document.getElementById('rumors-overlay-log')
-  if (!chronicleLog || !chroniclePanel || !overlayLog) return
+  if (!overlayLog) return
 
   const active = world.rumors.filter(r => r.expires_tick > world!.tick)
-  chroniclePanel.classList.remove('hidden')
   if (active.length === 0) {
-    const emptyHtml = `<div class="rumor-empty">${t('rumors.empty') as string}</div>`
-    chronicleLog.innerHTML = emptyHtml
-    overlayLog.innerHTML = emptyHtml
+    overlayLog.innerHTML = `<div class="rumor-empty">${t('rumors.empty') as string}</div>`
     return
   }
 
   const totalNpcs = world.npcs.filter(n => n.lifecycle.is_alive).length || 1
   const rows = buildRumorRows(active, totalNpcs, world.tick)
   const title = `<div class="rumor-title">${tf('rumors.title', { count: active.length })}</div>`
-  chronicleLog.innerHTML = `${title}${rows}`
   overlayLog.innerHTML = `${title}${rows}`
 }
 
@@ -1037,6 +1104,13 @@ const btnToggleDemo = document.getElementById('btn-toggle-demo') as HTMLButtonEl
 const btnToggleRumors = document.getElementById('btn-toggle-rumors') as HTMLButtonElement
 const btnToggleLegend = document.getElementById('btn-toggle-legend') as HTMLButtonElement
 const btnToggleEcon = document.getElementById('btn-toggle-econ') as HTMLButtonElement
+const panelsDropdown = document.getElementById('panels-dropdown') as HTMLElement | null
+const btnPanelsToggle = document.getElementById('btn-panels-toggle') as HTMLButtonElement | null
+btnPanelsToggle?.addEventListener('click', (e) => {
+  e.stopPropagation()
+  panelsDropdown?.classList.toggle('open')
+})
+document.addEventListener('click', () => panelsDropdown?.classList.remove('open'))
 const btnTheme = document.getElementById('btn-theme')!
 btnTheme.addEventListener('click', toggleTheme)
 
@@ -1060,14 +1134,10 @@ function applyOverlayVisibility() {
   econPanel.classList.toggle('hidden', !econVisible)
   setMapLegendVisible(legendVisible)
 
-  btnToggleDemo.classList.toggle('off', !demographicsVisible)
-  btnToggleRumors.classList.toggle('off', !rumorsVisible)
-  btnToggleLegend.classList.toggle('off', !legendVisible)
-  btnToggleEcon.classList.toggle('off', !econVisible)
-  btnToggleDemo.title = demographicsVisible ? 'Hide demographics panel' : 'Show demographics panel'
-  btnToggleRumors.title = rumorsVisible ? 'Hide rumors panel' : 'Show rumors panel'
-  btnToggleLegend.title = legendVisible ? 'Hide network legend' : 'Show network legend'
-  btnToggleEcon.title = econVisible ? 'Hide economics panel' : 'Show economics panel'
+  btnToggleDemo.classList.toggle('active', demographicsVisible)
+  btnToggleRumors.classList.toggle('active', rumorsVisible)
+  btnToggleLegend.classList.toggle('active', legendVisible)
+  btnToggleEcon.classList.toggle('active', econVisible)
 }
 
 btnToggleDemo.addEventListener('click', () => {
@@ -1092,6 +1162,7 @@ btnToggleEcon.addEventListener('click', () => {
   econVisible = !econVisible
   localStorage.setItem(ECON_VISIBLE_KEY, econVisible ? '1' : '0')
   applyOverlayVisibility()
+  if (econVisible) updateEconomicsPanel()
 })
 
 applyOverlayVisibility()
@@ -1099,7 +1170,7 @@ applyOverlayVisibility()
 // ── Economics Panel ─────────────────────────────────────────────────────────
 
 function updateEconomicsPanel() {
-  if (!world || !econVisible) return
+  if (!world) return
   const { macro } = world
   const taxRate = getIncomeTaxRate(world)
 

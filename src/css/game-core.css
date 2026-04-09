@@ -52,6 +52,158 @@
 #btn-gov .waiting { color: #ef9f27; }
 #gov-cd { font-variant-numeric: tabular-nums; }
 
+/* ── Macro stat tooltips ─────────────────────────────────────────────────── */
+.macro-stat {
+  position: relative;
+  cursor: default;
+}
+.stat-tooltip {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 240px;
+  background: #181818;
+  border: 1px solid #2d2d2d;
+  border-radius: 8px;
+  padding: 12px 14px;
+  z-index: 200;
+  box-shadow: 0 10px 32px rgba(0,0,0,.75);
+  pointer-events: none;
+  font-size: 11px;
+  line-height: 1.5;
+}
+/* Arrow pointing up */
+.stat-tooltip::before {
+  content: '';
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 8px;
+  height: 8px;
+  background: #181818;
+  border-left: 1px solid #2d2d2d;
+  border-top: 1px solid #2d2d2d;
+  rotate: 45deg;
+}
+.macro-stat:hover .stat-tooltip { display: block; }
+.stat-tooltip-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #e0e0e0;
+  margin-bottom: 4px;
+}
+.stat-tooltip-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 8px;
+  line-height: 1.2;
+}
+.stat-tooltip-value.tip-healthy { color: #5dcaa5; }
+.stat-tooltip-value.tip-warning  { color: #ef9f27; }
+.stat-tooltip-value.tip-danger   { color: #e26060; }
+.stat-tooltip-value.tip-critical { color: #e24b4b; }
+.stat-tooltip-desc {
+  color: #888;
+  font-size: 11px;
+  line-height: 1.55;
+  border-top: 1px solid #252525;
+  padding-top: 8px;
+  margin-top: 4px;
+}
+.stat-tooltip-factors {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.stat-tooltip-factor {
+  font-size: 10px;
+  color: #555;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+.stat-tooltip-factor::before {
+  content: '↳';
+  color: #333;
+  flex-shrink: 0;
+}
+.stat-tooltip-status {
+  margin-top: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  padding: 3px 7px;
+  border-radius: 4px;
+  display: inline-block;
+}
+.stat-tooltip-status.tip-healthy { background: rgba(93,202,165,.12); color: #5dcaa5; }
+.stat-tooltip-status.tip-warning  { background: rgba(239,159,39,.12); color: #ef9f27; }
+.stat-tooltip-status.tip-danger   { background: rgba(226,96,96,.12);  color: #e26060; }
+.stat-tooltip-status.tip-critical { background: rgba(226,75,75,.15);  color: #e24b4b; }
+
+/* Light mode */
+body[data-theme='light'] .stat-tooltip {
+  background: #fff;
+  border-color: #dbe5ef;
+  box-shadow: 0 8px 28px rgba(0,0,0,.14);
+}
+body[data-theme='light'] .stat-tooltip::before {
+  background: #fff;
+  border-color: #dbe5ef;
+}
+body[data-theme='light'] .stat-tooltip-name { color: #1f2e42; }
+body[data-theme='light'] .stat-tooltip-value { color: #0f1e30; }
+body[data-theme='light'] .stat-tooltip-desc { color: #5a7090; border-top-color: #e4edf6; }
+body[data-theme='light'] .stat-tooltip-factor { color: #8096ad; }
+body[data-theme='light'] .stat-tooltip-factor::before { color: #b5c8da; }
+
+/* Topbar panels dropdown */
+.top-dropdown {
+  position: relative;
+}
+.top-dropdown-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: #181818;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  padding: 4px;
+  z-index: 100;
+  min-width: 150px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.6);
+}
+.top-dropdown.open .top-dropdown-menu { display: flex; flex-direction: column; gap: 2px; }
+.top-dropdown-item {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 11px;
+  padding: 6px 10px;
+  cursor: pointer;
+  text-align: left;
+  border-radius: 4px;
+  white-space: nowrap;
+  transition: background .1s, color .1s;
+}
+.top-dropdown-item:hover { background: #222; color: #ddd; }
+.top-dropdown-item.active { color: #7aabff; }
+body[data-theme='light'] .top-dropdown-menu {
+  background: #fff;
+  border-color: #cdd7e4;
+  box-shadow: 0 8px 24px rgba(0,0,0,.15);
+}
+body[data-theme='light'] .top-dropdown-item { color: #5a7090; }
+body[data-theme='light'] .top-dropdown-item:hover { background: #f0f5fa; color: #1a2a3a; }
+body[data-theme='light'] .top-dropdown-item.active { color: #1e57b8; }
+
 #ai-usage {
   font-size: 10px;
   color: #444;

@@ -45,7 +45,13 @@
 }
 .sp-side-panel {
   left: 264px;
-  width: 280px;
+  width: 300px;
+  min-height: 340px;
+}
+/* When side panel hosts chat, allow #sp-side-body to be a flex column */
+#sp-side-body {
+  display: flex;
+  flex-direction: column;
 }
 
 /* Spotlight body rows */
@@ -190,57 +196,78 @@ body[data-theme='light'] .sp-edit-check-label { color: #666; }
 body[data-theme='light'] .sp-edit-check-label:hover { color: #333; }
 
 /* ── NPC Direct Conversation ──────────────────────────────────────────────── */
-.sp-chat-section { padding-bottom: 8px; }
+.sp-chat-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding-bottom: 0;
+}
 .sp-chat-thread {
-  max-height: 180px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  padding: 6px 12px 4px;
+  gap: 6px;
+  padding: 10px 12px 8px;
+  scrollbar-width: thin;
+  scrollbar-color: #333 transparent;
 }
-.sp-chat-empty { font-size: 11px; color: #444; font-style: italic; text-align: center; padding: 8px 0; }
-.sp-chat-bubble {
-  padding: 5px 9px;
-  border-radius: 8px;
+.sp-chat-thread::-webkit-scrollbar { width: 4px; }
+.sp-chat-thread::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+.sp-chat-empty {
   font-size: 11px;
-  line-height: 1.45;
-  max-width: 88%;
+  color: #444;
+  font-style: italic;
+  text-align: center;
+  padding: 16px 0;
+  margin: auto;
+}
+.sp-chat-bubble {
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  max-width: 90%;
   word-break: break-word;
 }
 .sp-chat-player {
   background: #162316;
   color: #7ed87e;
   align-self: flex-end;
-  border-bottom-right-radius: 2px;
+  border-bottom-right-radius: 3px;
 }
 .sp-chat-npc {
   background: #1a1a2a;
   color: #b0b0d0;
   align-self: flex-start;
-  border-bottom-left-radius: 2px;
+  border-bottom-left-radius: 3px;
 }
 .sp-chat-npc b { color: #8888cc; font-weight: 600; }
 .sp-chat-thinking em { opacity: 0.45; animation: pulse 1.2s ease-in-out infinite; }
 .sp-chat-input-row {
   display: flex;
-  gap: 5px;
-  padding: 0px 12px 2px;
+  gap: 6px;
+  padding: 8px 10px 10px;
+  border-top: 1px solid #1e1e1e;
+  flex-shrink: 0;
 }
 .sp-chat-input {
   flex: 1;
-  background: #111;
+  background: #0f0f0f;
   border: 1px solid #2a2a2a;
   color: #ccc;
-  padding: 5px 8px;
-  border-radius: 5px;
-  font-size: 11px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 12px;
   font-family: inherit;
+  min-width: 0;
 }
 .sp-chat-input:focus { outline: none; border-color: #444; }
 .sp-chat-input:disabled { opacity: 0.4; }
-.sp-chat-send-btn { font-size: 13px; }
-.sp-chat-ai-btn { font-size: 13px; opacity: 0.85; white-space: nowrap; }
+.sp-chat-send-btn { font-size: 14px; padding: 0 6px; }
+.sp-chat-ai-btn { font-size: 12px; opacity: 0.85; white-space: nowrap; padding: 0 6px; }
 .sp-chat-ai-btn.sp-chat-ai-off { opacity: 0.45; filter: grayscale(1); }
 /* NPC name links (spouse / romance target) */
 .sp-npc-link {

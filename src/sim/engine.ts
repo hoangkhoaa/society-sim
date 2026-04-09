@@ -651,19 +651,27 @@ export function computeMacroStats(state: WorldState): WorldState['macro'] {
   if (n === 0) return state.macro
 
   // Food production — each farmer at average productivity feeds ~3-4 people
-  const dailyProduction = farmerProd * 4 * scarcityFactor * seasonFactor * techBonuses.foodMult
+  // When natural resources are depleted (soil degradation, water scarcity), food yield drops
+  const resourceState = clamp(state.natural_resources / 1000, 0, 100)  // 0–100%
+  const soilFactor = resourceState < 30
+    ? 0.4 + (resourceState / 30) * 0.6   // 0.4 at 0%, 1.0 at 30%
+    : 1.0
+  const dailyProduction = farmerProd * 4 * scarcityFactor * seasonFactor * techBonuses.foodMult * soilFactor
   const dailyConsumption = n * 0.8
   state.food_stock = clamp((state.food_stock ?? 0) + dailyProduction - dailyConsumption, 0, 999999)
   const food = clamp(state.food_stock / (n * 30) * 100, 0, 100)
 
   // Natural resources — craftsmen and farmers extract resources; natural regeneration
-  // Regen rate 0.00015 balances extraction at ~25k equilibrium (was 0.00002, too low)
+  // Extraction scales with productivity of producers; scarcity constitution reduces both sides
   const extractionRate = (craftsmanProd * 0.3 + farmerProd * 0.1) * scarcityFactor
-  const regenRate = (state.natural_resources ?? 50000) * 0.00015
-  state.natural_resources = clamp(
-    (state.natural_resources ?? 50000) + regenRate - extractionRate,
-    0, 100000,
-  )
+
+  // Regen: base logistic growth (slows near cap, accelerates in mid-range)
+  // Tech discovery "ecology" or low exploitation boosts regen
+  const rawPool = state.natural_resources ?? 50000
+  const ecoBonus = (state.discoveries ?? []).some(d => d.id === 'ecology' || d.id === 'medicine') ? 1.4 : 1.0
+  // Logistic regen: fastest at 50% of max (25k/50k), slows as it approaches cap
+  const regenRate = rawPool * 0.00018 * (1 - rawPool / 110000) * ecoBonus
+  state.natural_resources = clamp(rawPool + regenRate - extractionRate, 0, 100000)
   const natural_resources = clamp(state.natural_resources / 1000, 0, 100)
 
   const maxScholarOutput = n * maxScholarRatio
@@ -1092,12 +1100,20 @@ function checkLifecycleEvents(state: WorldState): void {
   }
 
   // ── 5. Network limit during heartbreak ───────────────────────────────────
-  // NPCs in heartbreak withdraw socially: cap strong_ties at 8 new connections.
+  // NPCs in heartbreak withdraw socially: trim strong_ties to 8.
+  // Also remove the reciprocal edge from the dropped ties so the graph stays symmetric.
   for (const npc of living) {
     if ((npc.lifecycle.heartbreak_cooldown ?? 0) <= 0) continue
     if (npc.strong_ties.length <= 8) continue
-    // Keep the first 8 ties (oldest connections — don't cut long-standing friendships)
+    const dropped = npc.strong_ties.slice(8)
     npc.strong_ties = npc.strong_ties.slice(0, 8)
+    state.network.strong.get(npc.id)?.forEach((id, _, s) => { if (dropped.includes(id)) s.delete(id) })
+    for (const oid of dropped) {
+      const other = state.npcs[oid]
+      if (!other?.lifecycle.is_alive) continue
+      other.strong_ties = other.strong_ties.filter(id => id !== npc.id)
+      state.network.strong.get(oid)?.delete(npc.id)
+    }
   }
 }
 
@@ -1126,11 +1142,26 @@ function spawnBirth(state: WorldState, parent: NPC): void {
     }
   }
 
-  // Add to network
+  // Add to network — mutual parent↔child strong tie
   state.network.strong.set(newId, new Set([parent.id]))
   state.network.info.set(newId, new Set())
   baby.strong_ties = [parent.id]
   baby.info_ties   = []
+  // Back-link: parent knows their child
+  if (parent.strong_ties.length < MAX_STRONG_TIES) {
+    parent.strong_ties.push(newId)
+    state.network.strong.get(parent.id)?.add(newId)
+  }
+  // Spouse also gets the child as a strong tie
+  const spouseForTie = parent.lifecycle.spouse_id != null ? npcs[parent.lifecycle.spouse_id] : null
+  if (spouseForTie && spouseForTie.lifecycle.is_alive && spouseForTie.strong_ties.length < MAX_STRONG_TIES) {
+    if (!spouseForTie.strong_ties.includes(newId)) {
+      spouseForTie.strong_ties.push(newId)
+      state.network.strong.get(spouseForTie.id)?.add(newId)
+      baby.strong_ties.push(spouseForTie.id)
+      state.network.strong.get(newId)?.add(spouseForTie.id)
+    }
+  }
 
   npcs.push(baby)
   state.births_total += 1
@@ -1149,9 +1180,13 @@ function spawnImmigrant(state: WorldState): void {
   const living = npcs.filter(n => n.lifecycle.is_alive)
   const sameZone = living.filter(n => n.zone === immigrant.zone)
   const tiePool = sameZone.length > 0 ? sameZone : living
-  const strongTargets = tiePool.sort(() => Math.random() - 0.5).slice(0, 2)
-  const weakTargets = tiePool.sort(() => Math.random() - 0.5).slice(0, 8)
-  const infoTargets = tiePool.sort(() => Math.random() - 0.5).slice(0, 5)
+  // Shuffle independently for each tier so selections don't overlap deterministically
+  const shuffled1 = tiePool.slice().sort(() => Math.random() - 0.5)
+  const shuffled2 = tiePool.slice().sort(() => Math.random() - 0.5)
+  const shuffled3 = tiePool.slice().sort(() => Math.random() - 0.5)
+  const strongTargets = shuffled1.slice(0, 2)
+  const weakTargets   = shuffled2.slice(0, 8)
+  const infoTargets   = shuffled3.slice(0, 5)
 
   state.network.strong.set(newId, new Set(strongTargets.map(n => n.id)))
   state.network.weak.set(newId, new Set(weakTargets.map(n => n.id)))
@@ -1186,10 +1221,33 @@ function spawnImmigrant(state: WorldState): void {
 
 function checkImmigration(state: WorldState): void {
   const living = state.npcs.filter(n => n.lifecycle.is_alive)
-  if (living.length >= 1200) return
 
-  const hasSevereCrisis = state.macro.food < 35 || state.macro.stability < 35 || state.macro.political_pressure > 70
-  if (hasSevereCrisis) return
+  // ── Emigration: crisis conditions push people to flee permanently ──────────
+  // NPCs with fleeing action_state represent those already leaving.
+  // When conditions are very bad, additional NPCs leave (marked dead with cause 'fled').
+  const hasSevereCrisis = state.macro.food < 30 || state.macro.stability < 30 || state.macro.political_pressure > 75
+  if (hasSevereCrisis) {
+    // Emigration wave: a fraction of fleeing NPCs actually leave permanently
+    const fleeing = living.filter(n => n.action_state === 'fleeing')
+    if (fleeing.length > 0 && Math.random() < 0.15) {
+      const departCount = 1 + Math.floor(Math.random() * Math.min(3, fleeing.length))
+      let departed = 0
+      for (const npc of fleeing.slice(0, departCount)) {
+        npc.lifecycle.is_alive   = false
+        npc.lifecycle.death_cause = 'fled'
+        npc.lifecycle.death_tick  = state.tick
+        departed++
+      }
+      if (departed > 0) {
+        const text = tf('engine.emigration_wave', { n: departed }) as string
+        addFeedRaw(text, 'warning', state.year, state.day)
+      }
+    }
+    return
+  }
+
+  // ── Immigration: attractive conditions draw newcomers ─────────────────────
+  if (living.length >= 1200) return
 
   const attractiveness =
     state.macro.stability * 0.35 +
@@ -1197,13 +1255,14 @@ function checkImmigration(state: WorldState): void {
     state.macro.food * 0.25 +
     (100 - state.macro.political_pressure) * 0.10
 
-  const chance = clamp((attractiveness - 55) / 120, 0, 0.35)
+  // Needs to be genuinely appealing (>55) to attract migrants
+  const chance = clamp((attractiveness - 55) / 120, 0, 0.25)
   if (Math.random() >= chance) return
 
-  const arrivals = 1 + Math.floor(Math.random() * (attractiveness > 75 ? 4 : 2))
+  const arrivals = 1 + Math.floor(Math.random() * (attractiveness > 75 ? 3 : 1))
   for (let i = 0; i < arrivals; i++) spawnImmigrant(state)
 
-  const text = tf('engine.immigration_wave', { n: arrivals })
+  const text = tf('engine.immigration_wave', { n: arrivals }) as string
   addFeedRaw(text, 'info', state.year, state.day)
   addChronicle(text, state.year, state.day, 'minor')
 }
@@ -1317,6 +1376,11 @@ function formOrganicStrongTies(state: WorldState): void {
         b.strong_ties.push(a.id)
         state.network.strong.get(a.id)?.add(b.id)
         state.network.strong.get(b.id)?.add(a.id)
+        // Promoted to strong: remove the now-redundant weak tie between them
+        a.weak_ties = a.weak_ties.filter(id => id !== b.id)
+        b.weak_ties = b.weak_ties.filter(id => id !== a.id)
+        state.network.weak.get(a.id)?.delete(b.id)
+        state.network.weak.get(b.id)?.delete(a.id)
       }
     }
   }
@@ -1944,15 +2008,16 @@ function applyWelfare(state: WorldState): void {
   }
   if (pool <= 0) return
 
-  // Distribute to poor
+  // Distribute to poor — money + direct hunger/stress relief (welfare isn't just cash)
   const recipients = sorted.slice(0, bottomEnd)
   if (recipients.length === 0) return
   const share = pool / recipients.length
   for (const npc of recipients) {
-    npc.wealth = clamp(npc.wealth + share, 0, 50000)
-    // Small trust boost: social contract works
+    npc.wealth  = clamp(npc.wealth + share, 0, 50000)
+    npc.hunger  = clamp(npc.hunger - 5 * safetyNet, 0, 100)   // food vouchers / aid
+    npc.stress  = clamp(npc.stress - 3 * safetyNet, 0, 100)   // financial relief reduces anxiety
     if (share > 1) {
-      npc.trust_in.government.intention = clamp(npc.trust_in.government.intention + 0.001, 0, 1)
+      npc.trust_in.government.intention = clamp(npc.trust_in.government.intention + 0.002, 0, 1)
     }
   }
 }
@@ -2010,8 +2075,11 @@ function applyStateRationing(state: WorldState): void {
 // Rate = (gini - 0.40) × state_power × 0.005 per day (zero for egalitarian societies).
 
 function applyFeudalTribute(state: WorldState): void {
-  const { gini_start, state_power } = state.constitution
-  const tributeRate = Math.max(0, (gini_start - 0.40) * state_power * 0.005)
+  const { state_power } = state.constitution
+  // Use live macro.gini (actual wealth distribution) instead of constitution gini_start.
+  // This means tribute intensifies as real inequality grows, not just starting conditions.
+  const liveGini = state.macro.gini ?? state.constitution.gini_start
+  const tributeRate = Math.max(0, (liveGini - 0.40) * state_power * 0.005)
   if (tributeRate < 0.0001) return
 
   const living     = state.npcs.filter(n => n.lifecycle.is_alive)
@@ -2071,9 +2139,8 @@ function applyIncomeTax(state: WorldState): void {
     if (npc.role === 'guard' || npc.role === 'leader') continue  // govt workers don't pay income tax
     if (npc.daily_income < EXEMPT_THRESHOLD) continue
 
-    // Tax is deducted from wealth (proxy for earned and held income).
-    // Applied as 25% of the annual tax amount per day (quarterly collection cadence).
-    const taxAmount = npc.daily_income * taxRate * 0.25
+    // Tax = daily_income × rate (collected once per day, matching wage cadence).
+    const taxAmount = npc.daily_income * taxRate
     if (taxAmount < 0.01) continue
     npc.wealth = clamp(npc.wealth - taxAmount, 0, 50000)
     state.tax_pool = clamp((state.tax_pool ?? 0) + taxAmount, 0, 9_999_999)
@@ -2095,8 +2162,11 @@ function applyIncomeTax(state: WorldState): void {
 // If the pool is insufficient, wages are prorated (government insolvency).
 // Running out of money triggers guard morale collapse (fear spike).
 
-const GOVT_WAGE_GUARD  = 8
-const GOVT_WAGE_LEADER = 14
+// Wages calibrated to match market income (~daily_income of a farmer/craftsman at avg productivity).
+// farmer: 0.12 * 0.7 * 24 ≈ 2.0/day, craftsman: 0.14 * 0.7 * 24 ≈ 2.4/day
+// Guard earns slightly above farmer (dangerous work), leader earns more (administrative burden).
+const GOVT_WAGE_GUARD  = 2.5
+const GOVT_WAGE_LEADER = 4.0
 
 function applyGovernmentWages(state: WorldState): void {
   if ((state.tax_pool ?? 0) <= 0) return
@@ -2115,9 +2185,10 @@ function applyGovernmentWages(state: WorldState): void {
   for (const npc of guards) {
     const wage = GOVT_WAGE_GUARD * payRatio
     npc.wealth = clamp(npc.wealth + wage, 0, 50000)
-    npc.daily_income = npc.daily_income * 0.99 + wage  // update income EMA with daily wage
+    // daily_income for govt roles: EMA toward actual daily wage (cadence matches market NPC EMA).
+    // wage is already in coins/day; multiply by 24 to match the grossIncome*24 scale in wealthTick.
+    npc.daily_income = npc.daily_income * 0.99 + wage * 24 * 0.01
     if (payRatio < 0.5) {
-      // Government insolvency → guards become demoralized and fearful
       npc.fear      = clamp(npc.fear + 5, 0, 100)
       npc.grievance = clamp(npc.grievance + 3, 0, 100)
     }
@@ -2125,7 +2196,7 @@ function applyGovernmentWages(state: WorldState): void {
   for (const npc of leaders) {
     const wage = GOVT_WAGE_LEADER * payRatio
     npc.wealth = clamp(npc.wealth + wage, 0, 50000)
-    npc.daily_income = npc.daily_income * 0.99 + wage  // update income EMA with daily wage
+    npc.daily_income = npc.daily_income * 0.99 + wage * 24 * 0.01
     if (payRatio < 0.5) {
       npc.fear      = clamp(npc.fear + 3, 0, 100)
       npc.grievance = clamp(npc.grievance + 5, 0, 100)
@@ -2141,14 +2212,14 @@ function applyGovernmentWages(state: WorldState): void {
 let lastTaxSpendingDay = -1
 
 function spendTaxRevenue(state: WorldState): void {
-  // Only spend every 7 days; skip if pool is too small to matter
+  // Spend daily: ~10% of pool per day. Prevents the 7-day lump-sum from
+  // creating oversized single-day effects that dilute any visible impact.
   if (state.day === lastTaxSpendingDay) return
-  if (state.day % 7 !== 0) return
-  if ((state.tax_pool ?? 0) < 50) return
+  if ((state.tax_pool ?? 0) < 20) return
   lastTaxSpendingDay = state.day
 
   const pool = state.tax_pool ?? 0
-  const spendAmount = pool * 0.50   // spend up to 50% of accumulated pool each cycle
+  const spendAmount = pool * 0.10   // spend 10% of pool each day (smooth, steady disbursement)
   state.tax_pool = clamp(pool - spendAmount, 0, 9_999_999)
 
   const c = state.constitution
@@ -2173,76 +2244,109 @@ function spendTaxRevenue(state: WorldState): void {
     spendType = 'balanced'
   }
 
-  const perNPC = spendAmount / living.length
   let feedMsg = ''
 
   switch (spendType) {
     case 'infrastructure': {
-      // Infrastructure investment: boosts productivity by reducing stress/exhaustion
+      // Infrastructure: workers get cash + quality-of-life boost
       const workers = living.filter(n => n.role === 'farmer' || n.role === 'craftsman' || n.role === 'merchant')
-      for (const npc of workers) {
-        npc.exhaustion = clamp(npc.exhaustion - 5, 0, 100)
-        npc.happiness  = clamp(npc.happiness  + 3, 0, 100)
-        npc.wealth     = clamp(npc.wealth + perNPC * 0.5, 0, 50000)
+      if (workers.length > 0) {
+        const perWorker = spendAmount / workers.length
+        for (const npc of workers) {
+          npc.wealth     = clamp(npc.wealth + perWorker, 0, 50000)
+          npc.exhaustion = clamp(npc.exhaustion - 8, 0, 100)
+          npc.happiness  = clamp(npc.happiness  + 3, 0, 100)
+        }
       }
       feedMsg = tf('engine.tax_spend.infrastructure', { amount: Math.round(spendAmount) }) as string
       break
     }
     case 'research': {
-      // R&D spending: boosts literacy (scholars become more effective)
+      // R&D: scholars get large bonus; everyone gets literacy/happiness
       const scholars = living.filter(n => n.role === 'scholar')
-      for (const npc of scholars) {
-        npc.wealth    = clamp(npc.wealth + perNPC * 2.0, 0, 50000)
-        npc.happiness = clamp(npc.happiness + 4, 0, 100)
-      }
-      for (const npc of living) {
-        npc.happiness = clamp(npc.happiness + 1, 0, 100)
+      if (scholars.length > 0) {
+        const perScholar = spendAmount * 0.6 / scholars.length
+        for (const npc of scholars) {
+          npc.wealth    = clamp(npc.wealth + perScholar, 0, 50000)
+          npc.happiness = clamp(npc.happiness + 5, 0, 100)
+        }
+        // Remainder distributed to all as general prosperity
+        const remainder = spendAmount * 0.4 / living.length
+        for (const npc of living) {
+          npc.wealth    = clamp(npc.wealth + remainder, 0, 50000)
+          npc.happiness = clamp(npc.happiness + 1, 0, 100)
+        }
+      } else {
+        const perNPC = spendAmount / living.length
+        for (const npc of living) npc.wealth = clamp(npc.wealth + perNPC, 0, 50000)
       }
       feedMsg = tf('engine.tax_spend.research', { amount: Math.round(spendAmount) }) as string
       break
     }
     case 'military': {
-      // Military spending: guards get bonuses; civilians get fear/grievance
-      const guards = living.filter(n => n.role === 'guard')
-      for (const npc of guards) {
-        npc.wealth    = clamp(npc.wealth + perNPC * 3.0, 0, 50000)
-        npc.happiness = clamp(npc.happiness + 5, 0, 100)
+      // Military: 70% to guards (soldiers), 30% to leaders (officers/commanders)
+      // Civilians feel the oppressive presence but receive nothing
+      const guards  = living.filter(n => n.role === 'guard')
+      const leaders = living.filter(n => n.role === 'leader')
+      if (guards.length > 0) {
+        const perGuard = spendAmount * 0.70 / guards.length
+        for (const npc of guards) {
+          npc.wealth    = clamp(npc.wealth + perGuard, 0, 50000)
+          npc.happiness = clamp(npc.happiness + 6, 0, 100)
+          npc.fear      = clamp(npc.fear - 5, 0, 100)
+        }
+      }
+      if (leaders.length > 0) {
+        const perLeader = spendAmount * 0.30 / leaders.length
+        for (const npc of leaders) {
+          npc.wealth    = clamp(npc.wealth + perLeader, 0, 50000)
+          npc.happiness = clamp(npc.happiness + 4, 0, 100)
+        }
       }
       for (const npc of living.filter(n => n.role !== 'guard' && n.role !== 'leader')) {
-        npc.fear = clamp(npc.fear + 2, 0, 100)
+        npc.fear = clamp(npc.fear + 3, 0, 100)
       }
       feedMsg = tf('engine.tax_spend.military', { amount: Math.round(spendAmount) }) as string
       break
     }
     case 'welfare': {
-      // Welfare redistribution: direct cash transfer to the bottom half
+      // Welfare: bottom 40% get direct cash transfer — real money from tax pool
       const sorted = [...living].sort((a, b) => a.wealth - b.wealth)
-      const bottom = sorted.slice(0, Math.ceil(sorted.length * 0.50))
-      for (const npc of bottom) {
-        npc.wealth    = clamp(npc.wealth + perNPC * 2.0, 0, 50000)
-        npc.hunger    = clamp(npc.hunger - 8, 0, 100)
-        npc.happiness = clamp(npc.happiness + 5, 0, 100)
-        npc.trust_in.government.intention = clamp(npc.trust_in.government.intention + 0.015, 0, 1)
+      const bottom = sorted.slice(0, Math.ceil(sorted.length * 0.40))
+      if (bottom.length > 0) {
+        const perRecipient = spendAmount / bottom.length
+        for (const npc of bottom) {
+          npc.wealth    = clamp(npc.wealth + perRecipient, 0, 50000)
+          npc.hunger    = clamp(npc.hunger - 10, 0, 100)
+          npc.stress    = clamp(npc.stress  - 5, 0, 100)
+          npc.happiness = clamp(npc.happiness + 6, 0, 100)
+          npc.trust_in.government.intention = clamp(npc.trust_in.government.intention + 0.02, 0, 1)
+        }
       }
       feedMsg = tf('engine.tax_spend.welfare', { amount: Math.round(spendAmount) }) as string
       break
     }
     case 'temples': {
-      // Theocratic civic projects: community cohesion and happiness
+      // Temples / civic projects: 60% as direct wealth (offerings, wages), 40% as social goods
+      // Social goods = isolation drop, happiness, trust — not money, so the full spendAmount is accounted for.
+      const perNPC = spendAmount / living.length
       for (const npc of living) {
-        npc.isolation = clamp(npc.isolation - 4, 0, 100)
-        npc.happiness = clamp(npc.happiness + 4, 0, 100)
+        npc.wealth    = clamp(npc.wealth + perNPC * 0.6, 0, 50000)
+        npc.isolation = clamp(npc.isolation - 6, 0, 100)
+        npc.happiness = clamp(npc.happiness + 5, 0, 100)
+        npc.stress    = clamp(npc.stress - 3, 0, 100)
         if (npc.worldview.authority_trust > 0.5) {
-          npc.trust_in.government.intention = clamp(npc.trust_in.government.intention + 0.01, 0, 1)
+          npc.trust_in.government.intention = clamp(npc.trust_in.government.intention + 0.015, 0, 1)
         }
       }
       feedMsg = tf('engine.tax_spend.temples', { amount: Math.round(spendAmount) }) as string
       break
     }
     case 'balanced': {
-      // Balanced spending: moderate boost to all
+      // Balanced: distribute evenly to all — universal dividend
+      const perNPC = spendAmount / living.length
       for (const npc of living) {
-        npc.wealth    = clamp(npc.wealth + perNPC * 0.8, 0, 50000)
+        npc.wealth    = clamp(npc.wealth + perNPC, 0, 50000)
         npc.happiness = clamp(npc.happiness + 2, 0, 100)
       }
       feedMsg = tf('engine.tax_spend.balanced', { amount: Math.round(spendAmount) }) as string

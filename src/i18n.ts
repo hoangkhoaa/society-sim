@@ -66,21 +66,33 @@ const translations = {
     'topbar.stat_gini':      'Gini',
     'topbar.ai_thinking':    '⏸ AI…',
     'topbar.tip_stability':
-      'Overall social order and resilience. Low values mean unrest, fragmentation, and crisis risk.',
+      'Social order and the regime\'s ability to hold together. When this drops, crises cascade: NPCs flee, guards defect, institutions collapse.',
+    'topbar.tip_stability_factors':
+      'Raised by: high government trust, low stress, adequate food|Lowered by: political unrest, fleeing citizens, food scarcity',
     'topbar.tip_food':
-      'Food security and stock coverage. Low values lead to hunger, stress, and instability.',
+      'How many days of food the population has in reserve (relative to total needs). When food runs out, NPCs starve, stress spikes, and uprisings become likely.',
+    'topbar.tip_food_factors':
+      'Raised by: more farmers, high productivity, favorable season|Lowered by: population growth, drought, war, poor harvest',
     'topbar.tip_resources':
-      'Remaining natural resource capacity for production and growth.',
+      'Remaining stock of natural resources that fuel crafting and construction. Once depleted, productivity collapses and recovery is slow.',
+    'topbar.tip_resources_factors':
+      'Raised by: natural regeneration (slow)|Lowered by: craftsmen and farmers extracting resources each tick',
     'topbar.tip_energy':
-      'Effective productive capacity of the society (workforce output adjusted by literacy and food constraints).',
+      'The society\'s effective productive output — how much real work is getting done. Boosted by literacy and hurt by hunger or mass unrest.',
+    'topbar.tip_energy_factors':
+      'Raised by: active workforce, high literacy, good food supply|Lowered by: unrest (organizing/fleeing NPCs), hunger, exhaustion',
     'topbar.tip_trust':
-      'Average public trust in government intention and institutions.',
+      'Average NPC trust in government intentions and competence. Low trust fuels protests, defection, and regime instability.',
+    'topbar.tip_trust_factors':
+      'Raised by: fulfilled policies, stable governance, justice|Lowered by: broken promises, repression, inequality, crises',
     'topbar.tip_gini':
-      'Wealth inequality index (0 = equal, 1 = extreme inequality). Higher values increase social tension.',
-    'topbar.tip_level_healthy': 'Status: healthy',
-    'topbar.tip_level_warning': 'Status: warning',
-    'topbar.tip_level_danger':  'Status: danger',
-    'topbar.tip_level_critical':'Status: critical',
+      'Wealth inequality (0 = perfectly equal, 1 = one person owns everything). High inequality breeds resentment, class conflict, and revolution.',
+    'topbar.tip_gini_factors':
+      'Lowered by: welfare policies, safety net, equal wages|Raised by: free market accumulation, tax evasion, feudal tribute',
+    'topbar.tip_level_healthy': '✓ Healthy',
+    'topbar.tip_level_warning': '⚠ Warning',
+    'topbar.tip_level_danger':  '▲ Danger',
+    'topbar.tip_level_critical': '✕ Critical',
 
     // Feed
     'feed.header':      'Event Log',
@@ -423,6 +435,7 @@ const translations = {
     'engine.legendary_reason.faction_elder': 'a veteran faction leader',
     'engine.legendary_reason.elder': 'a venerable elder',
     'engine.immigration_wave': '🚶‍♂️ {n} immigrants arrived and settled in the city.',
+    'engine.emigration_wave': '🏃 {n} residents fled the city permanently due to the crisis.',
     'gov.feed_title': '🏛 [Government Policy] {policy}',
     'gov.feed_public_statement': '📢 "{statement}"',
     'gov.feed_alerts': '📊 Alerts: {alerts}',
@@ -632,21 +645,33 @@ const translations = {
     'topbar.stat_gini':      'Gini',
     'topbar.ai_thinking':    '⏸ AI…',
     'topbar.tip_stability':
-      'Mức trật tự và khả năng chống chịu của xã hội. Thấp sẽ dễ bất ổn, phân rã và khủng hoảng.',
+      'Trật tự xã hội và khả năng chống chịu của chính quyền. Khi xuống thấp, khủng hoảng dây chuyền: dân chúng bỏ trốn, lính canh phản bội, thể chế sụp đổ.',
+    'topbar.tip_stability_factors':
+      'Tăng khi: dân tin chính phủ, ít căng thẳng, đủ lương thực|Giảm khi: bất ổn chính trị, dân bỏ trốn, thiếu đói',
     'topbar.tip_food':
-      'An ninh lương thực và mức dự trữ. Thấp sẽ dẫn đến đói, căng thẳng và bất ổn.',
+      'Số ngày lương thực dự trữ so với nhu cầu toàn dân. Khi cạn kiệt, dân đói, căng thẳng bùng phát và nổi loạn rất dễ xảy ra.',
+    'topbar.tip_food_factors':
+      'Tăng khi: nhiều nông dân, năng suất cao, mùa thuận lợi|Giảm khi: dân số tăng, hạn hán, chiến tranh, mất mùa',
     'topbar.tip_resources':
-      'Dung lượng tài nguyên tự nhiên còn lại cho sản xuất và tăng trưởng.',
+      'Lượng tài nguyên thiên nhiên còn lại để dùng cho sản xuất và xây dựng. Khi cạn, năng suất sụp đổ và phục hồi rất chậm.',
+    'topbar.tip_resources_factors':
+      'Tăng khi: tái sinh tự nhiên (chậm)|Giảm khi: thợ thủ công và nông dân khai thác mỗi chu kỳ',
     'topbar.tip_energy':
-      'Năng lực sản xuất hiệu dụng của xã hội (đầu ra lao động sau khi tính học vấn và ràng buộc lương thực).',
+      'Sản lượng lao động thực tế của toàn xã hội — bao nhiêu công việc đang được thực sự thực hiện. Tăng nhờ học vấn, giảm khi đói hoặc bạo loạn.',
+    'topbar.tip_energy_factors':
+      'Tăng khi: lực lượng lao động đông, học vấn cao, đủ ăn|Giảm khi: bất ổn (biểu tình/bỏ trốn), đói kém, kiệt sức',
     'topbar.tip_trust':
-      'Mức tin tưởng trung bình của dân vào ý định chính phủ và thể chế.',
+      'Mức độ tin tưởng trung bình của dân vào ý định và năng lực của chính phủ. Tin tưởng thấp dẫn đến biểu tình, ly khai và bất ổn chính quyền.',
+    'topbar.tip_trust_factors':
+      'Tăng khi: chính sách hiệu quả, quản trị ổn định, công bằng|Giảm khi: hứa hẹn thất bại, đàn áp, bất bình đẳng, khủng hoảng',
     'topbar.tip_gini':
-      'Chỉ số bất bình đẳng tài sản (0 = bình đẳng, 1 = cực đoan). Càng cao càng dễ căng thẳng xã hội.',
-    'topbar.tip_level_healthy': 'Trạng thái: ổn',
-    'topbar.tip_level_warning': 'Trạng thái: cảnh báo',
-    'topbar.tip_level_danger':  'Trạng thái: nguy hiểm',
-    'topbar.tip_level_critical':'Trạng thái: nghiêm trọng',
+      'Chỉ số bất bình đẳng tài sản (0 = hoàn toàn bình đẳng, 1 = một người nắm hết). Cao → hận thù giai cấp, xung đột và nguy cơ cách mạng.',
+    'topbar.tip_gini_factors':
+      'Giảm khi: phúc lợi xã hội, lưới an toàn, lương đồng đều|Tăng khi: tích lũy thị trường tự do, trốn thuế, địa tô phong kiến',
+    'topbar.tip_level_healthy': '✓ Ổn định',
+    'topbar.tip_level_warning': '⚠ Cảnh báo',
+    'topbar.tip_level_danger':  '▲ Nguy hiểm',
+    'topbar.tip_level_critical': '✕ Nghiêm trọng',
 
     // Feed
     'feed.header':      'Nhật ký sự kiện',
@@ -988,6 +1013,7 @@ const translations = {
     'engine.legendary_reason.faction_elder': 'một lãnh đạo kỳ cựu của phe phái',
     'engine.legendary_reason.elder': 'một bậc trưởng lão đáng kính',
     'engine.immigration_wave': '🚶‍♂️ Có {n} người nhập cư đến và định cư trong thành phố.',
+    'engine.emigration_wave': '🏃 {n} cư dân bỏ trốn khỏi thành phố vĩnh viễn do khủng hoảng.',
     'gov.feed_title': '🏛 [Chính sách Chính phủ] {policy}',
     'gov.feed_public_statement': '📢 "{statement}"',
     'gov.feed_alerts': '📊 Cảnh báo: {alerts}',

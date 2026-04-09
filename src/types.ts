@@ -20,7 +20,7 @@ export interface WorkSchedule {
 }
 export type Gender = 'male' | 'female'
 export type ActionState = 'working' | 'resting' | 'socializing' | 'organizing' | 'fleeing' | 'complying' | 'confront'
-export type DeathCause = 'natural' | 'accident' | 'disease' | 'violence' | 'starvation'
+export type DeathCause = 'natural' | 'accident' | 'disease' | 'violence' | 'starvation' | 'fled'
 export type InstitutionId = 'government' | 'market' | 'opposition' | 'community' | 'guard'
 export type EventType =
   | 'storm' | 'drought' | 'flood' | 'tsunami' | 'epidemic' | 'resource_boom' | 'harsh_winter'

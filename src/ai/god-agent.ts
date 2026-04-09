@@ -124,7 +124,8 @@ NOTE: role_ratios cannot change mid-game (NPCs already exist). Only numeric cons
   "seed_rumor":{"content":"text","subject":"government"|"guard"|"market"|"community",
     "effect":"trust_down"|"trust_up"|"fear_up"|"grievance_up","duration_days":1-30}},
 "answer":"brief","requires_confirm":true|false}
-Scales: food_stock ~500 = 1 day for 500 pop, ~15000 = a season; natural_resources max 100000; tax 200-1000 per day typical.
+Scales: food_stock ~500 = 1 day for 500 pop, ~15000 = a season; natural_resources max 100000 (world state shows raw + % + pollution_level); tax 200-1000 per day typical.
+POLLUTION: natural_resources drives environmental health. When resources % < 20 → illness rate ×3.5, direct disease deaths, NPCs die faster. Use natural_resources_delta < 0 for any event that causes environmental damage: industrial accidents, chemical spills, nuclear fallout, deforestation, toxic dumping, wildfire ash, volcanic ash clouds, drought (kills vegetation). Example: nuclear_explosion → also add world_delta.natural_resources_delta:-20000; wildfire → -5000; industrial_accident → -8000. Conversely, eco-restoration, reforestation → positive delta.
 
 6. INSTITUTION POWER SHIFTS — shift government/market/opposition/community/guard:
 {"type":"intervention","event":null,"interventions":null,
@@ -447,7 +448,7 @@ Current action: ${npc.action_state} | ${laborStatus}
 Economic: wealth ${Math.round(npc.wealth)} coins | ${capitalStatus}
 Class solidarity: ${Math.round(npc.class_solidarity ?? 0)}%${npc.criminal_record ? ' | has criminal record' : ''}${npc.faction_id != null ? ` | faction member` : ''}
 Recent memories: ${recentMemory || 'nothing notable'}
-World: stability ${Math.round(state.macro.stability)}%, food ${Math.round(state.macro.food)}%, gini ${state.macro.gini.toFixed(2)}
+World: stability ${Math.round(state.macro.stability)}%, food ${Math.round(state.macro.food)}%, gini ${state.macro.gini.toFixed(2)}, resources ${Math.round(state.macro.natural_resources)}%${state.macro.natural_resources < 20 ? ` ⚠ POLLUTION CRISIS` : ''}
 Active events: ${state.active_events.map(e => e.type).join(', ') || 'none'}
 Active strikes: ${(state.active_strikes ?? []).map(s => s.role).join(', ') || 'none'}
 
@@ -510,6 +511,9 @@ function buildWorldContext(state: WorldState, config: AIConfig): string {
       gini:              state.macro.gini,
       political_pressure: state.macro.political_pressure,
       natural_resources: state.macro.natural_resources,
+      // pollution_level: inverse of natural_resources — 0 = pristine, 100 = catastrophic
+      // <20% resources → illness rate x3.5, direct disease deaths, disease spreads faster
+      pollution_level:   Math.round(Math.max(0, 100 - state.macro.natural_resources * 1.25)),
       labor_unrest:      state.macro.labor_unrest,
       polarization:      state.macro.polarization,
       gdp:               Math.round(state.macro.gdp),
@@ -556,7 +560,9 @@ function buildWorldContext(state: WorldState, config: AIConfig): string {
 
   const worldEconomy = {
     food_stock:         Math.round(state.food_stock),
-    natural_resources:  Math.round(state.natural_resources),
+    natural_resources:  Math.round(state.natural_resources),   // raw: 0–100000 (max)
+    natural_resources_pct: Math.round(state.macro.natural_resources), // 0–100%
+    pollution_level:    Math.round(Math.max(0, 100 - state.macro.natural_resources * 1.25)), // 0=pristine 100=crisis
     tax_pool:           Math.round(state.tax_pool),
     quarantine_zones:   state.quarantine_zones,
     active_rumors:      state.rumors.length,

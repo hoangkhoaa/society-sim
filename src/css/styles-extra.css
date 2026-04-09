@@ -516,30 +516,31 @@ body[data-theme='light'] #regime-label { color: #9aacbe; }
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  text-overflow: clip;
   white-space: nowrap;
 }
 .rumor-track {
   display: inline-flex;
   width: max-content;
   white-space: nowrap;
-  transform: translateX(0);
   will-change: transform;
+  animation: rumor-marquee var(--rumor-dur, 14s) linear infinite;
+  animation-play-state: paused;
 }
 .rumor-copy {
   display: inline-block;
 }
 .rumor-gap {
   display: inline-block;
-  padding: 0 18px;
+  padding: 0 20px;
+  color: #444;
+  user-select: none;
 }
-.rumor-row:hover .rumor-text-marquee .rumor-track,
-.rumor-text-marquee:hover .rumor-track {
-  animation: rumor-marquee var(--rumor-dur, 12s) linear infinite;
+.rumor-row:hover .rumor-track {
+  animation-play-state: running;
 }
 @keyframes rumor-marquee {
-  0%, 14% { transform: translateX(0); }
-  86%, 100% { transform: translateX(-50%); }
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
 }
 body[data-theme='light'] .rumor-title { color: #8a9bb0; }
 body[data-theme='light'] .rumor-text  { color: #446; }

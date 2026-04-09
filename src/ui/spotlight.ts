@@ -182,11 +182,10 @@ function wireStatsEditor(npc: NPC, root: ParentNode): void {
 
 function renderChatPanel(npc: NPC): string {
   return `
-    <div class="sp-section sp-chat-section">
-      <div class="sp-section-title">${tf('sp.chat.title', { name: npc.name })}</div>
+    <div class="sp-chat-section" data-npc="${npc.id}">
       <div class="sp-chat-thread" id="sp-chat-thread"></div>
       <div class="sp-chat-input-row">
-        <button id="sp-chat-ai-toggle" class="btn-icon sp-chat-ai-btn" title="${t('sp.chat.ai_toggle') as string}">🤖 AI</button>
+        <button id="sp-chat-ai-toggle" class="btn-icon sp-chat-ai-btn" title="${t('sp.chat.ai_toggle') as string}">🤖</button>
         <input type="text" id="sp-chat-input" class="sp-chat-input" placeholder="${t('sp.chat.input_ph') as string}" maxlength="200" />
         <button id="sp-chat-send" class="btn-icon sp-chat-send-btn">→</button>
       </div>

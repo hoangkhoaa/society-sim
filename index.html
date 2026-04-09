@@ -128,18 +128,26 @@
       <span class="macro-stat" id="stat-energy"><span data-i18n="topbar.stat_energy">Energy</span> <b id="v-energy">–</b></span>
       <span class="macro-stat" id="stat-trust"><span data-i18n="topbar.stat_trust">Trust</span> <b id="v-trust">–</b></span>
       <span class="macro-stat" id="stat-gini"><span data-i18n="topbar.stat_gini">Gini</span> <b id="v-gini">–</b></span>
+      <span id="active-events" class="hidden" title="Active events"></span>
       <div class="top-spacer"></div>
       <button class="btn-top" id="btn-pause">⏸</button>
       <button class="btn-top" id="btn-speed">1×</button>
-      <button class="btn-top" id="btn-toggle-demo" title="Toggle demographics panel">👥</button>
-      <button class="btn-top" id="btn-toggle-rumors" title="Toggle rumors panel">🗣</button>
-      <button class="btn-top" id="btn-toggle-econ" title="Toggle economics panel">💰</button>
-      <button class="btn-top" id="btn-toggle-legend" title="Toggle network legend">🕸</button>
+      <div class="top-divider"></div>
+      <!-- Panels dropdown -->
+      <div class="top-dropdown" id="panels-dropdown">
+        <button class="btn-top" id="btn-panels-toggle">Panels ▾</button>
+        <div class="top-dropdown-menu" id="panels-menu">
+          <button class="top-dropdown-item" id="btn-toggle-demo">👥 Population</button>
+          <button class="top-dropdown-item" id="btn-toggle-rumors">🗣 Rumors</button>
+          <button class="top-dropdown-item" id="btn-toggle-econ">💰 Economics</button>
+          <button class="top-dropdown-item" id="btn-toggle-legend">🕸 Network</button>
+        </div>
+      </div>
+      <div class="top-divider"></div>
       <button class="btn-top" id="btn-theme" title="Toggle light/dark mode">🌙</button>
       <button class="btn-top" id="btn-constitution" data-i18n="topbar.constitution">📜 Constitution</button>
       <button class="btn-top" id="btn-gov" title="Trigger government cycle manually">🏛 <span id="gov-cd">–</span></button>
       <button class="btn-top" id="btn-settings" title="Settings">⚙</button>
-      <span id="active-events" class="hidden" title="Active events"></span>
       <span id="ai-usage" title="AI requests · tokens used">0 req</span>
     </div>
 
@@ -248,10 +256,6 @@
               <button class="log-filter-btn active" data-filter="major" data-i18n="filter.important">Important</button>
               <button class="log-filter-btn" data-filter="critical" data-i18n="filter.critical">Critical</button>
             </div>
-          </div>
-          <div id="chronicle-rumors" class="hidden">
-            <div class="chronicle-subheader">Rumors</div>
-            <div id="rumor-log"></div>
           </div>
           <div id="chronicle-log"></div>
         </div>

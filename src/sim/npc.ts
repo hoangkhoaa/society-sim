@@ -467,7 +467,10 @@ export function createNPC(idx: number, total: number, constitution: Constitution
     weak_ties: [],
     info_ties: [],
     influence_score: 0,
-    daily_income: 0,
+    // Seed EMA at estimated steady-state so GDP is non-zero from tick 1.
+    // Uses base_skill (already set above) * income_rate * 24 ticks/day.
+    // govt_paid roles get 0 market income (wages come from tax pool instead).
+    daily_income: ROLE_CONFIG[role].govt_paid ? 0 : rand(0.4, 1.0) * ROLE_CONFIG[role].income_rate * 24,
     trust_in,
     wealth: paretoSample(constitution.gini_start),
     grievance: clamp(rand(0, 20) + tw.grievance_bonus, 0, 80),
@@ -1163,10 +1166,14 @@ export function computeProductivity(npc: NPC, state: WorldState): number {
   const stressPenalty   = Math.min(npc.stress / 120, 0.65)   // capped at 65% to prevent death spiral
   const sickPenalty     = npc.sick ? 0.40 : 0
   const ageFactor       = ageProductivityFactor(npc.age)
-  // Craftsmen can't work without raw materials
-  const resourcePenalty = (npc.role === 'craftsman' && state.macro.natural_resources < 20)
-    ? (20 - state.macro.natural_resources) / 20 * 0.50
-    : 0
+  // Resource scarcity penalty — craftsmen need raw materials, farmers need fertile land/water
+  // Craftsmen hit hard below 20% (can't process without inputs)
+  // Farmers hit below 30% (soil degradation, water scarcity)
+  const resourcePenalty = npc.role === 'craftsman'
+    ? (state.macro.natural_resources < 20 ? (20 - state.macro.natural_resources) / 20 * 0.55 : 0)
+    : npc.role === 'farmer'
+      ? (state.macro.natural_resources < 30 ? (30 - state.macro.natural_resources) / 30 * 0.35 : 0)
+      : 0
   // Fatigue penalty: exhaustion above 50 progressively reduces output (max 40% at 100)
   const fatiguePenalty = npc.exhaustion > 50
     ? (npc.exhaustion - 50) / 50 * 0.40
@@ -1279,6 +1286,29 @@ function wealthTick(npc: NPC, state: WorldState): void {
     : grossIncome - SURVIVAL_COST_PER_TICK     // net market income
 
   npc.wealth = clamp(npc.wealth + laborIncome, 0, 50000)
+
+  // ── Consumer spending flows to merchants ────────────────────────────────
+  // Survival cost represents daily purchases (food, shelter, goods).
+  // A fraction flows to a nearby merchant, simulating real market circulation.
+  // Only when market freedom allows trade and NPC has enough wealth.
+  if (npc.wealth > 1 && state.constitution.market_freedom >= 0.15 && state.tick % 6 === npc.id % 6) {
+    const spendAmount = SURVIVAL_COST_PER_TICK * 6 * 0.5  // half of 6-tick spending
+    const merchant = (() => {
+      for (const tid of npc.weak_ties) {
+        const t = state.npcs[tid]
+        if (t?.lifecycle.is_alive && t.role === 'merchant') return t
+      }
+      for (const tid of npc.strong_ties) {
+        const t = state.npcs[tid]
+        if (t?.lifecycle.is_alive && t.role === 'merchant') return t
+      }
+      return null
+    })()
+    if (merchant) {
+      npc.wealth     = clamp(npc.wealth - spendAmount, 0, 50000)
+      merchant.wealth = clamp(merchant.wealth + spendAmount, 0, 50000)
+    }
+  }
 
   // Daily income: exponential moving average of gross daily earnings.
   // Bug fix: previously used Max(0, net) which showed 0 whenever net was negative.
@@ -1468,12 +1498,33 @@ function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[])
     }
   }
 
-  // Death by starvation
-  if (npc.hunger >= 99 && Math.random() < 0.001) {
-    npc.lifecycle.is_alive   = false
-    npc.lifecycle.death_cause = 'starvation'
-    npc.lifecycle.death_tick  = state.tick
-    return
+  // Death by starvation — scaled by how long and how severely starving
+  // At hunger=99: ~6%/day base. Elderly (>60) or sick die faster.
+  if (npc.hunger >= 85) {
+    const severityMult = (npc.hunger - 85) / 15   // 0 at 85, 1 at 100
+    const ageMult = npc.age > 60 ? 1.8 : npc.age < 10 ? 1.5 : 1.0
+    const sickMult = npc.sick ? 2.0 : 1.0
+    const deathP = 0.0025 * severityMult * ageMult * sickMult
+    if (Math.random() < deathP) {
+      npc.lifecycle.is_alive   = false
+      npc.lifecycle.death_cause = 'starvation'
+      npc.lifecycle.death_tick  = state.tick
+      return
+    }
+  }
+
+  // Death by environmental degradation — low natural resources → polluted water/air
+  // When resources < 15% the environment is severely degraded; NPCs get sick and die faster.
+  if (state.macro.natural_resources < 15) {
+    const pollutionP = (15 - state.macro.natural_resources) / 15   // 0–1
+    const envDeathP = 0.00008 * pollutionP * (npc.sick ? 3 : 1) * (npc.age > 55 ? 1.5 : 1)
+    if (Math.random() < envDeathP) {
+      npc.lifecycle.is_alive   = false
+      npc.lifecycle.death_cause = 'disease'
+      npc.lifecycle.death_tick  = state.tick
+      return
+    }
+    // Also: polluted environment makes NPCs sick more often (added to illness onset below)
   }
 
   // ★ Illness tick-down & death
@@ -1497,9 +1548,14 @@ function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[])
   // ★ Random illness onset — elderly get sick more often
   if (!npc.sick) {
     const medicineMult = (state.discoveries ?? []).some(d => d.id === 'medicine') ? 0.50 : 1.0
+    // Environmental pollution: low natural resources → contaminated water/air → more illness
+    const pollutionMult = state.macro.natural_resources < 20
+      ? 1 + (20 - state.macro.natural_resources) / 20 * 2.5   // up to 3.5× at resources=0
+      : 1.0
     const sicknessP = 0.00006
       * ageIllnessMult(npc.age)
       * medicineMult
+      * pollutionMult
       * (1 + npc.exhaustion / 80)
       * (1 + npc.hunger / 80)
       * (1 + (state.active_events.some(e => e.type === 'epidemic') ? 4 : 0))
