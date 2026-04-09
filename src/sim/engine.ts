@@ -331,8 +331,9 @@ function tickEvents(state: WorldState): void {
       }
     }
 
-    // Food stock
-    state.food_stock = clamp(state.food_stock + ev.effects_per_tick.food_stock_delta, 0, 999999)
+    // Food stock (cap at 60 days for current population to prevent infinite stockpiling)
+    const eventFoodCap = Math.max(600, state.npcs.filter(n => n.lifecycle.is_alive).length * 60)
+    state.food_stock = clamp(state.food_stock + ev.effects_per_tick.food_stock_delta, 0, eventFoodCap)
 
     // Check cascade triggers
     for (const trigger of ev.triggers) {
@@ -568,8 +569,10 @@ export function applyConstitutionPatch(state: WorldState, patch: Partial<Constit
 
 /** Apply macro-level world state changes (food, resources, treasury, quarantine, rumors). */
 export function applyWorldDelta(state: WorldState, delta: WorldDelta): void {
-  if (delta.food_stock_delta !== undefined)
-    state.food_stock = clamp(state.food_stock + delta.food_stock_delta, 0, 999999)
+  if (delta.food_stock_delta !== undefined) {
+    const deltaFoodCap = Math.max(600, state.npcs.filter(n => n.lifecycle.is_alive).length * 60)
+    state.food_stock = clamp(state.food_stock + delta.food_stock_delta, 0, deltaFoodCap)
+  }
   if (delta.natural_resources_delta !== undefined)
     state.natural_resources = clamp(state.natural_resources + delta.natural_resources_delta, 0, 100000)
   if (delta.tax_pool_delta !== undefined)
@@ -688,7 +691,15 @@ export function computeMacroStats(state: WorldState): WorldState['macro'] {
     : 1.0
   const dailyProduction = farmerProd * 4 * scarcityFactor * seasonFactor * techBonuses.foodMult * soilFactor
   const dailyConsumption = n * 0.8
-  state.food_stock = clamp((state.food_stock ?? 0) + dailyProduction - dailyConsumption, 0, 999999)
+  // Storage cap: maximum 60 days of food for the current population.
+  // Surplus beyond this spoils (no cold storage for a pre-modern society).
+  const storageCapacity = n * 60
+  const rawStock = (state.food_stock ?? 0) + dailyProduction - dailyConsumption
+  // Spoilage: food above 80% of cap decays at 3%/day to prevent permanent 100% accumulation
+  const spoilageFactor = rawStock > storageCapacity * 0.8
+    ? (rawStock - storageCapacity * 0.8) * 0.03
+    : 0
+  state.food_stock = clamp(rawStock - spoilageFactor, 0, storageCapacity)
   const food = clamp(state.food_stock / (n * 30) * 100, 0, 100)
 
   // Natural resources — craftsmen and farmers extract resources; natural regeneration
@@ -1361,72 +1372,68 @@ function spawnImmigrant(state: WorldState): void {
   state.immigration_total += 1
 }
 
+function emigrate(npc: NPC, state: WorldState): void {
+  npc.lifecycle.is_alive    = false
+  npc.lifecycle.death_cause = 'fled'
+  npc.lifecycle.death_tick  = state.tick
+}
+
 function checkImmigration(state: WorldState): void {
-  const living = state.npcs.filter(n => n.lifecycle.is_alive)
+  // Snapshot living list once; used for both emigration checks and immigration gate
+  let living = state.npcs.filter(n => n.lifecycle.is_alive)
 
   // ── Emigration ─────────────────────────────────────────────────────────────
   // Two pathways:
-  //   A) Crisis flight — NPCs already in 'fleeing' state depart permanently during severe crisis
-  //   B) Voluntary emigration — discontented NPCs with high grievance leave even without crisis
+  //   A) Crisis flight — NPCs already in 'fleeing' state depart permanently
+  //   B) Voluntary emigration — discontented NPCs leave due to sustained hardship
 
   const hasSevereCrisis = state.macro.food < 30 || state.macro.stability < 30 || state.macro.political_pressure > 75
+
+  let totalDeparted = 0
 
   // A) Crisis flight: fleeing NPCs convert to permanent emigrants
   const fleeing = living.filter(n => n.action_state === 'fleeing')
   if (fleeing.length > 0) {
-    // During severe crisis: 40% daily chance; mild tension: 10% chance
     const flightChance = hasSevereCrisis ? 0.40 : 0.10
     if (Math.random() < flightChance) {
       const maxDepart = hasSevereCrisis ? Math.min(5, fleeing.length) : Math.min(2, fleeing.length)
       const departCount = 1 + Math.floor(Math.random() * maxDepart)
-      let departed = 0
       for (const npc of fleeing.slice(0, departCount)) {
-        npc.lifecycle.is_alive    = false
-        npc.lifecycle.death_cause = 'fled'
-        npc.lifecycle.death_tick  = state.tick
-        departed++
-      }
-      if (departed > 0) {
-        const text = tf('engine.emigration_wave', { n: departed }) as string
-        addFeedRaw(text, 'warning', state.year, state.day)
+        emigrate(npc, state)
+        totalDeparted++
       }
     }
   }
 
-  // B) Voluntary emigration: discontented NPCs quietly leave even without active fleeing
-  // Triggered by persistent high grievance + poverty — independent of action_state
+  // B) Voluntary emigration: discontented NPCs quietly leave
   const voluntaryPressure =
     clamp((state.macro.political_pressure - 50) / 50, 0, 1) * 0.4 +
     clamp((80 - state.macro.stability) / 80, 0, 1)          * 0.35 +
     clamp((50 - state.macro.food)       / 50, 0, 1)         * 0.25
-  // voluntaryPressure ≈ 0 in healthy society, approaches 1 in very bad conditions
-  // Base daily chance: 0% when pressure < 0.2, up to ~8% at max pressure
   const voluntaryChance = clamp((voluntaryPressure - 0.2) / 0.8 * 0.08, 0, 0.08)
   if (voluntaryChance > 0 && Math.random() < voluntaryChance) {
-    // Pick NPC with highest grievance among those not already fleeing
     const candidates = living
-      .filter(n => n.action_state !== 'fleeing' && n.role !== 'child')
+      .filter(n => n.lifecycle.is_alive && n.action_state !== 'fleeing' && n.role !== 'child')
       .sort((a, b) => b.grievance - a.grievance)
-    const toLeave = candidates.slice(0, 1 + Math.floor(Math.random() * 2))
-    let departed = 0
-    for (const npc of toLeave) {
-      if (npc.grievance < 45) break  // only truly discontented NPCs leave voluntarily
-      npc.lifecycle.is_alive    = false
-      npc.lifecycle.death_cause = 'fled'
-      npc.lifecycle.death_tick  = state.tick
-      departed++
+    for (const npc of candidates.slice(0, 1 + Math.floor(Math.random() * 2))) {
+      if (npc.grievance < 45) break
+      emigrate(npc, state)
+      totalDeparted++
     }
-    if (departed > 0) {
-      const text = tf('engine.emigration_wave', { n: departed }) as string
-      addFeedRaw(text, 'warning', state.year, state.day)
-    }
+  }
+
+  if (totalDeparted > 0) {
+    const text = tf('engine.emigration_wave', { n: totalDeparted }) as string
+    addFeedRaw(text, 'warning', state.year, state.day)
+    addChronicle(text, state.year, state.day, 'major')
   }
 
   // During severe crisis, skip immigration entirely
   if (hasSevereCrisis) return
 
   // ── Immigration: attractive conditions draw newcomers ─────────────────────
-  // Cap at 130% of initial population
+  // Re-count living after emigration so immigration cap is evaluated on current pop
+  living = state.npcs.filter(n => n.lifecycle.is_alive)
   const immigrationCap = Math.round((state.initial_population ?? 1200) * 1.3)
   if (living.length >= immigrationCap) return
 
