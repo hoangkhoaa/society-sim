@@ -3,6 +3,7 @@ import { ZONE_LABELS } from '../types'
 import { openSpotlight, close as closeSpotlight } from './spotlight'
 import type { AIConfig } from '../types'
 import { t } from '../i18n'
+import { ZONE_ADJACENCY } from '../sim/constitution'
 
 // ── Town layout ─────────────────────────────────────────────────────────────
 // Three horizontal bands that read like a real settlement from above:
@@ -22,245 +23,87 @@ interface ZoneInfo {
 }
 
 const ZONE_LAYOUT: Record<string, ZoneInfo> = {
-  north_farm:        { seed: [0.30, 0.16], darkColor: '#143a21', lightColor: '#b8f2cb', label: ZONE_LABELS['north_farm'] },
-  scholar_quarter:   { seed: [0.76, 0.16], darkColor: '#1b2b60', lightColor: '#c6d5ff', label: ZONE_LABELS['scholar_quarter'] },
-  residential_west:  { seed: [0.12, 0.44], darkColor: '#42256b', lightColor: '#dcc7ff', label: ZONE_LABELS['residential_west'] },
-  plaza:             { seed: [0.36, 0.43], darkColor: '#23523f', lightColor: '#bdeedd', label: ZONE_LABELS['plaza'] },
-  market_square:     { seed: [0.62, 0.43], darkColor: '#7a4f13', lightColor: '#ffe0b0', label: ZONE_LABELS['market_square'] },
-  guard_post:        { seed: [0.88, 0.42], darkColor: '#6a1f2f', lightColor: '#ffc2cf', label: ZONE_LABELS['guard_post'] },
-  south_farm:        { seed: [0.18, 0.78], darkColor: '#2a5f2f', lightColor: '#c8f0b8', label: ZONE_LABELS['south_farm'] },
-  workshop_district: { seed: [0.50, 0.78], darkColor: '#5f3721', lightColor: '#f5ccb2', label: ZONE_LABELS['workshop_district'] },
-  residential_east:  { seed: [0.82, 0.78], darkColor: '#2f3f8f', lightColor: '#cdd4ff', label: ZONE_LABELS['residential_east'] },
+  north_farm:        { seed: [0.29,  0.165], darkColor: '#143a21', lightColor: '#b8f2cb', label: ZONE_LABELS['north_farm'] },
+  scholar_quarter:   { seed: [0.80,  0.165], darkColor: '#1b2b60', lightColor: '#c6d5ff', label: ZONE_LABELS['scholar_quarter'] },
+  residential_west:  { seed: [0.125, 0.50],  darkColor: '#42256b', lightColor: '#dcc7ff', label: ZONE_LABELS['residential_west'] },
+  plaza:             { seed: [0.39,  0.50],  darkColor: '#23523f', lightColor: '#bdeedd', label: ZONE_LABELS['plaza'] },
+  market_square:     { seed: [0.64,  0.50],  darkColor: '#7a4f13', lightColor: '#ffe0b0', label: ZONE_LABELS['market_square'] },
+  guard_post:        { seed: [0.885, 0.50],  darkColor: '#6a1f2f', lightColor: '#ffc2cf', label: ZONE_LABELS['guard_post'] },
+  south_farm:        { seed: [0.175, 0.835], darkColor: '#2a5f2f', lightColor: '#c8f0b8', label: ZONE_LABELS['south_farm'] },
+  workshop_district: { seed: [0.51,  0.835], darkColor: '#5f3721', lightColor: '#f5ccb2', label: ZONE_LABELS['workshop_district'] },
+  residential_east:  { seed: [0.835, 0.835], darkColor: '#2f3f8f', lightColor: '#cdd4ff', label: ZONE_LABELS['residential_east'] },
 }
 
-// ── Island geometry ─────────────────────────────────────────────────────────
-// Control points define the rough shape; procedural fractal noise along the
-// coastline and zone borders creates natural, jagged outlines like a real map.
+// ── Fixed zone bounding rectangles ──────────────────────────────────────────
+// City-map grid. All coords normalized 0–1. The gaps between rectangles ARE
+// the roads — the background colour shows through as streets.
+//
+// Row 0  y 0.02–0.31  (top band)
+// H1 rd  y 0.31–0.37  centre y=0.34
+// Row 1  y 0.37–0.63  (middle band)
+// H2 rd  y 0.63–0.69  centre y=0.66
+// Row 2  y 0.69–0.98  (bottom band)
 
-const ISLAND_OUTLINE: [number, number][] = [
-  [0.44, 0.015], [0.56, 0.012], [0.68, 0.022],
-  [0.80, 0.055], [0.88, 0.105], [0.935, 0.185], [0.96, 0.28],
-  [0.975, 0.38], [0.982, 0.48], [0.975, 0.58],
-  [0.96, 0.68], [0.925, 0.77], [0.855, 0.85], [0.765, 0.91],
-  [0.65, 0.96], [0.52, 0.985], [0.40, 0.97],
-  [0.28, 0.93], [0.18, 0.87], [0.10, 0.78],
-  [0.05, 0.67], [0.025, 0.55], [0.02, 0.43],
-  [0.03, 0.32], [0.06, 0.22], [0.12, 0.135],
-  [0.20, 0.07], [0.32, 0.03],
-]
+interface ZoneRect { x1: number; y1: number; x2: number; y2: number }
 
-// ── Deterministic noise for natural borders ─────────────────────────────────
-
-function _hash(n: number, seed: number): number {
-  const x = Math.sin(n * 127.1 + seed * 311.7) * 43758.5453
-  return x - Math.floor(x)
+const ZONE_RECTS: Record<string, ZoneRect> = {
+  north_farm:        { x1: 0.02, y1: 0.02, x2: 0.56, y2: 0.31 },
+  scholar_quarter:   { x1: 0.62, y1: 0.02, x2: 0.98, y2: 0.31 },
+  residential_west:  { x1: 0.02, y1: 0.37, x2: 0.23, y2: 0.63 },
+  plaza:             { x1: 0.29, y1: 0.37, x2: 0.49, y2: 0.63 },
+  market_square:     { x1: 0.55, y1: 0.37, x2: 0.73, y2: 0.63 },
+  guard_post:        { x1: 0.79, y1: 0.37, x2: 0.98, y2: 0.63 },
+  south_farm:        { x1: 0.02, y1: 0.69, x2: 0.33, y2: 0.98 },
+  workshop_district: { x1: 0.39, y1: 0.69, x2: 0.63, y2: 0.98 },
+  residential_east:  { x1: 0.69, y1: 0.69, x2: 0.98, y2: 0.98 },
 }
 
-function _smoothNoise(x: number, seed: number): number {
-  const i = Math.floor(x)
-  const f = x - i
-  const u = f * f * (3 - 2 * f)
-  return _hash(i, seed) + (_hash(i + 1, seed) - _hash(i, seed)) * u
+// ── Road junction waypoints ─────────────────────────────────────────────────
+// Key = alphabetically sorted zone pair joined with '|'.
+// Values = normalized coords of intermediate points in the road network.
+// NPCs travel: zone_centroid → waypoints → dest_centroid.
+
+const ROAD_WAYPOINTS: Record<string, [number, number][]> = {
+  'north_farm|residential_west':        [[0.26, 0.34]],
+  'north_farm|plaza':                   [[0.39, 0.34]],
+  'north_farm|scholar_quarter':         [[0.59, 0.165]],
+  'guard_post|scholar_quarter':         [[0.885, 0.34]],
+  'market_square|scholar_quarter':      [[0.64,  0.34]],
+  'plaza|residential_west':             [[0.26, 0.50]],
+  'residential_west|south_farm':        [[0.125, 0.66]],
+  'market_square|plaza':                [[0.52, 0.50]],
+  'plaza|south_farm':                   [[0.26, 0.66]],
+  'plaza|workshop_district':            [[0.52, 0.66]],
+  'guard_post|market_square':           [[0.76, 0.50]],
+  'market_square|workshop_district':    [[0.64, 0.66]],
+  'market_square|residential_east':     [[0.76, 0.66]],
+  'guard_post|residential_east':        [[0.835, 0.66]],
+  'south_farm|workshop_district':       [[0.36, 0.835]],
+  'residential_east|workshop_district': [[0.66, 0.835]],
 }
 
-function _fbm(x: number, seed: number): number {
-  return _smoothNoise(x, seed) * 0.50
-       + _smoothNoise(x * 2.3, seed + 50) * 0.30
-       + _smoothNoise(x * 5.7, seed + 100) * 0.20
+function getRoadWaypoints(fromZone: string, toZone: string): [number, number][] {
+  const key = [fromZone, toZone].sort().join('|')
+  return ROAD_WAYPOINTS[key] ?? []
 }
 
-// ── Island path (jagged coastline) ──────────────────────────────────────────
-
-let _islandPath: Path2D | null = null
-let _islandW = 0
-let _islandH = 0
-
-function getIslandPath(W: number, H: number): Path2D {
-  if (_islandPath && _islandW === W && _islandH === H) return _islandPath
-  _islandW = W
-  _islandH = H
-
-  const raw = ISLAND_OUTLINE
-  const n = raw.length
-  const SUBS = 24
-
-  const splinePts: [number, number][] = []
-  for (let i = 0; i < n; i++) {
-    const p0 = raw[(i - 1 + n) % n]
-    const p1 = raw[i]
-    const p2 = raw[(i + 1) % n]
-    const p3 = raw[(i + 2) % n]
-    for (let s = 0; s < SUBS; s++) {
-      const t = s / SUBS
-      const t2 = t * t, t3 = t2 * t
-      splinePts.push([
-        0.5 * (2 * p1[0] + (-p0[0] + p2[0]) * t + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3),
-        0.5 * (2 * p1[1] + (-p0[1] + p2[1]) * t + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3),
-      ])
+/** BFS on ZONE_ADJACENCY graph — returns shortest zone-hop sequence [from, ..., to] */
+function findZonePath(from: string, to: string): string[] {
+  if (from === to) return [from]
+  const visited = new Set<string>([from])
+  const queue: string[][] = [[from]]
+  while (queue.length > 0) {
+    const path = queue.shift()!
+    const cur = path[path.length - 1]
+    for (const neighbor of (ZONE_ADJACENCY[cur] ?? [])) {
+      if (neighbor === to) return [...path, neighbor]
+      if (!visited.has(neighbor)) {
+        visited.add(neighbor)
+        queue.push([...path, neighbor])
+      }
     }
   }
-
-  const total = splinePts.length
-  const path = new Path2D()
-  for (let i = 0; i < total; i++) {
-    const prev = splinePts[(i - 1 + total) % total]
-    const next = splinePts[(i + 1) % total]
-    const dx = next[0] - prev[0], dy = next[1] - prev[1]
-    const len = Math.hypot(dx, dy) || 1
-    const normX = -dy / len, normY = dx / len
-
-    // Low-freq broad peninsulas/bays + mid-freq coves + high-freq jagged rocks
-    const broad = (_fbm(i * 0.08, 42) - 0.5) * 2
-    const mid   = (_fbm(i * 0.35, 71) - 0.5) * 2
-    const fine  = (_smoothNoise(i * 1.4, 13) - 0.5) * 2
-    const noiseVal = broad * 0.024 + mid * 0.014 + fine * 0.006
-    const px = (splinePts[i][0] + normX * noiseVal) * W
-    const py = (splinePts[i][1] + normY * noiseVal) * H
-
-    if (i === 0) path.moveTo(px, py)
-    else path.lineTo(px, py)
-  }
-  path.closePath()
-  _islandPath = path
-  return path
-}
-
-function isInsideIsland(nx: number, ny: number): boolean {
-  const pts = ISLAND_OUTLINE
-  let inside = false
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    const xi = pts[i][0], yi = pts[i][1]
-    const xj = pts[j][0], yj = pts[j][1]
-    if ((yi > ny) !== (yj > ny) && nx < (xj - xi) * (ny - yi) / (yj - yi) + xi) {
-      inside = !inside
-    }
-  }
-  return inside
-}
-
-// ── Voronoi zone polygons ───────────────────────────────────────────────────
-
-type Pt = [number, number]
-
-function _clipPolyByLine(poly: Pt[], lx: number, ly: number, nx: number, ny: number): Pt[] {
-  const result: Pt[] = []
-  const len = poly.length
-  for (let i = 0; i < len; i++) {
-    const curr = poly[i], next = poly[(i + 1) % len]
-    const dc = (curr[0] - lx) * nx + (curr[1] - ly) * ny
-    const dn = (next[0] - lx) * nx + (next[1] - ly) * ny
-    if (dc <= 0) result.push(curr)
-    if ((dc <= 0) !== (dn <= 0)) {
-      const t = dc / (dc - dn)
-      result.push([curr[0] + t * (next[0] - curr[0]), curr[1] + t * (next[1] - curr[1])])
-    }
-  }
-  return result
-}
-
-function _voronoiCell(seedKey: string): Pt[] {
-  const z = ZONE_LAYOUT[seedKey]
-  const [sx, sy] = z.seed
-  let poly: Pt[] = [[-0.3, -0.3], [1.3, -0.3], [1.3, 1.3], [-0.3, 1.3]]
-
-  for (const [key, other] of Object.entries(ZONE_LAYOUT)) {
-    if (key === seedKey) continue
-    const [ox, oy] = other.seed
-    const mx = (sx + ox) / 2, my = (sy + oy) / 2
-    poly = _clipPolyByLine(poly, mx, my, ox - sx, oy - sy)
-    if (poly.length < 3) return []
-  }
-
-  // Clip to island outline (CW in screen-coords: inside where cross >= 0)
-  const coast = ISLAND_OUTLINE
-  for (let i = 0; i < coast.length && poly.length >= 3; i++) {
-    const a = coast[i], b = coast[(i + 1) % coast.length]
-    const ex = b[0] - a[0], ey = b[1] - a[1]
-    poly = _clipPolyByLine(poly, a[0], a[1], ey, -ex)
-  }
-  return poly
-}
-
-function _nearestZone(x: number, y: number): string {
-  let best = '', bestD = Infinity
-  for (const [key, z] of Object.entries(ZONE_LAYOUT)) {
-    const dx = x - z.seed[0], dy = y - z.seed[1]
-    const d = dx * dx + dy * dy
-    if (d < bestD) { bestD = d; best = key }
-  }
-  return best
-}
-
-// Cached zone polygons (normalized coords) and Path2Ds (pixel coords)
-let _zoneCells: Record<string, Pt[]> = {}
-let _zonePaths: Record<string, Path2D> = {}
-let _zoneBorderPaths: Path2D | null = null
-let _zpW = 0, _zpH = 0
-
-function _ensureZoneCells() {
-  if (Object.keys(_zoneCells).length > 0) return
-  for (const key of Object.keys(ZONE_LAYOUT)) _zoneCells[key] = _voronoiCell(key)
-}
-
-function _buildZonePolys(W: number, H: number) {
-  if (_zpW === W && _zpH === H && Object.keys(_zonePaths).length > 0) return
-  _zpW = W; _zpH = H
-  _zoneCells = {}; _zonePaths = {}
-
-  const zoneKeys = Object.keys(ZONE_LAYOUT)
-  for (const key of zoneKeys) {
-    const cell = _voronoiCell(key)
-    _zoneCells[key] = cell
-    if (cell.length < 3) continue
-    const p = new Path2D()
-    p.moveTo(cell[0][0] * W, cell[0][1] * H)
-    for (let i = 1; i < cell.length; i++) p.lineTo(cell[i][0] * W, cell[i][1] * H)
-    p.closePath()
-    _zonePaths[key] = p
-  }
-
-  // Build noisy internal border paths (edges shared between two zone cells)
-  const borderPath = new Path2D()
-  const drawnEdges = new Set<string>()
-  for (const key of zoneKeys) {
-    const cell = _zoneCells[key]
-    if (!cell || cell.length < 3) continue
-    for (let i = 0; i < cell.length; i++) {
-      const a = cell[i], b = cell[(i + 1) % cell.length]
-      const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2
-      if (!isInsideIsland(mx, my)) continue
-      const nearA = _nearestZone(a[0], a[1])
-      const nearB = _nearestZone(b[0], b[1])
-      const nearM = _nearestZone(mx, my)
-      // Skip edges that lie on the island coastline
-      if (nearA === nearB && nearB === nearM && nearM === key) continue
-      const edgeId = [a[0].toFixed(4), a[1].toFixed(4), b[0].toFixed(4), b[1].toFixed(4)].sort().join(',')
-      if (drawnEdges.has(edgeId)) continue
-      drawnEdges.add(edgeId)
-      _addNoisyEdge(borderPath, a, b, W, H)
-    }
-  }
-  _zoneBorderPaths = borderPath
-}
-
-function _addNoisyEdge(path: Path2D, a: Pt, b: Pt, W: number, H: number) {
-  const segs = 28
-  const dx = b[0] - a[0], dy = b[1] - a[1]
-  const len = Math.hypot(dx, dy) || 1
-  const nx = -dy / len, ny = dx / len
-  const seed = Math.abs(a[0] * 7919 + a[1] * 104729 + b[0] * 4507 + b[1] * 7727) % 1000
-  for (let s = 0; s <= segs; s++) {
-    const t = s / segs
-    const broad = (_fbm(t * 3, seed) - 0.5) * 2
-    const mid   = (_smoothNoise(t * 10, seed + 50) - 0.5) * 2
-    const fine  = (_smoothNoise(t * 28, seed + 120) - 0.5) * 2
-    const amp = len * 0.18
-    const noise = broad * amp * 0.50 + mid * amp * 0.30 + fine * amp * 0.20
-    const px = (a[0] + dx * t + nx * noise) * W
-    const py = (a[1] + dy * t + ny * noise) * H
-    if (s === 0) path.moveTo(px, py)
-    else path.lineTo(px, py)
-  }
+  return [from, to]  // fallback
 }
 
 // ── Home zone: where NPCs rest (residential areas) ─────────────────────────
@@ -357,9 +200,10 @@ export function triggerMapShake(durationMs: number, intensity: number, flashWhit
 // ── NPC visual state (separate from sim data) ──────────────────────────────
 
 interface CommuteState {
-  sx: number; sy: number
-  ex: number; ey: number
-  t: number; duration: number
+  /** Full path through road network: [start, ...road_junctions, dest] in normalized coords */
+  waypoints: [number, number][]
+  t: number
+  duration: number
   destZone: string
 }
 
@@ -393,35 +237,13 @@ function getOrInitVisual(npc: { id: number; x: number; y: number; zone: string; 
 }
 
 function randomPosInZone(zone: string): { x: number; y: number } {
-  const z = ZONE_LAYOUT[zone]
-  if (!z) return { x: 0.5, y: 0.5 }
-
-  _ensureZoneCells()
-  const cell = _zoneCells[zone]
-  if (cell && cell.length >= 3) {
-    let minX = 1, maxX = 0, minY = 1, maxY = 0
-    for (const [px, py] of cell) {
-      if (px < minX) minX = px; if (px > maxX) maxX = px
-      if (py < minY) minY = py; if (py > maxY) maxY = py
-    }
-    const pad = 0.02
-    minX += pad; maxX -= pad; minY += pad; maxY -= pad
-    for (let attempt = 0; attempt < 40; attempt++) {
-      const x = minX + Math.random() * (maxX - minX)
-      const y = minY + Math.random() * (maxY - minY)
-      if (isInsideIsland(x, y) && _nearestZone(x, y) === zone) return { x, y }
-    }
-  }
-
-  // Fallback: expanding radius from seed
-  const [sx, sy] = z.seed
-  for (let attempt = 0; attempt < 20; attempt++) {
-    const r = 0.08 + attempt * 0.012
-    const x = sx + (Math.random() - 0.5) * r * 2
-    const y = sy + (Math.random() - 0.5) * r * 2
-    if (isInsideIsland(x, y) && _nearestZone(x, y) === zone) return { x, y }
-  }
-  return { x: sx, y: sy }
+  const rect = ZONE_RECTS[zone]
+  const z    = ZONE_LAYOUT[zone]
+  if (!rect) return z ? { x: z.seed[0], y: z.seed[1] } : { x: 0.5, y: 0.5 }
+  const pad = 0.025
+  const x = rect.x1 + pad + Math.random() * Math.max(0, rect.x2 - rect.x1 - pad * 2)
+  const y = rect.y1 + pad + Math.random() * Math.max(0, rect.y2 - rect.y1 - pad * 2)
+  return { x, y }
 }
 
 const ACTION_SPEED: Record<string, number> = {
@@ -443,21 +265,52 @@ function commuteDuration(npcId: number, _fromZ: string, _toZ: string): number {
   return 55 + (npcId % 37) * 2 + 35 + (npcId % 23)
 }
 
+/** Build a commute path: current position → road junctions → random spot in destZone */
+function buildCommutePath(
+  sx: number, sy: number,
+  fromZone: string, toZone: string,
+): [number, number][] {
+  const zonePath = findZonePath(fromZone, toZone)
+  const pts: [number, number][] = [[sx, sy]]
+  // Chain road junction waypoints for each hop along the zone path
+  for (let i = 0; i < zonePath.length - 1; i++) {
+    const junctions = getRoadWaypoints(zonePath[i], zonePath[i + 1])
+    pts.push(...junctions)
+  }
+  const dest = randomPosInZone(toZone)
+  pts.push([dest.x, dest.y])
+  return pts
+}
+
+/** Advance a commute along its waypoint path using global ease. Returns true when done. */
+function advanceCommute(v: NPCVisual): boolean {
+  const c = v.commute!
+  c.t++
+  const raw      = Math.min(1, c.t / c.duration)
+  const progress = easeInOutCubic(raw)          // smooth globally
+  const pts      = c.waypoints
+  const numSegs  = pts.length - 1
+  if (numSegs > 0) {
+    const sp     = progress * numSegs
+    const seg    = Math.min(numSegs - 1, Math.floor(sp))
+    const segT   = sp - seg                     // linear within segment
+    const from   = pts[seg]
+    const to     = pts[Math.min(numSegs, seg + 1)]
+    v.x = from[0] + (to[0] - from[0]) * segT
+    v.y = from[1] + (to[1] - from[1]) * segT
+  }
+  return c.t >= c.duration
+}
+
 function stepVisual(v: NPCVisual, action: string, workZone: string, family: FamilyCluster | null, npcId: number) {
   if (_mapPaused) return
 
   const targetZone = getVisualZone(workZone, action)
 
-  // Sleeping NPCs freeze in place once they've reached their home zone.
-  // They still commute home first if needed, then stop moving.
+  // Sleeping NPCs commute home first, then freeze.
   if (action === 'resting') {
     if (v.commute) {
-      // Still travelling home — keep the commute running
-      v.commute.t++
-      const u = easeInOutCubic(Math.min(1, v.commute.t / v.commute.duration))
-      v.x = v.commute.sx + (v.commute.ex - v.commute.sx) * u
-      v.y = v.commute.sy + (v.commute.ey - v.commute.sy) * u
-      if (v.commute.t >= v.commute.duration) {
+      if (advanceCommute(v)) {
         v.renderZone = v.commute.destZone
         v.commute = null
         v.moveIn = 9999
@@ -465,25 +318,28 @@ function stepVisual(v: NPCVisual, action: string, workZone: string, family: Fami
         v.tx = settle.x; v.ty = settle.y
       }
     } else if (targetZone !== v.renderZone) {
-      // Start commute to home zone
-      const p = randomPosInZone(targetZone)
-      v.commute = { sx: v.x, sy: v.y, ex: p.x, ey: p.y, t: 0, duration: commuteDuration(npcId, v.renderZone, targetZone), destZone: targetZone }
+      v.commute = {
+        waypoints: buildCommutePath(v.x, v.y, v.renderZone, targetZone),
+        t: 0,
+        duration: commuteDuration(npcId, v.renderZone, targetZone),
+        destZone: targetZone,
+      }
     }
-    // Already home and not commuting: stay frozen
     return
   }
 
-  // Smooth commute: lerp between zones instead of snapping
+  // Active commute along road network
   if (v.commute) {
     if (v.commute.destZone !== targetZone) {
-      const p = randomPosInZone(targetZone)
-      v.commute = { sx: v.x, sy: v.y, ex: p.x, ey: p.y, t: 0, duration: commuteDuration(npcId, v.renderZone, targetZone), destZone: targetZone }
+      // destination changed mid-commute — re-route from current position
+      v.commute = {
+        waypoints: buildCommutePath(v.x, v.y, v.renderZone, targetZone),
+        t: 0,
+        duration: commuteDuration(npcId, v.renderZone, targetZone),
+        destZone: targetZone,
+      }
     }
-    v.commute.t++
-    const u = easeInOutCubic(Math.min(1, v.commute.t / v.commute.duration))
-    v.x = v.commute.sx + (v.commute.ex - v.commute.sx) * u
-    v.y = v.commute.sy + (v.commute.ey - v.commute.sy) * u
-    if (v.commute.t >= v.commute.duration) {
+    if (advanceCommute(v)) {
       v.renderZone = v.commute.destZone
       v.commute = null
       v.moveIn = 0
@@ -494,8 +350,12 @@ function stepVisual(v: NPCVisual, action: string, workZone: string, family: Fami
   }
 
   if (targetZone !== v.renderZone) {
-    const p = randomPosInZone(targetZone)
-    v.commute = { sx: v.x, sy: v.y, ex: p.x, ey: p.y, t: 0, duration: commuteDuration(npcId, v.renderZone, targetZone), destZone: targetZone }
+    v.commute = {
+      waypoints: buildCommutePath(v.x, v.y, v.renderZone, targetZone),
+      t: 0,
+      duration: commuteDuration(npcId, v.renderZone, targetZone),
+      destZone: targetZone,
+    }
     return
   }
 
@@ -511,8 +371,10 @@ function stepVisual(v: NPCVisual, action: string, workZone: string, family: Fami
                    : 0.15
       t.x = t.x * (1 - weight) + family.cx * weight
       t.y = t.y * (1 - weight) + family.cy * weight
-      // Clamp: if family pull moved us out of our zone, snap back toward seed
-      if (_nearestZone(t.x, t.y) !== v.renderZone || !isInsideIsland(t.x, t.y)) {
+      // Clamp: if family pull moved us out of our zone rect, snap back toward seed
+      const r = ZONE_RECTS[v.renderZone]
+      const outsideRect = r && (t.x < r.x1 || t.x > r.x2 || t.y < r.y1 || t.y > r.y2)
+      if (outsideRect) {
         const z = ZONE_LAYOUT[v.renderZone]
         if (z) { t.x = t.x * 0.5 + z.seed[0] * 0.5; t.y = t.y * 0.5 + z.seed[1] * 0.5 }
       }
@@ -571,8 +433,6 @@ function resizeCanvas() {
   if (!container) return
   canvas.width  = container.clientWidth
   canvas.height = container.clientHeight
-  _islandPath = null
-  _zpW = 0; _zpH = 0
   _needsMapRedraw = true
 }
 
@@ -639,7 +499,7 @@ function draw() {
 
   const world = getWorld?.()
   if (!world) {
-    drawOcean(W, H)
+    drawCityBackground(W, H, isLightTheme())
     drawPlaceholder(W, H)
     if (sx !== 0 || sy !== 0) ctx.restore()
     return
@@ -805,42 +665,75 @@ function lightenHex(hex: string, mul: number): string {
   return `rgb(${Math.min(255, Math.round(r * mul))},${Math.min(255, Math.round(g * mul))},${Math.min(255, Math.round(b * mul))})`
 }
 
-function drawOcean(W: number, H: number) {
-  if (!ctx) return
-  const light = isLightTheme()
-  const grd = ctx.createRadialGradient(
-    W * 0.48, H * 0.45, Math.min(W, H) * 0.15,
-    W * 0.50, H * 0.50, Math.max(W, H) * 0.75,
-  )
-  if (light) {
-    grd.addColorStop(0, '#a8cce8')
-    grd.addColorStop(0.6, '#7fb8da')
-    grd.addColorStop(1, '#5a9ec5')
-  } else {
-    grd.addColorStop(0, '#0c1e38')
-    grd.addColorStop(0.6, '#081628')
-    grd.addColorStop(1, '#04101e')
-  }
-  ctx.fillStyle = grd
-  ctx.fillRect(0, 0, W, H)
+// ── City map background (replaces ocean) ───────────────────────────────────
+// The road network is the background. Zone rectangles are painted on top;
+// the background colour shows through in the gaps = streets.
 
-  const waveAlpha = light ? 0.07 : 0.05
+function drawCityBackground(W: number, H: number, light: boolean) {
+  if (!ctx) return
+  // Asphalt/pavement base colour
+  ctx.fillStyle = light ? '#c9c4b9' : '#111418'
+  ctx.fillRect(0, 0, W, H)
+}
+
+function drawRoadMarkings(W: number, H: number, light: boolean) {
+  if (!ctx) return
   ctx.save()
-  ctx.strokeStyle = light
-    ? `rgba(255,255,255,${waveAlpha})`
-    : `rgba(60,100,160,${waveAlpha})`
-  ctx.lineWidth = 0.8
-  for (let i = 0; i < 14; i++) {
-    const baseY = (i / 14) * H * 1.2 - H * 0.1
-    const phase = frameCount * 0.35 + i * 43
-    ctx.beginPath()
-    for (let x = -10; x <= W + 10; x += 8) {
-      const y = baseY + Math.sin((x + phase) * 0.013) * 5 + Math.sin((x * 0.7 + phase * 0.6) * 0.019) * 3.5
-      if (x <= 0) ctx.moveTo(x, y)
-      else ctx.lineTo(x, y)
-    }
-    ctx.stroke()
+
+  // ── Sidewalk kerb lines along every road edge ─────────────────────────────
+  ctx.strokeStyle = light ? 'rgba(180,170,155,0.7)' : 'rgba(38,46,58,0.8)'
+  ctx.lineWidth = 1
+  const edges: [number, number, number, number][] = [
+    // Horizontal road H1 (y 0.31–0.37) top & bottom kerbs
+    [0, 0.31*H, W, 0.31*H], [0, 0.37*H, W, 0.37*H],
+    // Horizontal road H2 (y 0.63–0.69)
+    [0, 0.63*H, W, 0.63*H], [0, 0.69*H, W, 0.69*H],
+    // Vertical road top row: x 0.56–0.62
+    [0.56*W, 0, 0.56*W, 0.31*H], [0.62*W, 0, 0.62*W, 0.31*H],
+    // Vertical roads row 1: V1(0.23–0.29) V2(0.49–0.55) V3(0.73–0.79)
+    [0.23*W, 0.31*H, 0.23*W, 0.69*H], [0.29*W, 0.31*H, 0.29*W, 0.69*H],
+    [0.49*W, 0.31*H, 0.49*W, 0.69*H], [0.55*W, 0.31*H, 0.55*W, 0.69*H],
+    [0.73*W, 0.31*H, 0.73*W, 0.69*H], [0.79*W, 0.31*H, 0.79*W, 0.69*H],
+    // Vertical roads row 2: V4(0.33–0.39) V5(0.63–0.69)
+    [0.33*W, 0.63*H, 0.33*W, H], [0.39*W, 0.63*H, 0.39*W, H],
+    [0.63*W, 0.63*H, 0.63*W, H], [0.69*W, 0.63*H, 0.69*W, H],
+  ]
+  for (const [x1, y1, x2, y2] of edges) {
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke()
   }
+
+  // ── Road centre-line dashes ───────────────────────────────────────────────
+  ctx.setLineDash([8, 10])
+  ctx.strokeStyle = light ? 'rgba(190,175,100,0.55)' : 'rgba(255,220,80,0.22)'
+  ctx.lineWidth = 1.5
+  const centres: [number, number, number, number][] = [
+    [0, 0.34*H, W, 0.34*H],                      // H1 centre
+    [0, 0.66*H, W, 0.66*H],                      // H2 centre
+    [0.59*W, 0, 0.59*W, 0.31*H],                 // V top-row
+    [0.26*W, 0.31*H, 0.26*W, 0.69*H],            // V1
+    [0.52*W, 0.31*H, 0.52*W, 0.69*H],            // V2
+    [0.76*W, 0.31*H, 0.76*W, 0.69*H],            // V3
+    [0.36*W, 0.63*H, 0.36*W, H],                 // V4
+    [0.66*W, 0.63*H, 0.66*W, H],                 // V5
+  ]
+  for (const [x1, y1, x2, y2] of centres) {
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke()
+  }
+  ctx.setLineDash([])
+
+  // ── Road junction dots ────────────────────────────────────────────────────
+  ctx.fillStyle = light ? 'rgba(160,148,110,0.55)' : 'rgba(255,220,80,0.16)'
+  const junctions: [number, number][] = [
+    [0.26, 0.34], [0.52, 0.34], [0.59, 0.34], [0.76, 0.34],
+    [0.26, 0.66], [0.36, 0.66], [0.52, 0.66], [0.66, 0.66],
+    [0.76, 0.66], [0.835, 0.66],
+  ]
+  for (const [nx, ny] of junctions) {
+    ctx.beginPath()
+    ctx.arc(nx * W, ny * H, 3.5, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
   ctx.restore()
 }
 
@@ -865,101 +758,120 @@ const EVENT_ZONE_TINTS: Partial<Record<string, EventZoneTint>> = {
   blockade:          [130,  60,  20],
 }
 
+// Zone icons displayed in the top-left of each district block
+const ZONE_ICONS: Record<string, string> = {
+  north_farm:        '🌾',
+  south_farm:        '🌿',
+  workshop_district: '⚒',
+  market_square:     '⚖',
+  scholar_quarter:   '📜',
+  residential_west:  '🏠',
+  residential_east:  '🏡',
+  guard_post:        '⚔',
+  plaza:             '🏛',
+}
+
+function drawZoneRect(
+  zone: string, W: number, H: number, light: boolean,
+  eventAlpha = 0, tint?: EventZoneTint,
+) {
+  if (!ctx) return
+  const rect = ZONE_RECTS[zone]
+  const info = ZONE_LAYOUT[zone]
+  if (!rect || !info) return
+
+  const x = rect.x1 * W, y = rect.y1 * H
+  const w = (rect.x2 - rect.x1) * W
+  const h = (rect.y2 - rect.y1) * H
+  const r = 3   // corner radius px
+
+  const baseColor = light ? info.lightColor : info.darkColor
+  const grd = ctx.createLinearGradient(x, y, x + w, y + h)
+  grd.addColorStop(0, lightenHex(baseColor, light ? 1.18 : 1.12))
+  grd.addColorStop(1, lightenHex(baseColor, light ? 0.92 : 0.88))
+  ctx.fillStyle = grd
+
+  // Rounded rectangle
+  ctx.beginPath()
+  ctx.moveTo(x + r, y)
+  ctx.arcTo(x + w, y, x + w, y + h, r)
+  ctx.arcTo(x + w, y + h, x, y + h, r)
+  ctx.arcTo(x, y + h, x, y, r)
+  ctx.arcTo(x, y, x + w, y, r)
+  ctx.closePath()
+  ctx.fill()
+
+  // Event tint overlay
+  if (eventAlpha > 0 && tint) {
+    ctx.fillStyle = `rgba(${tint[0]},${tint[1]},${tint[2]},${eventAlpha.toFixed(3)})`
+    ctx.fill()
+  }
+
+  // Subtle border
+  ctx.strokeStyle = light ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.08)'
+  ctx.lineWidth = 1
+  ctx.stroke()
+}
+
 function drawZones(world: WorldState, W: number, H: number) {
   if (!ctx) return
   const light = isLightTheme()
-  const coastPath = getIslandPath(W, H)
-  _buildZonePolys(W, H)
 
-  drawOcean(W, H)
+  // 1. City ground / road background
+  drawCityBackground(W, H, light)
 
-  // Beach / sand ring
-  ctx.save()
-  ctx.strokeStyle = light ? 'rgba(218,198,148,0.55)' : 'rgba(90,75,40,0.35)'
-  ctx.lineWidth = 7
-  ctx.stroke(coastPath)
-  ctx.restore()
+  // 2. Road markings (kerbs + centre dashes + junctions)
+  drawRoadMarkings(W, H, light)
 
-  // Island base fill (visible as thin border between zones)
-  ctx.fillStyle = light ? '#c8b888' : '#161208'
-  ctx.fill(coastPath)
-
-  // Zone polygon fills
-  ctx.save()
-  ctx.clip(coastPath)
-  for (const [key, zone] of Object.entries(ZONE_LAYOUT)) {
-    const cellPath = _zonePaths[key]
-    if (!cellPath) continue
-    const [sx, sy] = zone.seed
-    const baseColor = light ? zone.lightColor : zone.darkColor
-    const grd = ctx.createRadialGradient(
-      sx * W, sy * H, 0,
-      sx * W, sy * H, Math.max(W, H) * 0.35,
-    )
-    grd.addColorStop(0, lightenHex(baseColor, light ? 1.25 : 1.15))
-    grd.addColorStop(0.6, baseColor)
-    grd.addColorStop(1, lightenHex(baseColor, light ? 0.88 : 0.82))
-    ctx.fillStyle = grd
-    ctx.fill(cellPath)
-  }
-
-  // ── Event zone tinting overlay ────────────────────────────────────────────
-  // Affected zones get a pulsing colored overlay based on the event type.
-  // The overlay fades as the event progresses (fresher events = more visible).
+  // 3. Compute event tints per zone
+  const zoneTintAlpha: Record<string, number> = {}
+  const zoneTintColor: Record<string, EventZoneTint> = {}
+  const pulse = 0.5 + 0.5 * Math.sin(frameCount * 0.05)
   for (const ev of world.active_events) {
     const tint = EVENT_ZONE_TINTS[ev.type]
     if (!tint) continue
-    const progress = ev.elapsed_ticks / ev.duration_ticks
-    const pulse = 0.5 + 0.5 * Math.sin(frameCount * 0.05)
-    const baseAlpha = (0.18 + pulse * 0.10) * (1 - progress * 0.5) * ev.intensity
-    const [r, g, b] = tint
+    const progress  = ev.elapsed_ticks / ev.duration_ticks
+    const baseAlpha = (0.22 + pulse * 0.12) * (1 - progress * 0.5) * ev.intensity
     for (const zone of ev.zones) {
-      const cellPath = _zonePaths[zone]
-      if (!cellPath) continue
-      ctx.fillStyle = `rgba(${r},${g},${b},${baseAlpha.toFixed(3)})`
-      ctx.fill(cellPath)
-    }
-  }
-
-  // Noisy zone borders
-  if (_zoneBorderPaths) {
-    ctx.strokeStyle = light ? 'rgba(0,0,0,0.14)' : 'rgba(255,255,255,0.08)'
-    ctx.lineWidth = 1.4
-    ctx.stroke(_zoneBorderPaths)
-    ctx.strokeStyle = light ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.03)'
-    ctx.lineWidth = 3
-    ctx.stroke(_zoneBorderPaths)
-  }
-  ctx.restore()
-
-  // Coastline — two-pass stroke for depth
-  ctx.save()
-  ctx.strokeStyle = light ? 'rgba(80,65,35,0.55)' : 'rgba(50,40,18,0.60)'
-  ctx.lineWidth = 3
-  ctx.stroke(coastPath)
-  ctx.strokeStyle = light ? 'rgba(255,245,210,0.18)' : 'rgba(255,255,200,0.05)'
-  ctx.lineWidth = 1.2
-  ctx.stroke(coastPath)
-  ctx.restore()
-
-  // Zone labels (at seed positions)
-  ctx.font = light ? '700 11px system-ui' : '600 10px system-ui'
-  ctx.textAlign = 'center'
-  for (const [, zone] of Object.entries(ZONE_LAYOUT)) {
-    const cx = zone.seed[0] * W
-    const cy = zone.seed[1] * H - 4
-    if (light) {
-      ctx.fillStyle = 'rgba(255,255,255,0.92)'
-      for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]] as const) {
-        ctx.fillText(zone.label, cx + ox, cy + oy)
+      if ((zoneTintAlpha[zone] ?? 0) < baseAlpha) {
+        zoneTintAlpha[zone] = baseAlpha
+        zoneTintColor[zone] = tint
       }
-      ctx.fillStyle = 'rgba(18, 24, 32, 0.92)'
-    } else {
-      ctx.fillStyle = 'rgba(0,0,0,0.4)'
-      ctx.fillText(zone.label, cx + 1, cy + 1)
-      ctx.fillStyle = 'rgba(255,255,255,0.45)'
     }
-    ctx.fillText(zone.label, cx, cy)
+  }
+
+  // 4. Zone blocks
+  for (const zone of Object.keys(ZONE_RECTS)) {
+    drawZoneRect(zone, W, H, light, zoneTintAlpha[zone] ?? 0, zoneTintColor[zone])
+  }
+
+  // 5. Zone labels + icons
+  ctx.textAlign = 'center'
+  for (const [key, info] of Object.entries(ZONE_LAYOUT)) {
+    const rect = ZONE_RECTS[key]
+    if (!rect) continue
+    const cx  = info.seed[0] * W
+    const cy  = info.seed[1] * H
+
+    // Icon (slightly above centroid)
+    ctx.font = '14px system-ui'
+    ctx.globalAlpha = 0.70
+    ctx.fillText(ZONE_ICONS[key] ?? '', cx, cy - 8)
+    ctx.globalAlpha = 1
+
+    // Label
+    ctx.font = light ? '700 10px system-ui' : '600 9px system-ui'
+    if (light) {
+      ctx.fillStyle = 'rgba(255,255,255,0.9)'
+      for (const [ox, oy] of [[1,0],[-1,0],[0,1],[0,-1]] as const)
+        ctx.fillText(info.label, cx + ox, cy + 8 + oy)
+      ctx.fillStyle = 'rgba(12,18,28,0.9)'
+    } else {
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'
+      ctx.fillText(info.label, cx + 1, cy + 9)
+      ctx.fillStyle = 'rgba(255,255,255,0.50)'
+    }
+    ctx.fillText(info.label, cx, cy + 8)
   }
   ctx.textAlign = 'left'
 }
