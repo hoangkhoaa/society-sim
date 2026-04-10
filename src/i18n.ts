@@ -1386,6 +1386,20 @@ export function t(key: string): TranslationValue {
 export function tf(key: string, vars: Record<string, string | number>): string {
   let s = t(key) as string
   for (const [k, v] of Object.entries(vars)) {
+    // Handle ICU select syntax: {k, select, case1 {text1} ... other {defaultText}}
+    s = s.replace(
+      new RegExp(`\\{${k},\\s*select,\\s*((?:\\w+\\s*\\{[^{}]*\\}\\s*)*)\\}`, 'g'),
+      (_match, cases: string) => {
+        const caseMap: Record<string, string> = {}
+        const caseRe = /(\w+)\s*\{([^{}]*)\}/g
+        let m: RegExpExecArray | null
+        while ((m = caseRe.exec(cases)) !== null) {
+          caseMap[m[1]] = m[2]
+        }
+        return caseMap[String(v)] ?? caseMap['other'] ?? _match
+      },
+    )
+    // Simple {k} replacement
     s = s.replace(`{${k}}`, String(v))
   }
   return s
