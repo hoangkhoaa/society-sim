@@ -271,7 +271,8 @@ body[data-theme='light'] #feed-panel,
 body[data-theme='light'] #chatbar,
 body[data-theme='light'] #demographics,
 body[data-theme='light'] #rumors-panel,
-body[data-theme='light'] #econ-panel { background: #f8fbff; border-color: #dbe5ef; }
+body[data-theme='light'] #econ-panel,
+body[data-theme='light'] #npc-contacts-panel { background: #f8fbff; border-color: #dbe5ef; }
 body[data-theme='light'] #chronicle-panel { background: #f2f7fd; border-top-color: #dbe5ef; }
 body[data-theme='light'] #chronicle-resizer {
   background: #e7eef7;

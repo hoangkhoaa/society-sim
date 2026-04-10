@@ -736,6 +736,15 @@ body[data-theme='light'] .chronicle-subheader {
     left: 8px;
     bottom: 420px;
   }
+  #npc-contacts-panel {
+    width: 160px;
+    left: 8px;
+    bottom: 608px;
+    max-height: 120px;
+  }
+  #npc-contacts-panel .npc-contacts-list {
+    max-height: 88px;
+  }
 }
 
 /* ── Responsive: tablet (≤ 1024px) ─────────────────────────────────────── */
@@ -917,7 +926,7 @@ body[data-theme='light'] .btn-ref-details:hover { background: #fff0b0; }
     left: 4px;
   }
   /* Hide rumors and econ overlays (too cramped) */
-  #rumors-panel, #econ-panel { display: none; }
+  #rumors-panel, #econ-panel, #npc-contacts-panel { display: none; }
 
   /* ── Floating panels (NPC spotlight, institution, settings) ────────────── */
   .panel {

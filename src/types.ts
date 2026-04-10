@@ -650,9 +650,14 @@ export interface ConversationMessage {
   content: string
 }
 
+/** How the player presents when talking to an NPC (affects prompts, reactions, and effect caps). */
+export type PlayerChatPersona = 'stranger' | 'supernatural'
+
 export interface NPCChatTurn {
   speaker: 'player' | 'npc'
   text: string
+  /** Set on player turns — which persona was used when sending this line. */
+  persona?: PlayerChatPersona
 }
 
 // ── UI Types ───────────────────────────────────────────────────────────────
@@ -695,18 +700,6 @@ export const ZONES = [
 ] as const
 
 export type Zone = typeof ZONES[number]
-
-export const ZONE_LABELS: Record<string, string> = {
-  north_farm: 'Northern Fields',
-  south_farm: 'Southern Pastures',
-  workshop_district: 'Artisan Row',
-  market_square: 'Market Quarter',
-  scholar_quarter: 'Academy Hill',
-  residential_east: 'East Settlement',
-  residential_west: 'West Village',
-  guard_post: 'The Garrison',
-  plaza: 'Town Square',
-}
 
 export interface GameSettings {
   // AI-Driven features

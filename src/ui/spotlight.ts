@@ -1,6 +1,6 @@
-import type { NPC, WorldState, AIConfig, NPCChatTurn, Role } from '../types'
+import type { NPC, WorldState, AIConfig, NPCChatTurn, PlayerChatPersona, Role } from '../types'
 import { generateNPCThought } from '../ai/god-agent'
-import { handleNPCChat } from '../ai/npc-agent'
+import { applyNPCChatEffect, handleNPCChat } from '../ai/npc-agent'
 import { callAI } from '../ai/provider'
 import { t, tf, getLang } from '../i18n'
 import { getSettings } from './settings-panel'
@@ -65,7 +65,7 @@ export function registerSpotlightCallbacks(
 }
 
 function openSubPanel(title: string, bodyHtml: string): void {
-  if (sidePanel.classList.contains('hidden')) _onOpen?.()
+  _onOpen?.()
   sideTitle.textContent = title
   sideBody.innerHTML = bodyHtml
   sidePanel.classList.remove('hidden')
@@ -97,10 +97,59 @@ let _chatNpc:    NPC | null = null
 let _chatState:  WorldState | null = null
 let _chatConfig: AIConfig | null = null
 let _useAI = true   // player-controlled AI toggle (persists across NPCs)
+/** How the player presents in NPC chat — changes prompts, NPC reactions, and effect caps. */
+let _chatPersona: PlayerChatPersona = 'stranger'
 let _chatPanelOpen = false  // true while the chat sub-panel is visible
+
+/** Fired when the player spotlights or opens chat with an NPC (main listens to refresh the contacts panel). */
+const NPC_CONTACTS_CHANGED = 'npc-contacts-changed'
+
+type NpcContactFlags = { spotlight: boolean; chatted: boolean }
+const _npcContactFlags = new Map<number, NpcContactFlags>()
+
+function emitNpcContactsChanged(): void {
+  document.dispatchEvent(new CustomEvent(NPC_CONTACTS_CHANGED))
+}
+
+function noteNpcSpotlight(id: number): void {
+  const cur = _npcContactFlags.get(id) ?? { spotlight: false, chatted: false }
+  cur.spotlight = true
+  _npcContactFlags.set(id, cur)
+  emitNpcContactsChanged()
+}
+
+function noteNpcChatOpened(id: number): void {
+  const cur = _npcContactFlags.get(id) ?? { spotlight: false, chatted: false }
+  cur.chatted = true
+  _npcContactFlags.set(id, cur)
+  emitNpcContactsChanged()
+}
+
+/** Remove deceased NPCs from the contact log (call before rendering the list). */
+export function pruneDeadNpcContacts(state: WorldState): void {
+  const alive = new Set(state.npcs.filter(n => n.lifecycle.is_alive).map(n => n.id))
+  let removed = false
+  for (const id of [..._npcContactFlags.keys()]) {
+    if (!alive.has(id)) {
+      _npcContactFlags.delete(id)
+      removed = true
+    }
+  }
+  if (removed) emitNpcContactsChanged()
+}
+
+export function getNpcContactEntries(): Array<{ id: number; spotlight: boolean; chatted: boolean }> {
+  return [..._npcContactFlags.entries()].map(([id, f]) => ({
+    id,
+    spotlight: f.spotlight,
+    chatted: f.chatted,
+  }))
+}
 
 export function resetNPCChatHistories(): void {
   npcChatHistories.clear()
+  _npcContactFlags.clear()
+  emitNpcContactsChanged()
 }
 
 // ── Chat summary generation ────────────────────────────────────────────────
@@ -147,11 +196,17 @@ function renderNPCChatThread(history: NPCChatTurn[], npcName: string, root: Pare
   if (history.length === 0) {
     thread.innerHTML = `<div class="sp-chat-empty">${t('sp.chat.empty') as string}</div>`
   } else {
-    thread.innerHTML = history.map(turn =>
-      turn.speaker === 'player'
-        ? `<div class="sp-chat-bubble sp-chat-player">${escapeHtml(turn.text)}</div>`
-        : `<div class="sp-chat-bubble sp-chat-npc"><b>${escapeHtml(npcName)}:</b> ${escapeHtml(turn.text)}</div>`
-    ).join('')
+    thread.innerHTML = history.map(turn => {
+      if (turn.speaker === 'npc') {
+        return `<div class="sp-chat-bubble sp-chat-npc"><b>${escapeHtml(npcName)}:</b> ${escapeHtml(turn.text)}</div>`
+      }
+      const p = turn.persona ?? 'stranger'
+      const badge =
+        p === 'supernatural'
+          ? (t('sp.chat.persona_badge_supernatural') as string)
+          : (t('sp.chat.persona_badge_stranger') as string)
+      return `<div class="sp-chat-bubble sp-chat-player"><span class="sp-chat-persona-badge">${escapeHtml(badge)}</span>${escapeHtml(turn.text)}</div>`
+    }).join('')
   }
   thread.scrollTop = thread.scrollHeight
 }
@@ -244,16 +299,202 @@ function wireStatsEditor(npc: NPC, state: WorldState, root: ParentNode): void {
   })
 }
 
-function renderChatPanel(npc: NPC): string {
+/** Persona chosen at the start of this thread (first player line), or stranger if missing. */
+function threadChatPersona(turns: NPCChatTurn[]): PlayerChatPersona {
+  const first = turns.find(x => x.speaker === 'player')
+  return first?.persona ?? 'stranger'
+}
+
+function threadHasPlayerMessage(turns: NPCChatTurn[]): boolean {
+  return turns.some(x => x.speaker === 'player')
+}
+
+function lockPersonaSegment(root: ParentNode): void {
+  const wrap = root.querySelector('.sp-chat-persona-wrap')
+  wrap?.classList.add('is-locked')
+  root.querySelectorAll<HTMLButtonElement>('.sp-chat-persona-opt').forEach(b => {
+    b.disabled = true
+    b.setAttribute('tabindex', '-1')
+  })
+  const hint = root.querySelector('.sp-chat-persona-hint')
+  if (hint) hint.textContent = t('sp.chat.persona_locked_hint') as string
+}
+
+function syncNpcChatClearButton(root: ParentNode, turns: NPCChatTurn[]): void {
+  const clearBtn = root.querySelector('#sp-chat-clear-thread') as HTMLButtonElement | null
+  if (clearBtn) clearBtn.disabled = turns.length === 0
+}
+
+/** Attach chat input, AI toggle, persona segment, and send handler (call after openSubPanel + renderChatPanel HTML). */
+function wireNpcChatPanel(npc: NPC, state: WorldState, config: AIConfig | null): void {
+  const history = npcChatHistories.get(npc.id) ?? []
+  if (threadHasPlayerMessage(history)) _chatPersona = threadChatPersona(history)
+  renderNPCChatThread(history, npc.name, sideBody)
+
+  const chatInput  = sideBody.querySelector('#sp-chat-input') as HTMLInputElement | null
+  const chatSend   = sideBody.querySelector('#sp-chat-send')  as HTMLButtonElement | null
+  const chatThread = sideBody.querySelector('#sp-chat-thread') as HTMLElement | null
+  const aiToggle   = sideBody.querySelector('#sp-chat-ai-toggle') as HTMLButtonElement | null
+
+  const personaLocked = threadHasPlayerMessage(history)
+  const personaBtns = sideBody.querySelectorAll<HTMLButtonElement>('.sp-chat-persona-opt')
+  const syncPersonaSeg = () => {
+    personaBtns.forEach(btn => {
+      const on = (btn.dataset.persona === 'supernatural' ? 'supernatural' : 'stranger') === _chatPersona
+      btn.classList.toggle('is-active', on)
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false')
+    })
+  }
+  if (!personaLocked) syncPersonaSeg()
+  personaBtns.forEach(btn => {
+    btn.addEventListener('click', e => {
+      if (btn.disabled || sideBody.querySelector('.sp-chat-persona-wrap')?.classList.contains('is-locked')) {
+        e.preventDefault()
+        e.stopPropagation()
+        return
+      }
+      _chatPersona = btn.dataset.persona === 'supernatural' ? 'supernatural' : 'stranger'
+      syncPersonaSeg()
+    })
+  })
+
+  const clearChat = () => {
+    npcChatHistories.delete(npc.id)
+    _chatPersona = 'stranger'
+    openSubPanel(tf('sp.chat.panel_title', { name: npc.name }), renderChatPanel(npc, []))
+    wireNpcChatPanel(npc, state, config)
+  }
+  sideBody.querySelector('#sp-chat-clear-thread')?.addEventListener('click', () => {
+    const h = npcChatHistories.get(npc.id) ?? []
+    if (h.length === 0) return
+    clearChat()
+  })
+
+  const updateAIToggle = () => {
+    if (!aiToggle) return
+    aiToggle.textContent = _useAI ? '🤖 AI' : '💬 AI'
+    aiToggle.title = _useAI
+      ? t('sp.chat.ai_on_title') as string
+      : t('sp.chat.ai_off_title') as string
+    aiToggle.classList.toggle('sp-chat-ai-off', !_useAI)
+  }
+  updateAIToggle()
+  aiToggle?.addEventListener('click', () => {
+    _useAI = !_useAI
+    updateAIToggle()
+  })
+
+  if (chatInput && chatSend && chatThread) {
+    const doSend = async () => {
+      const msg = chatInput.value.trim()
+      if (!msg || !_chatNpc || !_chatState) return
+      chatInput.value = ''
+      chatSend.disabled = true
+      chatInput.disabled = true
+      _onNpcChat?.()
+
+      const turnsBefore = npcChatHistories.get(_chatNpc.id) ?? []
+      const hadPlayerBefore = threadHasPlayerMessage(turnsBefore)
+      const persona: PlayerChatPersona = hadPlayerBefore
+        ? threadChatPersona(turnsBefore)
+        : _chatPersona
+      const turns = turnsBefore
+      turns.push({ speaker: 'player', text: msg, persona })
+      // Must use hadPlayerBefore: turns aliases turnsBefore, so after push threadHasPlayerMessage(turnsBefore) is always true.
+      if (!hadPlayerBefore) lockPersonaSegment(sideBody)
+      npcChatHistories.set(_chatNpc.id, turns.slice(-20))
+      renderNPCChatThread(turns, _chatNpc.name, sideBody)
+      syncNpcChatClearButton(sideBody, turns)
+
+      const thinkEl = document.createElement('div')
+      thinkEl.className = 'sp-chat-bubble sp-chat-npc sp-chat-thinking'
+      thinkEl.innerHTML = `<b>${escapeHtml(_chatNpc.name)}:</b> <em>...</em>`
+      chatThread.appendChild(thinkEl)
+      chatThread.scrollTop = chatThread.scrollHeight
+
+      if (_chatNpc.action_state === 'resting') {
+        const sleepResponses = [
+          tf('sp.chat.sleeping_1', { name: _chatNpc.name }),
+          tf('sp.chat.sleeping_2', { name: _chatNpc.name }),
+          t('sp.chat.sleeping_3') as string,
+          t('sp.chat.sleeping_4') as string,
+        ]
+        const replyText = sleepResponses[Math.floor(Math.random() * sleepResponses.length)]
+        turns.push({ speaker: 'npc', text: replyText })
+        npcChatHistories.set(_chatNpc.id, turns.slice(-20))
+        thinkEl.remove()
+        renderNPCChatThread(turns, _chatNpc.name, sideBody)
+        syncNpcChatClearButton(sideBody, turns)
+        chatSend.disabled  = false
+        chatInput.disabled = false
+        chatInput.focus()
+        return
+      }
+
+      let replyText: string
+      if (_useAI && _chatConfig) {
+        try {
+          const historyForAi = turns.slice(0, -1)
+          const result = await handleNPCChat(_chatNpc, msg, historyForAi, _chatState, _chatConfig, persona)
+          replyText = result.text
+
+          if (result.effect) applyNPCChatEffect(_chatNpc, result.effect)
+        } catch {
+          replyText = getFallbackResponse(_chatNpc)
+        }
+      } else {
+        replyText = getFallbackResponse(_chatNpc)
+      }
+
+      turns.push({ speaker: 'npc', text: replyText })
+      npcChatHistories.set(_chatNpc.id, turns.slice(-20))
+
+      thinkEl.remove()
+      renderNPCChatThread(turns, _chatNpc.name, sideBody)
+      syncNpcChatClearButton(sideBody, turns)
+      chatSend.disabled  = false
+      chatInput.disabled = false
+      chatInput.focus()
+    }
+
+    chatSend.addEventListener('click', doSend)
+    chatInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.isComposing) doSend()
+    })
+  }
+}
+
+function renderChatPanel(npc: NPC, history: NPCChatTurn[]): string {
   const memorySectionHtml = npc.chat_summary
     ? `<div class="sp-chat-memory">
         <div class="sp-chat-memory-title">${t('sp.chat.memory_title') as string}</div>
         <div class="sp-chat-memory-body">${t('sp.chat.memory_label') as string} ${escapeHtml(npc.chat_summary)}</div>
        </div>`
     : ''
+  const personaLocked = threadHasPlayerMessage(history)
+  const activePersona = personaLocked ? threadChatPersona(history) : _chatPersona
+  const hintText = personaLocked
+    ? (t('sp.chat.persona_locked_hint') as string)
+    : (t('sp.chat.persona_hint_short') as string)
+  const canClearChat = history.length > 0
   return `
     <div class="sp-chat-section" data-npc="${npc.id}">
       ${memorySectionHtml}
+      <div class="sp-chat-persona-wrap sp-chat-persona-wrap--compact${personaLocked ? ' is-locked' : ''}">
+        <div class="sp-chat-persona-heading">${t('sp.chat.persona_label') as string}</div>
+        <div class="sp-chat-persona-seg" role="radiogroup" aria-label="${escapeHtml(t('sp.chat.persona_group_aria') as string)}">
+          <button type="button" class="sp-chat-persona-opt${activePersona === 'stranger' ? ' is-active' : ''}" data-persona="stranger" aria-pressed="${activePersona === 'stranger' ? 'true' : 'false'}" title="${escapeHtml(t('sp.chat.persona_stranger_title') as string)}"${personaLocked ? ' disabled' : ''}>
+            <span class="sp-chat-persona-ic" aria-hidden="true">🚶</span>
+            <span class="sp-chat-persona-lbl">${t('sp.chat.persona_stranger') as string}</span>
+          </button>
+          <button type="button" class="sp-chat-persona-opt${activePersona === 'supernatural' ? ' is-active' : ''}" data-persona="supernatural" aria-pressed="${activePersona === 'supernatural' ? 'true' : 'false'}" title="${escapeHtml(t('sp.chat.persona_supernatural_title') as string)}"${personaLocked ? ' disabled' : ''}>
+            <span class="sp-chat-persona-ic" aria-hidden="true">✨</span>
+            <span class="sp-chat-persona-lbl">${t('sp.chat.persona_supernatural') as string}</span>
+          </button>
+        </div>
+        <button type="button" class="sp-chat-clear-thread" id="sp-chat-clear-thread" title="${escapeHtml(t('sp.chat.clear_thread_title') as string)}"${canClearChat ? '' : ' disabled'} aria-label="${escapeHtml(t('sp.chat.clear_thread') as string)}">${t('sp.chat.clear_thread') as string}</button>
+        <p class="sp-chat-persona-hint">${escapeHtml(hintText)}</p>
+      </div>
       <div class="sp-chat-thread" id="sp-chat-thread"></div>
       <div class="sp-chat-input-row">
         <button id="sp-chat-ai-toggle" class="btn-icon sp-chat-ai-btn" title="${t('sp.chat.ai_toggle') as string}">🤖</button>
@@ -316,6 +557,9 @@ function renderEditPanel(npc: NPC): string {
 }
 
 export async function openSpotlight(npc: NPC, state: WorldState, config: AIConfig | null) {
+  noteNpcSpotlight(npc.id)
+  // Keep map canvas selection in sync (glow ring + tie focus) — same as clicking the NPC on the map.
+  document.dispatchEvent(new CustomEvent('map-select-npc', { detail: { id: npc.id } }))
   closeSubPanel()
   panel.classList.remove('hidden')
   spName.textContent = `${npc.name} · ${npc.occupation}`
@@ -349,108 +593,11 @@ export async function openSpotlight(npc: NPC, state: WorldState, config: AIConfi
   })
 
   openChatBtn?.addEventListener('click', () => {
+    noteNpcChatOpened(npc.id)
     _chatPanelOpen = true
-    openSubPanel(tf('sp.chat.panel_title', { name: npc.name }), renderChatPanel(npc))
     const history = npcChatHistories.get(npc.id) ?? []
-    renderNPCChatThread(history, npc.name, sideBody)
-
-    const chatInput  = sideBody.querySelector('#sp-chat-input') as HTMLInputElement | null
-    const chatSend   = sideBody.querySelector('#sp-chat-send')  as HTMLButtonElement | null
-    const chatThread = sideBody.querySelector('#sp-chat-thread') as HTMLElement | null
-    const aiToggle = sideBody.querySelector('#sp-chat-ai-toggle') as HTMLButtonElement | null
-
-    const updateAIToggle = () => {
-      if (!aiToggle) return
-      aiToggle.textContent = _useAI ? '🤖 AI' : '💬 AI'
-      aiToggle.title = _useAI
-        ? t('sp.chat.ai_on_title') as string
-        : t('sp.chat.ai_off_title') as string
-      aiToggle.classList.toggle('sp-chat-ai-off', !_useAI)
-    }
-    updateAIToggle()
-    aiToggle?.addEventListener('click', () => {
-      _useAI = !_useAI
-      updateAIToggle()
-    })
-
-    if (chatInput && chatSend && chatThread) {
-      const doSend = async () => {
-        const msg = chatInput.value.trim()
-        if (!msg || !_chatNpc || !_chatState) return
-        chatInput.value = ''
-        chatSend.disabled = true
-        chatInput.disabled = true
-        _onNpcChat?.()
-
-        const turns = npcChatHistories.get(_chatNpc.id) ?? []
-        turns.push({ speaker: 'player', text: msg })
-        renderNPCChatThread(turns, _chatNpc.name, sideBody)
-
-        // Thinking bubble
-        const thinkEl = document.createElement('div')
-        thinkEl.className = 'sp-chat-bubble sp-chat-npc sp-chat-thinking'
-        thinkEl.innerHTML = `<b>${escapeHtml(_chatNpc.name)}:</b> <em>...</em>`
-        chatThread.appendChild(thinkEl)
-        chatThread.scrollTop = chatThread.scrollHeight
-
-        // If NPC is sleeping, respond without AI
-        if (_chatNpc.action_state === 'resting') {
-          const sleepResponses = [
-            tf('sp.chat.sleeping_1', { name: _chatNpc.name }),
-            tf('sp.chat.sleeping_2', { name: _chatNpc.name }),
-            t('sp.chat.sleeping_3') as string,
-            t('sp.chat.sleeping_4') as string,
-          ]
-          const replyText = sleepResponses[Math.floor(Math.random() * sleepResponses.length)]
-          turns.push({ speaker: 'npc', text: replyText })
-          npcChatHistories.set(_chatNpc.id, turns.slice(-20))
-          thinkEl.remove()
-          renderNPCChatThread(turns, _chatNpc.name, sideBody)
-          chatSend.disabled  = false
-          chatInput.disabled = false
-          chatInput.focus()
-          return
-        }
-
-        let replyText: string
-        if (_useAI && _chatConfig) {
-          try {
-            const result = await handleNPCChat(_chatNpc, msg, turns, _chatState, _chatConfig)
-            replyText = result.text
-
-            // Apply conversational stat effects
-            const e = result.effect
-            if (e) {
-              if (e.grievance_delta != null) _chatNpc.grievance  = clamp(_chatNpc.grievance  + e.grievance_delta,  0, 100)
-              if (e.fear_delta != null)      _chatNpc.fear       = clamp(_chatNpc.fear       + e.fear_delta,       0, 100)
-              if (e.happiness_delta != null) _chatNpc.happiness  = clamp(_chatNpc.happiness  + e.happiness_delta,  0, 100)
-              if (e.trust_delta != null) {
-                const gov = _chatNpc.trust_in['government']
-                if (gov) gov.intention = clamp(gov.intention + e.trust_delta, 0, 1)
-              }
-            }
-          } catch {
-            replyText = getFallbackResponse(_chatNpc)
-          }
-        } else {
-          replyText = getFallbackResponse(_chatNpc)
-        }
-
-        turns.push({ speaker: 'npc', text: replyText })
-        npcChatHistories.set(_chatNpc.id, turns.slice(-20))
-
-        thinkEl.remove()
-        renderNPCChatThread(turns, _chatNpc.name, sideBody)
-        chatSend.disabled  = false
-        chatInput.disabled = false
-        chatInput.focus()
-      }
-
-      chatSend.addEventListener('click', doSend)
-      chatInput.addEventListener('keydown', e => {
-        if (e.key === 'Enter' && !e.isComposing) doSend()
-      })
-    }
+    openSubPanel(tf('sp.chat.panel_title', { name: npc.name }), renderChatPanel(npc, history))
+    wireNpcChatPanel(npc, state, config)
   })
 
   // Async: daily thought
@@ -568,7 +715,7 @@ const PIXEL_STATE_EMOJI: Record<string, string> = {
 
 function renderPixelCharacterSection(): string {
   return `
-    <div class="sp-section sp-pixel-section">
+    <div class="sp-section sp-pixel-section sp-pixel-section--flush">
       <div class="sp-pixel-wrap">
         <canvas id="sp-pixel-char" class="sp-pixel-canvas"></canvas>
         <div id="sp-pixel-state" class="sp-pixel-state"></div>

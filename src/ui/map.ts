@@ -1,5 +1,4 @@
 import type { WorldState, Role } from '../types'
-import { ZONE_LABELS } from '../types'
 import { openSpotlight, close as closeSpotlight } from './spotlight'
 import type { AIConfig } from '../types'
 import { t } from '../i18n'
@@ -19,19 +18,18 @@ interface ZoneInfo {
   seed: [number, number]
   darkColor: string
   lightColor: string
-  label: string
 }
 
 const ZONE_LAYOUT: Record<string, ZoneInfo> = {
-  north_farm:        { seed: [0.29,  0.165], darkColor: '#143a21', lightColor: '#b8f2cb', label: ZONE_LABELS['north_farm'] },
-  scholar_quarter:   { seed: [0.80,  0.165], darkColor: '#1b2b60', lightColor: '#c6d5ff', label: ZONE_LABELS['scholar_quarter'] },
-  residential_west:  { seed: [0.125, 0.50],  darkColor: '#42256b', lightColor: '#dcc7ff', label: ZONE_LABELS['residential_west'] },
-  plaza:             { seed: [0.39,  0.50],  darkColor: '#23523f', lightColor: '#bdeedd', label: ZONE_LABELS['plaza'] },
-  market_square:     { seed: [0.64,  0.50],  darkColor: '#7a4f13', lightColor: '#ffe0b0', label: ZONE_LABELS['market_square'] },
-  guard_post:        { seed: [0.885, 0.50],  darkColor: '#6a1f2f', lightColor: '#ffc2cf', label: ZONE_LABELS['guard_post'] },
-  south_farm:        { seed: [0.175, 0.835], darkColor: '#2a5f2f', lightColor: '#c8f0b8', label: ZONE_LABELS['south_farm'] },
-  workshop_district: { seed: [0.51,  0.835], darkColor: '#5f3721', lightColor: '#f5ccb2', label: ZONE_LABELS['workshop_district'] },
-  residential_east:  { seed: [0.835, 0.835], darkColor: '#2f3f8f', lightColor: '#cdd4ff', label: ZONE_LABELS['residential_east'] },
+  north_farm:        { seed: [0.29,  0.165], darkColor: '#143a21', lightColor: '#b8f2cb' },
+  scholar_quarter:   { seed: [0.80,  0.165], darkColor: '#1b2b60', lightColor: '#c6d5ff' },
+  residential_west:  { seed: [0.125, 0.50],  darkColor: '#42256b', lightColor: '#dcc7ff' },
+  plaza:             { seed: [0.39,  0.50],  darkColor: '#23523f', lightColor: '#bdeedd' },
+  market_square:     { seed: [0.64,  0.50],  darkColor: '#7a4f13', lightColor: '#ffe0b0' },
+  guard_post:        { seed: [0.885, 0.50], darkColor: '#6a1f2f', lightColor: '#ffc2cf' },
+  south_farm:        { seed: [0.175, 0.835], darkColor: '#2a5f2f', lightColor: '#c8f0b8' },
+  workshop_district: { seed: [0.51,  0.835], darkColor: '#5f3721', lightColor: '#f5ccb2' },
+  residential_east:  { seed: [0.835, 0.835], darkColor: '#2f3f8f', lightColor: '#cdd4ff' },
 }
 
 // ── Fixed zone bounding rectangles ──────────────────────────────────────────
@@ -267,6 +265,7 @@ let _mapPaused = false
 /** When sim is paused, skip most frames unless user moved mouse / resized / tab visible again. */
 let _needsMapRedraw = true
 let _visibilityListenerAttached = false
+let _mapSelectNpcListenerAttached = false
 let _legendVisible = true
 
 // ── Selection state ───────────────────────────────────────────────────────────
@@ -529,6 +528,18 @@ export function initMap(
     })
   }
 
+  if (!_mapSelectNpcListenerAttached) {
+    _mapSelectNpcListenerAttached = true
+    document.addEventListener('map-select-npc', (ev: Event) => {
+      const e = ev as CustomEvent<{ id: number }>
+      const id = e.detail?.id
+      if (typeof id === 'number' && Number.isFinite(id)) {
+        selectedNPCId = id
+        _needsMapRedraw = true
+      }
+    })
+  }
+
   _needsMapRedraw = true
   drawLoop()
 }
@@ -760,7 +771,7 @@ function drawPlaceholder(W: number, H: number) {
   ctx.fillStyle = isLightTheme() ? 'rgba(255,255,255,0.65)' : 'rgba(160,200,255,0.35)'
   ctx.font = '13px system-ui'
   ctx.textAlign = 'center'
-  ctx.fillText('Initializing...', W / 2, H / 2)
+  ctx.fillText(String(t('map.initializing')), W / 2, H / 2)
   ctx.textAlign = 'left'
 }
 
@@ -958,6 +969,7 @@ function drawZones(world: WorldState, W: number, H: number) {
     if (!rect) continue
     const cx  = info.seed[0] * W
     const cy  = info.seed[1] * H
+    const zoneLabel = String(t(`zone.${key}`))
 
     // Icon (slightly above centroid)
     ctx.font = '14px system-ui'
@@ -970,14 +982,14 @@ function drawZones(world: WorldState, W: number, H: number) {
     if (light) {
       ctx.fillStyle = 'rgba(255,255,255,0.9)'
       for (const [ox, oy] of [[1,0],[-1,0],[0,1],[0,-1]] as const)
-        ctx.fillText(info.label, cx + ox, cy + 8 + oy)
+        ctx.fillText(zoneLabel, cx + ox, cy + 8 + oy)
       ctx.fillStyle = 'rgba(12,18,28,0.9)'
     } else {
       ctx.fillStyle = 'rgba(0,0,0,0.5)'
-      ctx.fillText(info.label, cx + 1, cy + 9)
+      ctx.fillText(zoneLabel, cx + 1, cy + 9)
       ctx.fillStyle = 'rgba(255,255,255,0.50)'
     }
-    ctx.fillText(info.label, cx, cy + 8)
+    ctx.fillText(zoneLabel, cx, cy + 8)
   }
   ctx.textAlign = 'left'
 }
@@ -1334,7 +1346,7 @@ function drawNPCs(world: WorldState, W: number, H: number) {
 
     // Name label on hover
     if (isHovered) {
-      const label = `${npc.name} (${npc.role})`
+      const label = `${npc.name} (${String(t(`role.${npc.role}`))})`
       const textW = ctx.measureText(label).width
       const bx = Math.min(px - textW / 2 - 4, W - textW - 12)
       const by = py - 22
@@ -1394,7 +1406,7 @@ function drawLegend(W: number, H: number) {
   let rolesRowW = 0
   ctx.font = '8px system-ui'
   for (const role of roles) {
-    const label = role.charAt(0).toUpperCase() + role.slice(1)
+    const label = String(t(`role.${role}` as const))
     rolesRowW += ctx.measureText(label).width + 20
   }
   blockW = Math.ceil(Math.max(blockW, rolesRowW + pad * 2))
@@ -1473,7 +1485,7 @@ function drawLegend(W: number, H: number) {
     ctx.fill()
 
     ctx.fillStyle = textColor
-    const label = role.charAt(0).toUpperCase() + role.slice(1)
+    const label = String(t(`role.${role}` as const))
     ctx.fillText(label, x + 11, roleBaseline)
     x += ctx.measureText(label).width + 20
   }
@@ -1531,8 +1543,6 @@ function onClick(e: MouseEvent) {
   if (npcId !== null) {
     const npc = world.npcs.find(n => n.id === npcId)
     if (npc) {
-      selectedNPCId = npcId
-      _needsMapRedraw = true
       openSpotlight(npc, world, config ?? null)
     }
   } else {

@@ -61,7 +61,12 @@ const translations = {
     'panels.population':   '👥 Population',
     'panels.rumors':       '🗣 Rumors',
     'panels.economics':    '💰 Economics',
+    'panels.npc_contacts': '📇 NPC contacts',
     'panels.network':      '🕸 Network',
+    'npc_contacts.empty':
+      'No contacts yet — click an NPC on the map (spotlight or chat).',
+    'npc_contacts.badge_spotlight': 'Opened spotlight',
+    'npc_contacts.badge_chat':      'Opened chat',
     'topbar.initialized':  'Society initialized:',
     'topbar.constitution_set':
       'Constitution established. {n} citizens. Initial Gini: {g}. State power: {p}%.',
@@ -189,13 +194,18 @@ const translations = {
     'chat.ph': 'Talk to the world... ("create a storm", "government corruption to the extreme,...")',
     'chat.disabled': 'AI chat disabled — running without API key',
 
-    // Map legend — social network visuals
-    'map.legend.heading':     'Social network',
-    'map.legend.info':        'Blue dashed — news & rumors while socializing or organizing',
-    'map.legend.strong':      'Solid lines — close ties nearby; color shifts with activity',
-    'map.legend.family':      'Warm gold — spouses when close in the same area',
-    'map.legend.spotlight':   'Click a citizen — highlight their ties (incl. weak-tie rings)',
+    // Map legend — social network visuals (aligned with draw logic in map.ts)
+    'map.legend.heading':     'Social ties on the map',
+    'map.legend.info':
+      'Blue dashed — information links when both people are socializing or organizing',
+    'map.legend.strong':
+      'Solid lines — close ties when drawn nearby: teal (socializing), amber (organizing), faint (other)',
+    'map.legend.family':
+      'Warm gold — spouse link when both are in the same district and close on the map',
+    'map.legend.spotlight':
+      'Click someone — orange close ties, blue dashed info links, pale rings for acquaintances',
     'map.legend.roles_title': 'Dot colors — roles',
+    'map.initializing':       'Initializing…',
     'map.note_btn_title':     'Map notes',
     'map.note_title':         '🗺 Map Notes',
     'map.note_body':
@@ -238,6 +248,21 @@ const translations = {
     'sp.chat.title':       '💬 Talk to {name}',
     'sp.chat.empty':       'No conversation yet.',
     'sp.chat.ai_toggle':   'Toggle AI responses',
+    'sp.chat.persona_label': 'Speak as',
+    'sp.chat.persona_group_aria': 'How you appear to this citizen',
+    'sp.chat.persona_stranger': 'Passerby',
+    'sp.chat.persona_supernatural': 'Divine',
+    'sp.chat.persona_stranger_title': 'Friendly small talk from someone passing by — light, social, no miracles',
+    'sp.chat.persona_supernatural_title': 'You appear as God or supreme divinity — awe, terror, worship, or denial; stronger effects when it fits',
+    'sp.chat.persona_hint_short': 'Passerby: casual chat. Divine: they experience you as God-like — not street gossip.',
+    'sp.chat.persona_locked_hint':
+      'Locked from your first message — use Clear chat to pick a new way of speaking.',
+    'sp.chat.clear_thread': 'Clear chat',
+    'sp.chat.clear_thread_title': 'Erase this thread and unlock “Speak as” for a fresh start',
+    'sp.chat.persona_hint':
+      'Stranger: grounded reactions. Supernatural: stronger fear, hope, trust, and romance shifts when it fits the scene.',
+    'sp.chat.persona_badge_stranger': 'You · passerby',
+    'sp.chat.persona_badge_supernatural': 'You · divine',
     'sp.chat.input_ph':    'Say something...',
     'sp.chat.ai_on_title': 'AI responses ON — click to use scripted replies',
     'sp.chat.ai_off_title':'AI responses OFF — click to use AI',
@@ -739,7 +764,12 @@ const translations = {
     'panels.population':   '👥 Dân số',
     'panels.rumors':       '🗣 Tin đồn',
     'panels.economics':    '💰 Kinh tế',
+    'panels.npc_contacts': '📇 NPC đã gặp',
     'panels.network':      '🕸 Mạng lưới',
+    'npc_contacts.empty':
+      'Chưa có ai — bấm NPC trên bản đồ (spotlight hoặc chat).',
+    'npc_contacts.badge_spotlight': 'Đã mở spotlight',
+    'npc_contacts.badge_chat':      'Đã mở chat',
     'topbar.initialized':  'Xã hội khởi tạo:',
     'topbar.constitution_set':
       'Hiến pháp đã được thiết lập. {n} người dân. Gini ban đầu: {g}. Quyền lực nhà nước: {p}%.',
@@ -867,13 +897,18 @@ const translations = {
     'chat.ph': 'Nói chuyện với thế giới... ("tạo cơn bão to, chính phủ tham nhũng cực độ,...")',
     'chat.disabled': 'Chat AI bị tắt — đang chạy không có API key',
 
-    // Map legend — social network visuals
-    'map.legend.heading':     'Mạng xã hội',
-    'map.legend.info':        'Xanh nét đứt — tin đồn/tin tức khi giao lưu hoặc tổ chức',
-    'map.legend.strong':      'Nét liền — quan hệ thân gần; màu đổi theo hoạt động',
-    'map.legend.family':      'Vàng ấm — vợ/chồng khi ở gần trong cùng khu',
-    'map.legend.spotlight':   'Bấm vào công dân — xem nổi bật các mối quan hệ (kể cả vòng quen biết)',
+    // Map legend — social network visuals (khớp logic vẽ trong map.ts)
+    'map.legend.heading':     'Quan hệ trên bản đồ',
+    'map.legend.info':
+      'Xanh nét đứt — liên kết thông tin khi cả hai đang giao lưu hoặc tổ chức',
+    'map.legend.strong':
+      'Nét liền — quan hệ thân gần khi vẽ: xanh ngọc (giao lưu), hổ phách (tổ chức), mờ (khác)',
+    'map.legend.family':
+      'Vàng ấm — vợ/chồng khi cùng khu trên bản đồ và đứng gần nhau',
+    'map.legend.spotlight':
+      'Bấm một người — cam là quan hệ thân, xanh nét đứt là tin tức, vòng nhạt là quen biết xa',
     'map.legend.roles_title': 'Màu chấm — nghề & vai trò',
+    'map.initializing':       'Đang khởi tạo…',
     'map.note_btn_title':     'Ghi chú bản đồ',
     'map.note_title':         '🗺 Ghi chú bản đồ',
     'map.note_body':
@@ -916,6 +951,21 @@ const translations = {
     'sp.chat.title':       '💬 Nói chuyện với {name}',
     'sp.chat.empty':       'Chưa có cuộc trò chuyện nào.',
     'sp.chat.ai_toggle':   'Bật/tắt phản hồi AI',
+    'sp.chat.persona_label': 'Nói với tư cách',
+    'sp.chat.persona_group_aria': 'Cách bạn xuất hiện với công dân này',
+    'sp.chat.persona_stranger': 'Khách qua đường',
+    'sp.chat.persona_supernatural': 'Chúa Trời',
+    'sp.chat.persona_stranger_title': 'Người lạ đi lại, tán gẫu vui vẻ — xã giao đời thường, không thần thánh',
+    'sp.chat.persona_supernatural_title': 'Họ cảm nhận bạn như Chúa Trời / bậc tối cao — sợ hãi, sùng bái hoặc bác bỏ; tác động mạnh hơn khi hợp cảnh',
+    'sp.chat.persona_hint_short': 'Khách: tán gẫu như ngoài phố. Chúa Trời: hiển linh thiêng liêng — không phải chuyện phiếm.',
+    'sp.chat.persona_locked_hint':
+      'Đã khóa từ tin đầu tiên — bấm « Xóa chat » để chọn lại cách nói.',
+    'sp.chat.clear_thread': 'Xóa chat',
+    'sp.chat.clear_thread_title': 'Xóa cuộc trò chuyện này và mở khóa « Nói với tư cách »',
+    'sp.chat.persona_hint':
+      'Người lạ: phản ứng gần với đời thường. Siêu nhiên: sợ, hy vọng, niềm tin và tình cảm có thể đổi mạnh hơn nếu cảnh hợp lý.',
+    'sp.chat.persona_badge_stranger': 'Bạn · khách',
+    'sp.chat.persona_badge_supernatural': 'Bạn · Chúa',
     'sp.chat.input_ph':    'Nhập điều bạn muốn nói...',
     'sp.chat.ai_on_title': 'Đang dùng phản hồi AI — bấm để dùng phản hồi mẫu',
     'sp.chat.ai_off_title':'Đang dùng phản hồi mẫu — bấm để dùng AI',

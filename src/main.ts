@@ -1,5 +1,5 @@
 import './css/main.css'
-import type { AIConfig, AIProvider, Constitution, WorldState } from './types'
+import type { AIConfig, AIProvider, Constitution, NPC, WorldState } from './types'
 import { setupGreeting, setupChat, applyPreset, handlePlayerChat, resetInGameHistory, predictConsequences, generateConstitutionText } from './ai/god-agent'
 import { listAvailableModels, PROVIDER_MODELS, getAIUsage, getRemainingRPM, getWaitSeconds, initKeyRing } from './ai/provider'
 import { addFeedRaw, addFeedThinking, setFeedFilter, setChronicleFilter, refreshChronicleTimestamps } from './ui/feed'
@@ -14,7 +14,13 @@ import {
   isSupportedLang,
 } from './i18n'
 import { initMap, setMapPaused, setMapLegendVisible, triggerMapShake } from './ui/map'
-import { resetNPCChatHistories, registerSpotlightCallbacks } from './ui/spotlight'
+import {
+  resetNPCChatHistories,
+  registerSpotlightCallbacks,
+  openSpotlight,
+  getNpcContactEntries,
+  pruneDeadNpcContacts,
+} from './ui/spotlight'
 import { runGovernmentCycle, detectRegime, type GovernmentPolicyAI } from './sim/government'
 import { checkPressTrigger, resetPressRuntimeState } from './sim/press'
 import { resetNarrativeRuntimeState } from './sim/narratives'
@@ -277,6 +283,7 @@ function initLanguageSelect() {
     setLang(v)
     updateProviderFieldLabels()
     refreshChronicleTimestamps()
+    if (npcContactsVisible) updateNpcContactsPanel()
   })
 }
 
@@ -526,6 +533,7 @@ async function startGame(constitution: Constitution) {
   updateTopbar()
   peakPopulation = updateDemographics()
   updateEconomicsPanel()
+  updateNpcContactsPanel()
 
   // Initialize the canvas map
   const mapCanvas = document.getElementById('map-canvas') as HTMLCanvasElement
@@ -1223,10 +1231,23 @@ let simInterval: ReturnType<typeof setInterval> | null = null
 let peakPopulation = 0
 
 // ── Spotlight pause/resume ─────────────────────────────────────────────────
+// Side panel (NPC chat / manual stat edit) should pause the sim for the whole session.
+// openSubPanel may run multiple times while the side panel stays visible (e.g. clear chat);
+// only the first open in a session captures whether we should resume on close.
 let _spotlightWasPaused = false
+let _sidePanelSessionOpen = false
 registerSpotlightCallbacks(
-  () => { _spotlightWasPaused = paused; if (!paused) setPaused(true) },
-  () => { if (!_spotlightWasPaused) setPaused(false) },
+  () => {
+    if (!_sidePanelSessionOpen) {
+      _spotlightWasPaused = paused
+      if (!paused) setPaused(true)
+      _sidePanelSessionOpen = true
+    }
+  },
+  () => {
+    _sidePanelSessionOpen = false
+    if (!_spotlightWasPaused) setPaused(false)
+  },
   () => { if (world) world.stats.npc_chats++ },
   () => { if (world) world.stats.npc_edits++ },
 )
@@ -1235,6 +1256,7 @@ const btnToggleDemo = document.getElementById('btn-toggle-demo') as HTMLButtonEl
 const btnToggleRumors = document.getElementById('btn-toggle-rumors') as HTMLButtonElement
 const btnToggleLegend = document.getElementById('btn-toggle-legend') as HTMLButtonElement
 const btnToggleEcon = document.getElementById('btn-toggle-econ') as HTMLButtonElement
+const btnToggleNpcContacts = document.getElementById('btn-toggle-npc-contacts') as HTMLButtonElement
 const panelsDropdown = document.getElementById('panels-dropdown') as HTMLElement | null
 const btnPanelsToggle = document.getElementById('btn-panels-toggle') as HTMLButtonElement | null
 btnPanelsToggle?.addEventListener('click', (e) => {
@@ -1249,26 +1271,31 @@ document.getElementById('btn-settings')!.addEventListener('click', openSettingsP
 const demographicsPanel = document.getElementById('demographics') as HTMLElement
 const rumorsPanel = document.getElementById('rumors-panel') as HTMLElement
 const econPanel = document.getElementById('econ-panel') as HTMLElement
+const npcContactsPanel = document.getElementById('npc-contacts-panel') as HTMLElement
 
 const DEMO_VISIBLE_KEY = 'ui_demographics_visible'
 const RUMORS_VISIBLE_KEY = 'ui_rumors_visible'
 const LEGEND_VISIBLE_KEY = 'ui_legend_visible'
 const ECON_VISIBLE_KEY = 'ui_econ_visible'
+const NPC_CONTACTS_VISIBLE_KEY = 'ui_npc_contacts_visible'
 let demographicsVisible = localStorage.getItem(DEMO_VISIBLE_KEY) !== '0'
 let rumorsVisible = localStorage.getItem(RUMORS_VISIBLE_KEY) !== '0'
 let legendVisible = localStorage.getItem(LEGEND_VISIBLE_KEY) !== '0'
 let econVisible = localStorage.getItem(ECON_VISIBLE_KEY) === '1'
+let npcContactsVisible = localStorage.getItem(NPC_CONTACTS_VISIBLE_KEY) === '1'
 
 function applyOverlayVisibility() {
   demographicsPanel.classList.toggle('hidden', !demographicsVisible)
   rumorsPanel.classList.toggle('hidden', !rumorsVisible)
   econPanel.classList.toggle('hidden', !econVisible)
+  npcContactsPanel.classList.toggle('hidden', !npcContactsVisible)
   setMapLegendVisible(legendVisible)
 
   btnToggleDemo.classList.toggle('active', demographicsVisible)
   btnToggleRumors.classList.toggle('active', rumorsVisible)
   btnToggleLegend.classList.toggle('active', legendVisible)
   btnToggleEcon.classList.toggle('active', econVisible)
+  btnToggleNpcContacts.classList.toggle('active', npcContactsVisible)
 }
 
 btnToggleDemo.addEventListener('click', () => {
@@ -1296,7 +1323,63 @@ btnToggleEcon.addEventListener('click', () => {
   if (econVisible) updateEconomicsPanel()
 })
 
+btnToggleNpcContacts.addEventListener('click', () => {
+  npcContactsVisible = !npcContactsVisible
+  localStorage.setItem(NPC_CONTACTS_VISIBLE_KEY, npcContactsVisible ? '1' : '0')
+  applyOverlayVisibility()
+  if (npcContactsVisible) updateNpcContactsPanel()
+})
+
+document.addEventListener('npc-contacts-changed', () => {
+  if (npcContactsVisible) updateNpcContactsPanel()
+})
+
 applyOverlayVisibility()
+
+// ── NPC contacts (spotlight / chat) ─────────────────────────────────────────
+
+function updateNpcContactsPanel() {
+  const list = document.getElementById('npc-contacts-list')
+  if (!list || !world) return
+  pruneDeadNpcContacts(world)
+  const entries = getNpcContactEntries()
+  if (entries.length === 0) {
+    list.innerHTML = `<div class="npc-contacts-empty">${escapeHtml(t('npc_contacts.empty') as string)}</div>`
+    return
+  }
+  const byId = new Map(world.npcs.map(n => [n.id, n]))
+  const spotTitle = escapeHtml(t('npc_contacts.badge_spotlight') as string)
+  const chatTitle = escapeHtml(t('npc_contacts.badge_chat') as string)
+
+  const sorted = entries
+    .map(e => {
+      const npc = byId.get(e.id)
+      return npc && npc.lifecycle.is_alive ? { e, npc } : null
+    })
+    .filter((x): x is { e: (typeof entries)[0]; npc: NPC } => x != null)
+    .sort((a, b) => a.npc.name.localeCompare(b.npc.name))
+
+  list.innerHTML = sorted
+    .map(({ e, npc }) => {
+      const badges = [
+        e.spotlight ? `<span class="npc-contact-badge" title="${spotTitle}">👁</span>` : '',
+        e.chatted ? `<span class="npc-contact-badge" title="${chatTitle}">💬</span>` : '',
+      ].join('')
+      return `<button type="button" class="npc-contact-row" data-npc-id="${npc.id}">
+      <span class="npc-contact-name">${escapeHtml(npc.name)}</span>
+      <span class="npc-contact-badges">${badges}</span>
+    </button>`
+    })
+    .join('')
+
+  list.querySelectorAll<HTMLButtonElement>('.npc-contact-row').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = parseInt(btn.dataset.npcId ?? '', 10)
+      const npc = world!.npcs.find(n => n.id === id && n.lifecycle.is_alive)
+      if (npc) openSpotlight(npc, world!, aiConfig)
+    })
+  })
+}
 
 // ── Economics Panel ─────────────────────────────────────────────────────────
 
@@ -1461,6 +1544,7 @@ function startSimLoop() {
       checkStatDeltas(world.macro)
       checkStrikeReadiness()
       checkAchievements(world)
+      if (npcContactsVisible) updateNpcContactsPanel()
     }
     // Free press: every 5 sim-days — generates headlines before government reads them
     // If RPM budget is tight, press runs in template-only mode (pass null config)

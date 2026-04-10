@@ -140,6 +140,7 @@
           <button class="top-dropdown-item" id="btn-toggle-demo"   data-i18n="panels.population">👥 Population</button>
           <button class="top-dropdown-item" id="btn-toggle-rumors" data-i18n="panels.rumors">🗣 Rumors</button>
           <button class="top-dropdown-item" id="btn-toggle-econ"   data-i18n="panels.economics">💰 Economics</button>
+          <button class="top-dropdown-item" id="btn-toggle-npc-contacts" data-i18n="panels.npc_contacts">📇 Contacts</button>
           <button class="top-dropdown-item" id="btn-toggle-legend" data-i18n="panels.network">🕸 Network</button>
           <div class="top-dropdown-divider"></div>
           <button class="top-dropdown-item top-dropdown-danger" id="btn-end-game" data-i18n="endgame.btn">☄️ End Game</button>
@@ -212,6 +213,11 @@
             <span class="demo-label" title="Public sanitation quality (0–100). Decays daily; boosted by scholars. Reduces sickness.">Sanitation</span><b id="ep-sanitation">–</b>
             <span class="demo-label" title="Hospital capacity: Active (funded by health_investment policy) or None.">Hospital</span><b id="ep-hospital">–</b>
           </div>
+        </div>
+
+        <div id="npc-contacts-panel" class="hidden">
+          <div class="demo-title" data-i18n="panels.npc_contacts">📇 Contacts</div>
+          <div id="npc-contacts-list" class="npc-contacts-list"></div>
         </div>
 
         <!-- NPC Spotlight Panel — opened on NPC click -->

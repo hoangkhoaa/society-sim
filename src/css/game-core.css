@@ -293,6 +293,83 @@ body[data-theme='light'] .map-note-btn {
   font-size: 11px;
   z-index: 5;
 }
+
+#npc-contacts-panel {
+  position: absolute;
+  bottom: 8px;
+  left: 632px;
+  width: 200px;
+  max-height: 168px;
+  background: #0f0f0f;
+  border: 1px solid #1e1e1e;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 11px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.npc-contacts-list {
+  overflow-y: auto;
+  max-height: 132px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 -2px;
+  padding: 0 2px;
+}
+.npc-contacts-empty {
+  font-size: 10px;
+  color: #666;
+  line-height: 1.35;
+}
+.npc-contact-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 6px;
+  margin: 0;
+  border: 1px solid #252525;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #c8c8c8;
+  font-size: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+.npc-contact-row:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: #333;
+}
+.npc-contact-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.npc-contact-badges {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+}
+.npc-contact-badge {
+  font-size: 11px;
+  opacity: 0.85;
+}
+body[data-theme='light'] .npc-contact-row {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: #dbe5ef;
+  color: #334;
+}
+body[data-theme='light'] .npc-contact-row:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+body[data-theme='light'] .npc-contacts-empty {
+  color: #7d90a6;
+}
 .demo-title {
   font-size: 9px;
   font-weight: 600;

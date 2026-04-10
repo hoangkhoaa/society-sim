@@ -491,6 +491,7 @@ export async function callAI(
 
     // Retry this specific key up to maxRetriesPerKey times
     while (keyRetries < maxRetriesPerKey) {
+      let countedHttpRoundTrip = false
       try {
         const url = p.url(model, key, baseUrl)
         const headers = p.headers(key)
@@ -503,6 +504,9 @@ export async function callAI(
           headers,
           body: JSON.stringify(body),
         })
+        countedHttpRoundTrip = true
+        // Count every completed HTTP round-trip (incl. 4xx/5xx and retries), not only 2xx — matches real API usage.
+        _totalRequests++
 
         if (!res.ok) {
           const err = await res.text()
@@ -525,7 +529,6 @@ export async function callAI(
 
         // Success!
         const json = await res.json()
-        _totalRequests++
         _keyRing.recordSuccess(index)
 
         if (attempt > 0 || keyRetries > 0) {
@@ -536,6 +539,7 @@ export async function callAI(
 
         return p.parseResponse(json)
       } catch (err) {
+        if (!countedHttpRoundTrip) _totalRequests++
         const errMsg = err instanceof Error ? err.message.slice(0, 100) : String(err)
         lastError = err instanceof Error ? err : new Error(String(err))
         keyRetries++
