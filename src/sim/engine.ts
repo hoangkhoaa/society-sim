@@ -3055,7 +3055,7 @@ function checkShadowEconomy(state: WorldState): void {
     let raidCount = 0
     for (const npc of criminals) {
       const isSyndMember = syndicateMemberIds.has(npc.id)
-      const effectiveChance = isSyndMember ? raidChance * 1.5 : raidChance
+      const effectiveChance = isSyndMember ? raidChance * SYNDICATE_RAID_MULTIPLIER : raidChance
       if (Math.random() < effectiveChance) {
         // Syndicate members lose 50% wealth; regular criminals lose 40%
         const seizureRate = isSyndMember ? 0.50 : 0.40
@@ -3088,6 +3088,15 @@ function checkShadowEconomy(state: WorldState): void {
 // exceeds 4%. Syndicates collect dues, run protection rackets, bribe guards,
 // and recruit. Guard crackdowns can partially bust them.
 
+const SYNDICATE_FORMATION_PROBABILITY = 0.05   // daily formation check chance
+const MIN_SYNDICATE_SIZE               = 4      // minimum members to form/keep a syndicate
+const SYNDICATE_ACTION_INTERVAL        = 240    // ticks between special actions (10 days)
+const SYNDICATE_DUES_RATE              = 0.08   // fraction of member wealth collected daily
+const SYNDICATE_BUST_PROBABILITY       = 0.05   // daily bust chance when guard power > 0.55
+const MEMBER_BUST_RATE                 = 0.30   // fraction of members removed on a bust
+const RACKET_EXTRACTION_RATE           = 0.05   // fraction of merchant wealth extracted per racket
+const SYNDICATE_RAID_MULTIPLIER        = 1.5    // shadow-economy raid chance multiplier for syndicate members
+
 let nextSyndicateId = 1
 
 const SYNDICATE_NAMES = [
@@ -3107,7 +3116,7 @@ function checkSyndicates(state: WorldState): void {
     criminalRate > 0.04 &&
     state.macro.gini > 0.45 &&
     state.syndicates.length < 3 &&
-    Math.random() < 0.05  // ~5% daily formation check
+    Math.random() < SYNDICATE_FORMATION_PROBABILITY
   ) {
     // Find the highest-wealth criminal NPC who is not already in a syndicate
     const existingSyndicateMemberIds = new Set<number>()
@@ -3116,7 +3125,7 @@ function checkSyndicates(state: WorldState): void {
     }
 
     const candidates = criminals.filter(n => !existingSyndicateMemberIds.has(n.id))
-    if (candidates.length >= 4) {
+    if (candidates.length >= MIN_SYNDICATE_SIZE) {
       // Boss = highest-wealth criminal with at least 3 mutual strong ties to other criminals
       const criminalIds = new Set(candidates.map(n => n.id))
       const boss = candidates
@@ -3134,7 +3143,7 @@ function checkSyndicates(state: WorldState): void {
           }
         }
 
-        if (recruits.length >= 4) {
+        if (recruits.length >= MIN_SYNDICATE_SIZE) {
           const territory = [...new Set(recruits.map(n => n.zone))]
           const usedNames = new Set(state.syndicates.map(s => s.name))
           const name = SYNDICATE_NAMES.find(n => !usedNames.has(n))
@@ -3167,13 +3176,13 @@ function checkSyndicates(state: WorldState): void {
   // When guard power > 0.55, 5% daily chance of bust per syndicate
   if (guardPower > 0.55) {
     for (const syn of state.syndicates) {
-      if (Math.random() < 0.05) {
-        // Bust: remove 30% of members, halve resources
+      if (Math.random() < SYNDICATE_BUST_PROBABILITY) {
+        // Bust: remove MEMBER_BUST_RATE fraction of members, halve resources
         const before = syn.member_ids.length
         syn.member_ids = syn.member_ids.filter(id => {
           const npc = state.npcs[id]
           if (!npc?.lifecycle.is_alive) return false
-          if (Math.random() < 0.30) {
+          if (Math.random() < MEMBER_BUST_RATE) {
             // Busted member gets extra fear/isolation
             npc.fear      = clamp(npc.fear      + 35, 0, 100)
             npc.isolation = clamp(npc.isolation + 20, 0, 100)
@@ -3199,17 +3208,17 @@ function checkSyndicates(state: WorldState): void {
 
     const members = syn.member_ids.map(id => state.npcs[id]).filter((n): n is NPC => !!n)
 
-    // Collect 8% wealth dues from all members daily
+    // Collect dues from all members daily
     let dues = 0
     for (const m of members) {
-      const due = m.wealth * 0.08
+      const due = m.wealth * SYNDICATE_DUES_RATE
       m.wealth = clamp(m.wealth - due, 0, 50000)
       dues += due
     }
     syn.resources = Math.min(syn.resources + Math.floor(dues), 999999)
 
     // Every 10 days, perform one special action
-    if (state.tick - syn.last_action_tick < 240) continue
+    if (state.tick - syn.last_action_tick < SYNDICATE_ACTION_INTERVAL) continue
     syn.last_action_tick = state.tick
 
     const roll = Math.random()
@@ -3229,11 +3238,11 @@ function checkSyndicates(state: WorldState): void {
       addChronicle(text, state.year, state.day, 'major')
 
     } else if (roll < 0.66) {
-      // Protection racket: extract 5% wealth from merchants in territory
+      // Protection racket: extract RACKET_EXTRACTION_RATE wealth from merchants in territory
       let extorted = 0
       for (const npc of living) {
         if (npc.role === 'merchant' && syn.territory.includes(npc.zone) && !syn.member_ids.includes(npc.id)) {
-          const take = npc.wealth * 0.05
+          const take = npc.wealth * RACKET_EXTRACTION_RATE
           npc.wealth = clamp(npc.wealth - take, 0, 50000)
           npc.fear   = clamp(npc.fear + 10, 0, 100)
           syn.resources += Math.floor(take)
