@@ -257,6 +257,7 @@ export function tick(state: WorldState): void {
     checkDiscoveries(state)
     checkShadowEconomy(state)
     checkReferendum(state)
+    checkOppositionBehavior(state)
     checkEpidemicIntelligence(state)
     checkNarrativeEvents(state)
     checkRumors(state)
@@ -3168,6 +3169,87 @@ function resolveReferendum(state: WorldState): void {
   }
 
   state.referendum = null
+}
+
+// ── Opposition Institution Autonomous Behavior ────────────────────────────────
+// The Opposition institution gains legitimacy under pressure and acts as a
+// meaningful counter-force: publishing dissent, boosting solidarity, and
+// triggering rights referendums when conditions are dire enough.
+
+// Track last dissent statement day to enforce the 20-day interval.
+let lastOppositionDissentDay = -999
+
+function checkOppositionBehavior(state: WorldState): void {
+  const oppInst = state.institutions.find(i => i.id === 'opposition')
+  if (!oppInst) return
+
+  const m = state.macro
+
+  // ── 1. Daily legitimacy drift ─────────────────────────────────────────
+  const gainCondition = m.political_pressure > 55 || m.trust < 40 || (m.labor_unrest ?? 0) > 50
+  const loseCondition = m.stability > 65 && m.trust > 55
+  if (gainCondition) {
+    oppInst.legitimacy = clamp(oppInst.legitimacy + 0.002, 0, 1)
+  } else if (loseCondition) {
+    oppInst.legitimacy = clamp(oppInst.legitimacy - 0.002, 0, 1)
+  }
+
+  // ── 2. Dissent statement every 20 days when legitimacy > 0.35 ─────────
+  if (oppInst.legitimacy > 0.35 && state.day - lastOppositionDissentDay >= 20) {
+    lastOppositionDissentDay = state.day
+    const living = state.npcs.filter(n => n.lifecycle.is_alive)
+    const highGrievance = living.filter(n => n.grievance > 60)
+    const affected = Math.floor(highGrievance.length * 0.15)
+    // Fisher-Yates shuffle for unbiased random sampling
+    const pool = highGrievance.slice()
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[pool[i], pool[j]] = [pool[j], pool[i]]
+    }
+    const sample = pool.slice(0, affected)
+    for (const npc of sample) {
+      npc.trust_in.government.intention = clamp(npc.trust_in.government.intention - 0.01, 0, 1)
+    }
+    const msg = tf('engine.opposition.dissent_statement') as string
+    addChronicle(msg, state.year, state.day, 'major')
+    addFeedRaw(msg, 'political', state.year, state.day)
+  }
+
+  // ── 3. Active strikes + legitimacy > 0.3 → solidarity boost for striking role ──
+  if (oppInst.legitimacy > 0.3 && (state.active_strikes ?? []).length > 0) {
+    const living = state.npcs.filter(n => n.lifecycle.is_alive)
+    for (const strike of state.active_strikes) {
+      for (const npc of living) {
+        if (npc.role === strike.role && npc.on_strike) {
+          // Apply 1.3× multiplier effect: add 30% of excess solidarity above baseline
+          const excess = npc.class_solidarity - 45
+          if (excess > 0) {
+            npc.class_solidarity = clamp(npc.class_solidarity + excess * 0.3, 0, 100)
+          }
+        }
+      }
+    }
+  }
+
+  // ── 4. Referendum trigger when legitimacy > 0.65 and pressure > 70 ────
+  if (oppInst.legitimacy > 0.65 && m.political_pressure > 70 && state.referendum === null) {
+    const c = state.constitution
+    const proposed = clamp(c.individual_rights_floor + 0.20, 0, 1)
+    const proposal_text = tf('engine.referendum.proposal.rights', {
+      from: Math.round(c.individual_rights_floor * 100),
+      to: Math.round(proposed * 100),
+    }) as string
+    state.referendum = {
+      proposal_text,
+      field: 'individual_rights_floor',
+      current_value: c.individual_rights_floor,
+      proposed_value: proposed,
+      expires_tick: state.tick + 168,
+    }
+    const msg = tf('engine.opposition.referendum_triggered', { pct: Math.round(oppInst.legitimacy * 100) }) as string
+    addChronicle(msg, state.year, state.day, 'critical')
+    addFeedRaw(msg, 'political', state.year, state.day)
+  }
 }
 
 // ── Epidemic Intelligence ─────────────────────────────────────────────────────

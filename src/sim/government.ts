@@ -826,6 +826,9 @@ export async function runGovernmentCycle(
       ? 'Provide TWO policy options to respond to these alerts.'
       : 'No critical alerts currently. Provide TWO proactive policy options — investments, reforms, trade deals, or morale initiatives. Your regime should act, not idle.'
 
+    const oppInst = state.institutions.find(i => i.id === 'opposition')
+    const oppLegitimacyLine = oppInst ? [`  Opposition legitimacy: ${Math.round(oppInst.legitimacy * 100)}%`] : []
+
     const prompt = [
       `GOVERNMENT REVIEW — Day ${state.day}, Year ${state.year}`,
       '',
@@ -843,6 +846,7 @@ export async function runGovernmentCycle(
       `  Literacy: ${Math.round(state.macro.literacy)}%`,
       `  Labor unrest: ${Math.round(state.macro.labor_unrest ?? 0)}%`,
       `  Polarization: ${Math.round(state.macro.polarization ?? 0)}%`,
+      ...oppLegitimacyLine,
       ...(state.active_strikes?.length ? [`  Active strikes: ${state.active_strikes.map(s => `${s.role} (demand: ${s.demand})`).join(', ')}`] : []),
       ...eventsBlock,
       ...pressBlock,
