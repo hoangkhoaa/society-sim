@@ -1149,7 +1149,10 @@ function updateWorldview(npc: NPC, state: WorldState): void {
   if (infoInfluencers.length > 0) {
     const dims = ['collectivism', 'authority_trust', 'risk_tolerance', 'time_preference'] as const
     // Echo-chamber check: if most info contacts share similar views, reinforce them
-    const allSimilarWorldview = infoInfluencers.every(n => n.dissonance_acc >= 20)
+    const allSimilarWorldview = infoInfluencers.every(n =>
+      Math.abs(n.worldview.collectivism    - npc.worldview.collectivism)    < 0.20 &&
+      Math.abs(n.worldview.authority_trust - npc.worldview.authority_trust) < 0.20
+    )
 
     for (const dim of dims) {
       const avgNeighbor = infoInfluencers.reduce((s, n) => s + n.worldview[dim], 0) / infoInfluencers.length
