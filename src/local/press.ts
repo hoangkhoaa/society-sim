@@ -1,5 +1,6 @@
 import type { Lang } from '../i18n'
 import type { AIConfig, WorldState } from '../types'
+import type { OccVariant } from '../sim/regime-config'
 import { pick, type Localized } from './common'
 
 export interface PressScan {
@@ -248,19 +249,70 @@ export function scandalHeadline(lang: Lang): string {
 
 // ── Redaction note ────────────────────────────────────────────────────────────
 
-export function redactionNoteText(lang: Lang, censorshipProb: number): string {
+export function redactionNoteText(lang: Lang, censorshipProb: number, variant: OccVariant = 'default'): string {
+  // High-severity censorship: full propaganda denial
   if (censorshipProb >= 0.70) {
+    if (variant === 'warlord') {
+      return pick(lang, {
+        en: '🔇 [CONFISCATED BY MILITARY ORDER. DISTRIBUTION OF THIS DOCUMENT IS PUNISHABLE BY DEATH.]',
+        vi: '🔇 [BỊ TỊCH THU THEO LỆNH QUÂN SỰ. PHÂN PHÁT TÀI LIỆU NÀY CÓ THỂ BỊ XỬ TỬ.]',
+      })
+    }
+    if (variant === 'collective') {
+      return pick(lang, {
+        en: '🔇 [WITHDRAWN — This publication contains counter-revolutionary propaganda incompatible with the collective good.]',
+        vi: '🔇 [THU HỒI — Ấn phẩm này chứa tuyên truyền phản cách mạng, không phù hợp với lợi ích tập thể.]',
+      })
+    }
+    if (variant === 'theocracy') {
+      return pick(lang, {
+        en: '🔇 [CONDEMNED — This text has been deemed blasphemous and suppressed by order of the Holy Authority.]',
+        vi: '🔇 [BỊ KHAI TRỪ — Văn bản này bị xem là báng bổ và bị đình chỉ theo lệnh của Thẩm quyền Thánh.]',
+      })
+    }
+    if (variant === 'feudal') {
+      return pick(lang, {
+        en: '🔇 [BY DECREE — This parchment is condemned and confiscated by noble authority. Sedition shall not be tolerated.]',
+        vi: '🔇 [THEO SẮC LỆNH — Tờ giấy này bị kết tội và tịch thu bởi thẩm quyền quý tộc. Kẻ kích động loạn sẽ bị trừng phạt.]',
+      })
+    }
     return pick(lang, {
       en: '🔇 [REMOVED — THIS ARTICLE CONTAINS MISINFORMATION. NO SUCH EVENTS OCCURRED. SOCIETY IS STABLE AND PROGRESSING.]',
       vi: '🔇 [ĐÃ XÓA — BÀI VIẾT NÀY CHỨA THÔNG TIN SAI LỆCH. KHÔNG CÓ SỰ KIỆN NÀO NHƯ VẬY. XÃ HỘI ỔN ĐỊNH VÀ PHÁT TRIỂN.]',
     })
   }
+  // Moderate censorship: official removal notice with era-appropriate language
   if (censorshipProb >= 0.40) {
+    if (variant === 'warlord') {
+      return pick(lang, {
+        en: '🔇 [Removed by military command. Access restricted for security reasons.]',
+        vi: '🔇 [Bị gỡ xuống theo lệnh quân sự. Quyền truy cập bị hạn chế vì lý do an ninh.]',
+      })
+    }
+    if (variant === 'collective') {
+      return pick(lang, {
+        en: '🔇 [Withdrawn for containing content contrary to the interests of the collective.]',
+        vi: '🔇 [Bị thu hồi vì chứa nội dung trái với lợi ích tập thể.]',
+      })
+    }
+    if (variant === 'theocracy') {
+      return pick(lang, {
+        en: '🔇 [Removed by order of the clergy for content contrary to approved doctrine.]',
+        vi: '🔇 [Bị gỡ xuống theo lệnh của giáo đoàn vì nội dung trái với giáo lý được phê duyệt.]',
+      })
+    }
+    if (variant === 'feudal') {
+      return pick(lang, {
+        en: '🔇 [Confiscated by order of the lord. Spreading seditious words is forbidden.]',
+        vi: '🔇 [Bị tịch thu theo lệnh của lãnh chúa. Lan truyền ngôn từ kích động là điều bị cấm.]',
+      })
+    }
     return pick(lang, {
       en: '🔇 [This article has been removed by order of the authorities on grounds of public security.]',
       vi: '🔇 [Bài viết này đã bị gỡ xuống theo lệnh của nhà chức trách vì lý do an ninh công cộng.]',
     })
   }
+  // Low censorship: minimal notice
   return pick(lang, {
     en: '🔇 [Article removed.]',
     vi: '🔇 [Bài viết đã bị gỡ xuống.]',
