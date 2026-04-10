@@ -134,6 +134,13 @@ POLLUTION: natural_resources drives environmental health. When resources % < 20 
   "power_delta":<-1..1>,"legitimacy_delta":<-1..1>,"resources_delta":<-500..500>}],
 "answer":"brief","requires_confirm":true|false}
 
+7. REFERENDUM — trigger a constitutional referendum that citizens vote on over 7 days:
+{"type":"intervention","event":null,"interventions":null,
+"world_delta":{"trigger_referendum":{"field":"safety_net"|"individual_rights_floor"|"market_freedom"|"state_power",
+  "proposed_value":0.0-1.0,"proposal_text":"short human-readable description of the change"}},
+"answer":"brief","requires_confirm":true}
+NOTE: Only triggers if no referendum is already active. Use for democratic reforms, popular demands, or player-initiated votes. The outcome is decided by NPC worldviews — not guaranteed to pass.
+
 RULES:
 - ALWAYS interpret commands as actions. NEVER explain why you can't — always find the closest event/intervention type and execute it.
 - Inventions, discoveries, innovations → "tech_shift" event (high intensity for major breakthroughs). Narrate the discovery in "narrative_open". NEVER set instant_kill_rate for tech_shift or any positive/beneficial event.
@@ -567,6 +574,9 @@ function buildWorldContext(state: WorldState, config: AIConfig): string {
     tax_pool:           Math.round(state.tax_pool),
     quarantine_zones:   state.quarantine_zones,
     active_rumors:      state.rumors.length,
+    active_referendum:  state.referendum
+      ? { field: state.referendum.field, proposal: state.referendum.proposal_text, days_left: Math.max(0, Math.ceil((state.referendum.expires_tick - state.tick) / 24)) }
+      : null,
   }
 
   const activeFactions = state.factions

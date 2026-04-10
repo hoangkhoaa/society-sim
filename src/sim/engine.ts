@@ -618,6 +618,17 @@ export function applyWorldDelta(state: WorldState, delta: WorldDelta): void {
       expires_tick: state.tick + (r.duration_days ?? 15) * 24,
     })
   }
+  if (delta.trigger_referendum && state.referendum === null) {
+    const tr = delta.trigger_referendum
+    const c  = state.constitution as unknown as Record<string, number>
+    state.referendum = {
+      proposal_text:  tr.proposal_text,
+      field:          tr.field,
+      current_value:  c[tr.field] ?? 0,
+      proposed_value: clamp(tr.proposed_value, 0, 1),
+      expires_tick:   state.tick + 168,  // 7 days
+    }
+  }
 }
 
 /** Apply power/legitimacy/resources changes to institutions. */

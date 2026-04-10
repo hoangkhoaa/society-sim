@@ -592,6 +592,11 @@ export interface WorldDelta {
     effect: 'trust_down' | 'trust_up' | 'fear_up' | 'grievance_up'
     duration_days?: number
   }
+  trigger_referendum?: {
+    field: 'safety_net' | 'individual_rights_floor' | 'market_freedom' | 'state_power'
+    proposed_value: number
+    proposal_text: string
+  }
 }
 
 export interface InstitutionDelta {
