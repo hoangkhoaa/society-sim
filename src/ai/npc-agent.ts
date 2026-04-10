@@ -56,6 +56,7 @@ ${npc.sick ? '- Currently sick and suffering' : ''}
 ${npc.criminal_record ? '- Has a criminal record' : ''}
 
 RECENT MEMORIES: ${recentMem}
+${npc.chat_summary ? `PAST CONVERSATION MEMORY: ${npc.chat_summary}` : ''}
 WORLD: stability ${Math.round(state.macro.stability)}%, food ${Math.round(state.macro.food)}%, gini ${state.macro.gini.toFixed(2)}
 ACTIVE WORLD EVENTS:
   ${activeEventsSummary}

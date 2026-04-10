@@ -1,6 +1,7 @@
 import type { NPC, WorldState, AIConfig, NPCChatTurn, Role } from '../types'
 import { generateNPCThought } from '../ai/god-agent'
 import { handleNPCChat } from '../ai/npc-agent'
+import { callAI } from '../ai/provider'
 import { t, tf, getLang } from '../i18n'
 import { getSettings } from './settings-panel'
 import { clamp } from '../sim/constitution'
@@ -74,6 +75,19 @@ function closeSubPanel(): void {
   const wasOpen = !sidePanel.classList.contains('hidden')
   sidePanel.classList.add('hidden')
   sideBody.innerHTML = ''
+
+  // If the chat panel was open, generate a persistent summary after 3+ turns
+  if (_chatPanelOpen && _chatNpc) {
+    _chatPanelOpen = false
+    const npc = _chatNpc
+    const turns = npcChatHistories.get(npc.id) ?? []
+    if (turns.length >= 3) {
+      buildChatSummary(npc, turns, _chatConfig, _useAI).then(summary => {
+        if (summary) npc.chat_summary = summary
+      }).catch(() => {/* silent */})
+    }
+  }
+
   if (wasOpen) _onClose?.()
 }
 
@@ -83,9 +97,37 @@ let _chatNpc:    NPC | null = null
 let _chatState:  WorldState | null = null
 let _chatConfig: AIConfig | null = null
 let _useAI = true   // player-controlled AI toggle (persists across NPCs)
+let _chatPanelOpen = false  // true while the chat sub-panel is visible
 
 export function resetNPCChatHistories(): void {
   npcChatHistories.clear()
+}
+
+// ── Chat summary generation ────────────────────────────────────────────────
+
+/** Build a compact summary of the conversation to persist in npc.chat_summary. */
+async function buildChatSummary(
+  npc: NPC,
+  turns: NPCChatTurn[],
+  config: AIConfig | null,
+  useAI: boolean,
+): Promise<string> {
+  if (useAI && config) {
+    try {
+      const dialog = turns.map(turn =>
+        turn.speaker === 'player' ? `Stranger: "${turn.text}"` : `${npc.name}: "${turn.text}"`
+      ).join('\n')
+      const prompt = `Summarize this conversation in 1–2 sentences (max 300 chars), third-person, capturing key topics and emotional tone:\n${dialog}`
+      const raw = await callAI(config, 'You are a concise summarizer. Return plain text only, no JSON.', prompt, 80)
+      return raw.trim().slice(0, 300)
+    } catch {
+      // fall through to no-AI fallback
+    }
+  }
+
+  // No-AI fallback: join the last 2 NPC turns
+  const npcTurns = turns.filter(t => t.speaker === 'npc').slice(-2)
+  return npcTurns.map(t => t.text).join(' ').slice(0, 300)
 }
 
 function escapeHtml(text: string): string {
@@ -200,8 +242,15 @@ function wireStatsEditor(npc: NPC, state: WorldState, root: ParentNode): void {
 }
 
 function renderChatPanel(npc: NPC): string {
+  const memorySectionHtml = npc.chat_summary
+    ? `<div class="sp-chat-memory">
+        <div class="sp-chat-memory-title">${t('sp.chat.memory_title') as string}</div>
+        <div class="sp-chat-memory-body">${t('sp.chat.memory_label') as string} ${escapeHtml(npc.chat_summary)}</div>
+       </div>`
+    : ''
   return `
     <div class="sp-chat-section" data-npc="${npc.id}">
+      ${memorySectionHtml}
       <div class="sp-chat-thread" id="sp-chat-thread"></div>
       <div class="sp-chat-input-row">
         <button id="sp-chat-ai-toggle" class="btn-icon sp-chat-ai-btn" title="${t('sp.chat.ai_toggle') as string}">🤖</button>
@@ -289,12 +338,14 @@ export async function openSpotlight(npc: NPC, state: WorldState, config: AIConfi
   })
 
   openEditBtn?.addEventListener('click', () => {
+    _chatPanelOpen = false
     openSubPanel(tf('sp.edit.title', { name: npc.name }), renderEditPanel(npc))
     wireStatsEditor(npc, state, sideBody)
     _onNpcEdit?.()
   })
 
   openChatBtn?.addEventListener('click', () => {
+    _chatPanelOpen = true
     openSubPanel(tf('sp.chat.panel_title', { name: npc.name }), renderChatPanel(npc))
     const history = npcChatHistories.get(npc.id) ?? []
     renderNPCChatThread(history, npc.name, sideBody)

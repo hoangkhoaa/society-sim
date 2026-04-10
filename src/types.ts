@@ -200,6 +200,12 @@ export interface NPC {
   // Cleared when the NPC reverts, or set to undefined after 90 days (role made permanent).
   original_role?:       Role    // role held before emergency reassignment
   emergency_role_tick?: number  // sim tick when the emergency switch happened
+
+  // ── Persistent chat memory ────────────────────────────────────────────────
+  // Compact summary of past player ↔ NPC conversations. Generated when the
+  // chat panel closes after 3+ turns. Persisted via WorldState / localStorage.
+  // Max ~300 chars. Passed to the NPC agent system prompt for continuity.
+  chat_summary?: string
 }
 
 // ── Constitution ───────────────────────────────────────────────────────────
