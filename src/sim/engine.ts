@@ -1554,6 +1554,11 @@ function formOrganicStrongTies(state: WorldState): void {
  * is low — recovering societies naturally re-knit social fabric.
  * Processes ~10% of eligible NPCs per call to spread the load.
  */
+// NPC is eligible for replenishment when weak ties fall below this fraction of target.
+const WEAK_TIE_REPLENISHMENT_THRESHOLD = 0.70
+// Fraction of eligible NPCs processed per weekly call (load-spreading).
+const WEAK_TIE_REPLENISHMENT_SAMPLE_RATE = 0.10
+
 function replenishWeakTies(state: WorldState): void {
   const cohesion = clamp(state.constitution.network_cohesion, 0.1, 1)
   const weakTarget = Math.round(50 + cohesion * 100)
@@ -1569,10 +1574,10 @@ function replenishWeakTies(state: WorldState): void {
 
   const living = state.npcs.filter(n => n.lifecycle.is_alive)
   // Only NPCs with depleted weak ties and low enough fear are eligible
-  const eligible = living.filter(n => n.fear < 50 && n.weak_ties.length < weakTarget * 0.70)
+  const eligible = living.filter(n => n.fear < 50 && n.weak_ties.length < weakTarget * WEAK_TIE_REPLENISHMENT_THRESHOLD)
 
   for (const npc of eligible) {
-    if (Math.random() >= 0.10) continue  // ~10% sampled per call
+    if (Math.random() >= WEAK_TIE_REPLENISHMENT_SAMPLE_RATE) continue
 
     const hop2 = (ZONE_ADJACENCY[npc.zone] ?? []).flatMap(z => ZONE_ADJACENCY[z] ?? [])
     const pool = restrictions.cross_zone_ties
