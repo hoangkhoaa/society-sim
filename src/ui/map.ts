@@ -94,7 +94,8 @@ const V_ROAD_SEGS: { x: number; yMin: number; yMax: number }[] = [
 ]
 const H_ROAD_YS = [0.34, 0.66] as const   // H1, H2 centre-lines
 
-const ROAD_EPS = 0.04  // tolerance for "on this road?"
+const ROAD_EPS  = 0.04  // tolerance for "on this road?"
+const POINT_EPS = 0.01  // tolerance for "same point?" (backtrack detection)
 
 function nearHRoad(y: number): number | null {
   for (const hy of H_ROAD_YS) if (Math.abs(y - hy) < ROAD_EPS) return hy
@@ -152,7 +153,7 @@ function insertRoadJunctions(roadPts: [number, number][]): [number, number][] {
       } else if (fV !== null && tV !== null) {
         // both vertical: route through the nearest horizontal road
         const midY = (from[1] + to[1]) / 2
-        const hy = H_ROAD_YS.reduce((best, h) => Math.abs(h - midY) < Math.abs(best - midY) ? h : best)
+        const hy = H_ROAD_YS.reduce((best, h) => Math.abs(h - midY) < Math.abs(best - midY) ? h : best, H_ROAD_YS[0] as number)
         out.push([fV, hy])
         out.push([tV, hy])
       } else {
@@ -175,7 +176,7 @@ function removeRoadBacktracking(pts: [number, number][]): [number, number][] {
     // If this point appears again later, skip the detour between
     let lastMatch = i
     for (let j = i + 1; j < pts.length; j++) {
-      if (Math.abs(pts[i][0] - pts[j][0]) < 0.01 && Math.abs(pts[i][1] - pts[j][1]) < 0.01) {
+      if (Math.abs(pts[i][0] - pts[j][0]) < POINT_EPS && Math.abs(pts[i][1] - pts[j][1]) < POINT_EPS) {
         lastMatch = j
       }
     }
