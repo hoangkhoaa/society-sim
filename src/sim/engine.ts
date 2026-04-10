@@ -3221,7 +3221,7 @@ function checkOppositionBehavior(state: WorldState): void {
     for (const npc of sample) {
       npc.trust_in.government.intention = clamp(npc.trust_in.government.intention - 0.01, 0, 1)
     }
-    const msg = tf('engine.opposition.dissent_statement') as string
+    const msg = t('engine.opposition.dissent_statement') as string
     addChronicle(msg, state.year, state.day, 'major')
     addFeedRaw(msg, 'political', state.year, state.day)
   }
