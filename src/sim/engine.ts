@@ -1,4 +1,4 @@
-import type { WorldState, Constitution, NPC, SimEvent, NarrativeEntry, NPCIntervention, ActiveStrike, WorldDelta, InstitutionDelta, PublicHealth } from '../types'
+import type { WorldState, Constitution, NPC, SimEvent, NarrativeEntry, NPCIntervention, ActiveStrike, WorldDelta, InstitutionDelta } from '../types'
 import { createNPC, tickNPC, computeProductivity, RESIDENTIAL_ZONES, permanentRoleChange } from './npc'
 import type { IndividualEvent, TickEventFlags } from './npc'
 import { checkEmergencyRoleReassignment, autoSurvivalRoleShift } from './roles'
@@ -3372,7 +3372,7 @@ export function updatePublicHealth(state: WorldState): void {
     const HOSPITAL_BOOST_DURATION = 30 * 24  // 30 sim-days in ticks
     if (state.tick - ph.funded_tick >= HOSPITAL_BOOST_DURATION) {
       ph.hospital_capacity = 0
-      const text = tf('engine.public_health.hospital_expired') as string
+      const text = t('engine.public_health.hospital_expired') as string
       addChronicle(text, state.year, state.day, 'minor')
       addFeedRaw(text, 'warning', state.year, state.day)
     }
