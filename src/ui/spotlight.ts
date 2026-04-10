@@ -81,10 +81,10 @@ function closeSubPanel(): void {
     _chatPanelOpen = false
     const npc = _chatNpc
     const turns = npcChatHistories.get(npc.id) ?? []
-    if (turns.length >= 3) {
+    if (turns.length >= MIN_TURNS_FOR_SUMMARY) {
       buildChatSummary(npc, turns, _chatConfig, _useAI).then(summary => {
         if (summary) npc.chat_summary = summary
-      }).catch(() => {/* silent */})
+      }).catch(err => { console.warn('Chat summary generation failed:', err) })
     }
   }
 
@@ -105,6 +105,9 @@ export function resetNPCChatHistories(): void {
 
 // ── Chat summary generation ────────────────────────────────────────────────
 
+const MAX_SUMMARY_LENGTH  = 300
+const MIN_TURNS_FOR_SUMMARY = 3
+
 /** Build a compact summary of the conversation to persist in npc.chat_summary. */
 async function buildChatSummary(
   npc: NPC,
@@ -117,17 +120,17 @@ async function buildChatSummary(
       const dialog = turns.map(turn =>
         turn.speaker === 'player' ? `Stranger: "${turn.text}"` : `${npc.name}: "${turn.text}"`
       ).join('\n')
-      const prompt = `Summarize this conversation in 1–2 sentences (max 300 chars), third-person, capturing key topics and emotional tone:\n${dialog}`
+      const prompt = `Summarize this conversation in 1–2 sentences (max ${MAX_SUMMARY_LENGTH} chars), third-person, capturing key topics and emotional tone:\n${dialog}`
       const raw = await callAI(config, 'You are a concise summarizer. Return plain text only, no JSON.', prompt, 80)
-      return raw.trim().slice(0, 300)
-    } catch {
-      // fall through to no-AI fallback
+      return raw.trim().slice(0, MAX_SUMMARY_LENGTH)
+    } catch (err) {
+      console.warn('Chat summary AI failed, using fallback:', err)
     }
   }
 
   // No-AI fallback: join the last 2 NPC turns
   const npcTurns = turns.filter(t => t.speaker === 'npc').slice(-2)
-  return npcTurns.map(t => t.text).join(' ').slice(0, 300)
+  return npcTurns.map(t => t.text).join(' ').slice(0, MAX_SUMMARY_LENGTH)
 }
 
 function escapeHtml(text: string): string {
