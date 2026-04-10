@@ -327,6 +327,7 @@ export async function openSpotlight(npc: NPC, state: WorldState, config: AIConfi
 
   // Render static info immediately, then load the daily thought async
   spBody.innerHTML = renderStatic(npc, state)
+  drawPixelCharacter(npc)
 
   const openChatBtn = spBody.querySelector('#sp-open-chat') as HTMLButtonElement | null
   const openEditBtn = spBody.querySelector('#sp-open-edit') as HTMLButtonElement | null
@@ -548,6 +549,140 @@ function lifeStory(npc: NPC, state: WorldState): string {
     </div>`
 }
 
+// ── Pixel character renderer ───────────────────────────────────────────────
+
+const PIXEL_SKIN: Record<string, string> = {
+  light: '#f5d5a8', medium: '#c8914f', dark: '#7a4828',
+}
+const PIXEL_HAIR: Record<string, string> = {
+  black: '#1c1c1c', brown: '#6b3d2a', gray: '#888888', white: '#e0e0e0',
+}
+const PIXEL_CLOTH: Record<string, string> = {
+  farmer: '#5d7a3e', craftsman: '#8a6040', scholar: '#4060a0',
+  merchant: '#a08020', guard: '#405070', leader: '#802020', child: '#8050a0',
+}
+const PIXEL_STATE_EMOJI: Record<string, string> = {
+  working: '⚒️', resting: '😴', socializing: '💬', family: '🏠',
+  organizing: '✊', fleeing: '🏃', complying: '🫡', confront: '⚠️',
+}
+
+function renderPixelCharacterSection(): string {
+  return `
+    <div class="sp-section sp-pixel-section">
+      <div class="sp-pixel-wrap">
+        <canvas id="sp-pixel-char" class="sp-pixel-canvas"></canvas>
+        <div id="sp-pixel-state" class="sp-pixel-state"></div>
+      </div>
+    </div>`
+}
+
+function drawPixelCharacter(npc: NPC): void {
+  const canvas = document.getElementById('sp-pixel-char') as HTMLCanvasElement | null
+  if (!canvas) return
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  const skin  = PIXEL_SKIN[npc.appearance.skin]   ?? '#c8914f'
+  const hair  = PIXEL_HAIR[npc.appearance.hair]   ?? '#6b3d2a'
+  const cloth = PIXEL_CLOTH[npc.role]              ?? '#555555'
+  const eye   = '#2a2a4a'
+  const leg   = '#303040'
+  const shoe  = '#1a1010'
+  const ps    = 4    // pixels per grid cell
+  const W     = 10   // grid columns
+
+  // Leg rows vary by height
+  const legRows = npc.appearance.height === 'short' ? 2
+    : npc.appearance.height === 'tall'  ? 4 : 3
+  // Total: hair(2) + face(3) + collar(1) + torso(5) + legs + feet(1) = 12 + legRows
+  const totalRows = 12 + legRows
+
+  canvas.width  = W * ps
+  canvas.height = totalRows * ps
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+  const px = (x: number, y: number, color: string) => {
+    ctx.fillStyle = color
+    ctx.fillRect(x * ps, y * ps, ps, ps)
+  }
+
+  const isFemale = npc.gender === 'female'
+
+  // --- Hair (rows 0–1) ---
+  for (let x = 3; x <= 6; x++) px(x, 0, hair)
+  for (let x = 2; x <= 7; x++) px(x, 1, hair)
+  // Female: longer side hair
+  if (isFemale) {
+    px(2, 2, hair); px(7, 2, hair)
+    px(2, 3, hair); px(7, 3, hair)
+    px(2, 4, hair); px(7, 4, hair)
+  }
+
+  // --- Face (rows 2–4): skin ---
+  for (let y = 2; y <= 4; y++) {
+    for (let x = 2; x <= 7; x++) px(x, y, skin)
+  }
+  // Eyes (row 3)
+  px(3, 3, eye); px(6, 3, eye)
+  // Mouth (row 4)
+  px(4, 4, '#c07070'); px(5, 4, '#c07070')
+  // Female: restore side hair over face
+  if (isFemale) {
+    px(2, 3, hair); px(7, 3, hair)
+    px(2, 4, hair); px(7, 4, hair)
+  }
+
+  // --- Collar / neck (row 5) ---
+  for (let x = 3; x <= 6; x++) px(x, 5, cloth)
+  px(4, 5, skin); px(5, 5, skin)
+
+  // --- Body build params ---
+  let b1: number, b2: number, a1: number, a2: number
+  if (npc.appearance.build === 'slim') {
+    b1 = 3; b2 = 6; a1 = 2; a2 = 7
+  } else if (npc.appearance.build === 'sturdy') {
+    b1 = 2; b2 = 7; a1 = 1; a2 = 8
+  } else {
+    // average
+    b1 = 3; b2 = 6; a1 = 1; a2 = 8
+  }
+
+  // --- Arms + torso (rows 6–10) ---
+  for (let y = 6; y <= 10; y++) {
+    for (let x = b1; x <= b2; x++) px(x, y, cloth)
+    if (y <= 8) {
+      px(a1, y, cloth)
+      px(a2, y, cloth)
+    }
+  }
+
+  // --- Legs (rows 11 to 11+legRows-1) ---
+  const legStart = 11
+  for (let y = legStart; y < legStart + legRows; y++) {
+    px(3, y, leg); px(4, y, leg)   // left leg
+    px(5, y, leg); px(6, y, leg)   // right leg
+  }
+
+  // --- Feet (last row) ---
+  const feetRow = legStart + legRows
+  px(2, feetRow, shoe); px(3, feetRow, shoe); px(4, feetRow, shoe)
+  px(5, feetRow, shoe); px(6, feetRow, shoe); px(7, feetRow, shoe)
+
+  // --- Sick tint overlay ---
+  if (npc.sick) {
+    ctx.globalAlpha = 0.25
+    ctx.fillStyle   = '#44cc44'
+    ctx.fillRect(2 * ps, 2 * ps, 6 * ps, 3 * ps)
+    ctx.globalAlpha = 1.0
+  }
+
+  // --- Action state emoji ---
+  const stateEl = document.getElementById('sp-pixel-state')
+  if (stateEl) {
+    stateEl.textContent = PIXEL_STATE_EMOJI[npc.action_state] ?? ''
+  }
+}
+
 function renderStatic(npc: NPC, state: WorldState): string {
   const trustGov        = npc.trust_in.government
   const compositeTrust  = Math.round((trustGov.competence + trustGov.intention) / 2 * 100)
@@ -659,6 +794,9 @@ function renderStatic(npc: NPC, state: WorldState): string {
   })() : ''
 
   return `
+    <!-- Pixel character avatar -->
+    ${renderPixelCharacterSection()}
+
     <!-- Description -->
     <div class="sp-section">
       <div class="sp-description">${npc.description}</div>
