@@ -738,6 +738,16 @@ body[data-theme='light'] .chronicle-subheader {
   }
 }
 
+/* ── Responsive: tablet (≤ 1024px) ─────────────────────────────────────── */
+@media (max-width: 1024px) {
+  /* Topbar: tighter spacing */
+  #topbar { gap: 10px; padding: 0 10px; }
+  /* Hide least-critical stat on tablet */
+  #stat-gini { display: none; }
+  /* Narrower right sidebar */
+  #right-sidebar { width: 240px; }
+}
+
 /* ── Responsive (mobile/tablet) ─────────────────────────────────────────── */
 @media (max-width: 900px) {
   #screen-onboarding,
@@ -850,3 +860,95 @@ body[data-theme='light'] .ref-support-bar-wrap { background: #f0d875; }
 body[data-theme='light'] #ref-support-bar { background: #e6a000; }
 body[data-theme='light'] .btn-ref-details { border-color: #e6b800; color: #7a5200; }
 body[data-theme='light'] .btn-ref-details:hover { background: #fff0b0; }
+
+/* ── Responsive: mobile (≤ 600px) ───────────────────────────────────────── */
+@media (max-width: 600px) {
+  /* ── Topbar: compact, hide non-essentials ──────────────────────────────── */
+  #topbar {
+    gap: 6px;
+    padding: 0 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  #topbar::-webkit-scrollbar { display: none; }
+  /* Hide regime label and dividers to save space */
+  #regime-label { display: none; }
+  .top-divider  { display: none; }
+  /* Hide less-critical stats; keep stability and food */
+  #stat-resources, #stat-energy, #stat-trust, #stat-gini { display: none; }
+  /* Hide low-priority topbar buttons */
+  #btn-constitution, #btn-gov, #ai-usage { display: none; }
+  /* Compact existing buttons */
+  .btn-top { padding: 3px 7px; font-size: 10px; }
+
+  /* ── Main area: vertical stack (map on top, sidebar on bottom) ─────────── */
+  #main-area { flex-direction: column; }
+
+  /* Map: fills remaining vertical space */
+  #map-container { flex: 1; min-height: 0; }
+
+  /* ── Right sidebar: full-width horizontal strip at bottom ──────────────── */
+  #right-sidebar {
+    width: 100%;
+    height: 200px;
+    flex-shrink: 0;
+    border-left: none;
+    border-top: 1px solid #1e1e1e;
+  }
+  body[data-theme='light'] #right-sidebar {
+    border-left: none;
+    border-top-color: #dbe5ef;
+  }
+
+  /* Hide chronicle panel (too cramped on mobile) */
+  #chronicle-panel, #chronicle-resizer { display: none; }
+
+  /* Feed fills the sidebar strip */
+  #feed-panel { flex: 1; min-height: 0; }
+
+  /* ── Map overlay panels ────────────────────────────────────────────────── */
+  /* Demographics: compact size and position */
+  #demographics {
+    width: 120px;
+    padding: 6px 8px;
+    font-size: 10px;
+    bottom: 4px;
+    left: 4px;
+  }
+  /* Hide rumors and econ overlays (too cramped) */
+  #rumors-panel, #econ-panel { display: none; }
+
+  /* ── Floating panels (NPC spotlight, institution, settings) ────────────── */
+  .panel {
+    left: 3vw;
+    width: 94vw;
+    top: 8px;
+    max-height: 75vh;
+  }
+  /* Side panel (NPC chat) shares same width; z-index keeps it on top */
+  .sp-side-panel {
+    left: 3vw;
+    width: 94vw;
+  }
+
+  /* Map note button: slightly smaller gap from edge */
+  .map-note-btn { top: 8px; right: 8px; }
+
+  /* ── Chatbar: compact ──────────────────────────────────────────────────── */
+  #chatbar { height: 46px; padding: 0 8px; }
+  #chat-input { font-size: 12px; }
+
+  /* ── Referendum banner: compact ────────────────────────────────────────── */
+  #referendum-banner { padding: 4px 8px; gap: 5px; font-size: 10px; }
+  #ref-proposal { max-width: 140px; }
+
+  /* ── Confirm / policy modal: full-width ────────────────────────────────── */
+  #modal-box { width: 94vw; max-width: 94vw; padding: 16px; }
+  #modal-box.policy-mode { max-width: 94vw; }
+  /* Policy cards: stack vertically instead of side by side */
+  .policy-cards { flex-direction: column; }
+
+  /* ── Game over screen: tighter padding ─────────────────────────────────── */
+  .gameover-box { padding: 24px 16px; }
+}
