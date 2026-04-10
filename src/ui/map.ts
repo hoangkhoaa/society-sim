@@ -75,11 +75,113 @@ const ROAD_WAYPOINTS: Record<string, [number, number][]> = {
   'plaza|south_farm':                   [[0.26, 0.66]],
   'plaza|workshop_district':            [[0.52, 0.66]],
   'guard_post|market_square':           [[0.76, 0.50]],
-  'market_square|workshop_district':    [[0.64, 0.66]],
+  'market_square|workshop_district':    [[0.66, 0.66]],
   'market_square|residential_east':     [[0.76, 0.66]],
   'guard_post|residential_east':        [[0.835, 0.66]],
   'south_farm|workshop_district':       [[0.36, 0.835]],
   'residential_east|workshop_district': [[0.66, 0.835]],
+}
+
+// ── Road topology for multi-hop routing ─────────────────────────────────────
+// Vertical road segments: centre-x and the y-range they span.
+const V_ROAD_SEGS: { x: number; yMin: number; yMax: number }[] = [
+  { x: 0.59, yMin: 0,    yMax: 0.34 },   // V-top
+  { x: 0.26, yMin: 0.34, yMax: 0.66 },   // V1
+  { x: 0.52, yMin: 0.34, yMax: 0.66 },   // V2
+  { x: 0.76, yMin: 0.34, yMax: 0.66 },   // V3
+  { x: 0.36, yMin: 0.66, yMax: 1.00 },   // V4
+  { x: 0.66, yMin: 0.66, yMax: 1.00 },   // V5
+]
+const H_ROAD_YS = [0.34, 0.66] as const   // H1, H2 centre-lines
+
+const ROAD_EPS = 0.04  // tolerance for "on this road?"
+
+function nearHRoad(y: number): number | null {
+  for (const hy of H_ROAD_YS) if (Math.abs(y - hy) < ROAD_EPS) return hy
+  return null
+}
+
+function nearVRoad(x: number, y: number): number | null {
+  for (const v of V_ROAD_SEGS) {
+    if (Math.abs(x - v.x) < ROAD_EPS && y >= v.yMin - ROAD_EPS && y <= v.yMax + ROAD_EPS) return v.x
+  }
+  return null
+}
+
+/** Find the closest vertical road that spans between two horizontal roads. */
+function bestVRoadBetweenH(x1: number, x2: number, h1: number, h2: number): number {
+  const lo = Math.min(h1, h2), hi = Math.max(h1, h2)
+  const candidates = V_ROAD_SEGS.filter(v => v.yMin <= lo + ROAD_EPS && v.yMax >= hi - ROAD_EPS)
+  if (candidates.length === 0) return (x1 + x2) / 2         // fallback (should not happen)
+  const mid = (x1 + x2) / 2
+  candidates.sort((a, b) => Math.abs(a.x - mid) - Math.abs(b.x - mid))
+  return candidates[0].x
+}
+
+/**
+ * Insert intermediate road-grid junctions between consecutive waypoints so that
+ * NPC commute paths follow drawn roads instead of cutting diagonally through zones.
+ * Only processes the "road waypoint" portion of the path (not start/dest in zones).
+ */
+function insertRoadJunctions(roadPts: [number, number][]): [number, number][] {
+  if (roadPts.length < 2) return roadPts
+  const out: [number, number][] = [roadPts[0]]
+  for (let i = 1; i < roadPts.length; i++) {
+    const from = out[out.length - 1]
+    const to   = roadPts[i]
+    const dx   = Math.abs(from[0] - to[0])
+    const dy   = Math.abs(from[1] - to[1])
+    if (dx > ROAD_EPS && dy > ROAD_EPS) {
+      // Points are on different roads — insert corner junction(s)
+      const fH = nearHRoad(from[1])
+      const fV = nearVRoad(from[0], from[1])
+      const tH = nearHRoad(to[1])
+      const tV = nearVRoad(to[0], to[1])
+
+      if (fV !== null && tH !== null) {
+        // vertical → horizontal: corner at (fV, tH)
+        out.push([fV, tH])
+      } else if (fH !== null && tV !== null) {
+        // horizontal → vertical: corner at (tV, fH)
+        out.push([tV, fH])
+      } else if (fH !== null && tH !== null) {
+        // both horizontal: route through the nearest connecting vertical road
+        const vx = bestVRoadBetweenH(from[0], to[0], fH, tH)
+        out.push([vx, fH])
+        out.push([vx, tH])
+      } else if (fV !== null && tV !== null) {
+        // both vertical: route through the nearest horizontal road
+        const midY = (from[1] + to[1]) / 2
+        const hy = H_ROAD_YS.reduce((best, h) => Math.abs(h - midY) < Math.abs(best - midY) ? h : best)
+        out.push([fV, hy])
+        out.push([tV, hy])
+      } else {
+        // fallback: L-shaped corner preferring horizontal-first
+        out.push([to[0], from[1]])
+      }
+    }
+    out.push(to)
+  }
+  return out
+}
+
+/** Remove U-turn backtracking where the path revisits the same road junction. */
+function removeRoadBacktracking(pts: [number, number][]): [number, number][] {
+  if (pts.length < 3) return pts
+  const result: [number, number][] = []
+  let i = 0
+  while (i < pts.length) {
+    result.push(pts[i])
+    // If this point appears again later, skip the detour between
+    let lastMatch = i
+    for (let j = i + 1; j < pts.length; j++) {
+      if (Math.abs(pts[i][0] - pts[j][0]) < 0.01 && Math.abs(pts[i][1] - pts[j][1]) < 0.01) {
+        lastMatch = j
+      }
+    }
+    i = lastMatch + 1
+  }
+  return result
 }
 
 function getRoadWaypoints(fromZone: string, toZone: string): [number, number][] {
@@ -271,15 +373,18 @@ function buildCommutePath(
   fromZone: string, toZone: string,
 ): [number, number][] {
   const zonePath = findZonePath(fromZone, toZone)
-  const pts: [number, number][] = [[sx, sy]]
-  // Chain road junction waypoints for each hop along the zone path
+  // Collect raw road waypoints from each hop
+  const rawRoad: [number, number][] = []
   for (let i = 0; i < zonePath.length - 1; i++) {
     const junctions = getRoadWaypoints(zonePath[i], zonePath[i + 1])
-    pts.push(...junctions)
+    rawRoad.push(...junctions)
   }
+  // Route road waypoints through the grid so NPC follows drawn roads
+  const routed = rawRoad.length >= 2
+    ? removeRoadBacktracking(insertRoadJunctions(rawRoad))
+    : rawRoad
   const dest = randomPosInZone(toZone)
-  pts.push([dest.x, dest.y])
-  return pts
+  return [[sx, sy], ...routed, [dest.x, dest.y]]
 }
 
 /** Advance a commute along its waypoint path using global ease. Returns true when done. */
