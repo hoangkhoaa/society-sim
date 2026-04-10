@@ -1,4 +1,4 @@
-import type { WorldState, Constitution, NPC, SimEvent, NarrativeEntry, NPCIntervention, ActiveStrike, WorldDelta, InstitutionDelta } from '../types'
+import type { WorldState, Constitution, NPC, SimEvent, NarrativeEntry, NPCIntervention, ActiveStrike, WorldDelta, InstitutionDelta, Syndicate } from '../types'
 import { createNPC, tickNPC, computeProductivity, RESIDENTIAL_ZONES, permanentRoleChange } from './npc'
 import type { IndividualEvent, TickEventFlags } from './npc'
 import { checkEmergencyRoleReassignment, autoSurvivalRoleShift } from './roles'
@@ -124,6 +124,7 @@ export async function initWorld(constitution: Constitution, npcCount: number = M
     drift_score: 0,
     crisis_pending: false,
     factions: [],
+    syndicates: [],
     research_points: 0,
     discoveries: [],
     referendum: null,
@@ -256,6 +257,7 @@ export function tick(state: WorldState): void {
     accumulateResearch(state)
     checkDiscoveries(state)
     checkShadowEconomy(state)
+    checkSyndicates(state)
     checkReferendum(state)
     checkOppositionBehavior(state)
     checkEpidemicIntelligence(state)
@@ -3028,6 +3030,7 @@ function checkLegendaryNPCs(state: WorldState): void {
 // In planned economies (market_freedom < 0.25) with a significant criminal
 // population (>3%), an underground market emerges. Criminals earn extra wealth
 // through illegal trade. Guards periodically raid and seize assets.
+// Syndicate members are priority raid targets with 50% wealth-seizure rate.
 
 let lastShadowRaidTick = -9999
 
@@ -3043,10 +3046,20 @@ function checkShadowEconomy(state: WorldState): void {
     const guardInst  = state.institutions.find(i => i.id === 'guard')
     const raidChance = (guardInst?.power ?? 0.3) * 0.08  // 2-8% per criminal per check
 
+    // Collect syndicate member ids for priority targeting
+    const syndicateMemberIds = new Set<number>()
+    for (const syn of state.syndicates) {
+      for (const id of syn.member_ids) syndicateMemberIds.add(id)
+    }
+
     let raidCount = 0
     for (const npc of criminals) {
-      if (Math.random() < raidChance) {
-        const seized = npc.wealth * 0.40
+      const isSyndMember = syndicateMemberIds.has(npc.id)
+      const effectiveChance = isSyndMember ? raidChance * 1.5 : raidChance
+      if (Math.random() < effectiveChance) {
+        // Syndicate members lose 50% wealth; regular criminals lose 40%
+        const seizureRate = isSyndMember ? 0.50 : 0.40
+        const seized = npc.wealth * seizureRate
         npc.wealth    = clamp(npc.wealth - seized, 0, 50000)
         npc.fear      = clamp(npc.fear      + 25,  0, 100)
         npc.isolation = clamp(npc.isolation + 15,  0, 100)
@@ -3070,7 +3083,211 @@ function checkShadowEconomy(state: WorldState): void {
   }
 }
 
-// ── Constitutional Referendum ─────────────────────────────────────────────────
+// ── Organized Crime Syndicates ────────────────────────────────────────────────
+// Criminal NPCs form syndicates when inequality is high and criminal population
+// exceeds 4%. Syndicates collect dues, run protection rackets, bribe guards,
+// and recruit. Guard crackdowns can partially bust them.
+
+let nextSyndicateId = 1
+
+const SYNDICATE_NAMES = [
+  'Iron Veil Brotherhood', 'Shadow Compact', 'Red Hand Society', 'Crimson Tide Outfit',
+  'Black Market League', 'Night Crown Syndicate', 'Hollow Sun Cartel', 'Grey Wolf Ring',
+  'Ember Court Gang', 'Silent Scale Consortium',
+]
+
+function checkSyndicates(state: WorldState): void {
+  const living    = state.npcs.filter(n => n.lifecycle.is_alive)
+  const criminals = living.filter(n => n.criminal_record)
+  const criminalRate = criminals.length / Math.max(living.length, 1)
+
+  // ── Formation ──────────────────────────────────────────────────────────────
+  // Conditions: >4% criminal population AND gini > 0.45 AND fewer than 3 syndicates
+  if (
+    criminalRate > 0.04 &&
+    state.macro.gini > 0.45 &&
+    state.syndicates.length < 3 &&
+    Math.random() < 0.05  // ~5% daily formation check
+  ) {
+    // Find the highest-wealth criminal NPC who is not already in a syndicate
+    const existingSyndicateMemberIds = new Set<number>()
+    for (const syn of state.syndicates) {
+      for (const id of syn.member_ids) existingSyndicateMemberIds.add(id)
+    }
+
+    const candidates = criminals.filter(n => !existingSyndicateMemberIds.has(n.id))
+    if (candidates.length >= 4) {
+      // Boss = highest-wealth criminal with at least 3 mutual strong ties to other criminals
+      const criminalIds = new Set(candidates.map(n => n.id))
+      const boss = candidates
+        .filter(n => n.strong_ties.filter(tid => criminalIds.has(tid)).length >= 3)
+        .sort((a, b) => b.wealth - a.wealth)[0]
+
+      if (boss) {
+        // Recruit boss + up to 9 mutual-strong-tie criminals in same zone cluster
+        const recruits: NPC[] = [boss]
+        for (const candidate of candidates) {
+          if (candidate.id === boss.id) continue
+          if (boss.strong_ties.includes(candidate.id)) {
+            recruits.push(candidate)
+            if (recruits.length >= 10) break
+          }
+        }
+
+        if (recruits.length >= 4) {
+          const territory = [...new Set(recruits.map(n => n.zone))]
+          const usedNames = new Set(state.syndicates.map(s => s.name))
+          const name = SYNDICATE_NAMES.find(n => !usedNames.has(n))
+            ?? `Crime Syndicate ${nextSyndicateId}`
+
+          const syndicate: Syndicate = {
+            id: nextSyndicateId++,
+            name,
+            boss_id: boss.id,
+            member_ids: recruits.map(n => n.id),
+            territory,
+            resources: 0,
+            founded_tick: state.tick,
+            last_action_tick: state.tick,
+          }
+          state.syndicates.push(syndicate)
+
+          const text = tf('engine.syndicate_formed', { name, n: recruits.length }) as string
+          addChronicle(text, state.year, state.day, 'critical')
+          addFeedRaw(text, 'warning', state.year, state.day)
+        }
+      }
+    }
+  }
+
+  const guardInst = state.institutions.find(i => i.id === 'guard')
+  const guardPower = guardInst?.power ?? 0.3
+
+  // ── Guard-Syndicate Conflict ────────────────────────────────────────────────
+  // When guard power > 0.55, 5% daily chance of bust per syndicate
+  if (guardPower > 0.55) {
+    for (const syn of state.syndicates) {
+      if (Math.random() < 0.05) {
+        // Bust: remove 30% of members, halve resources
+        const before = syn.member_ids.length
+        syn.member_ids = syn.member_ids.filter(id => {
+          const npc = state.npcs[id]
+          if (!npc?.lifecycle.is_alive) return false
+          if (Math.random() < 0.30) {
+            // Busted member gets extra fear/isolation
+            npc.fear      = clamp(npc.fear      + 35, 0, 100)
+            npc.isolation = clamp(npc.isolation + 20, 0, 100)
+            return false
+          }
+          return true
+        })
+        const busted = before - syn.member_ids.length
+        syn.resources = Math.floor(syn.resources * 0.50)
+
+        const text = tf('engine.syndicate_bust', { name: syn.name, n: busted }) as string
+        addChronicle(text, state.year, state.day, 'critical')
+        addFeedRaw(text, 'critical', state.year, state.day)
+      }
+    }
+  }
+
+  // ── Daily Actions ──────────────────────────────────────────────────────────
+  for (const syn of state.syndicates) {
+    // Sync member list to living members only
+    syn.member_ids = syn.member_ids.filter(id => state.npcs[id]?.lifecycle.is_alive)
+    if (syn.member_ids.length < 2) continue
+
+    const members = syn.member_ids.map(id => state.npcs[id]).filter((n): n is NPC => !!n)
+
+    // Collect 8% wealth dues from all members daily
+    let dues = 0
+    for (const m of members) {
+      const due = m.wealth * 0.08
+      m.wealth = clamp(m.wealth - due, 0, 50000)
+      dues += due
+    }
+    syn.resources = Math.min(syn.resources + Math.floor(dues), 999999)
+
+    // Every 10 days, perform one special action
+    if (state.tick - syn.last_action_tick < 240) continue
+    syn.last_action_tick = state.tick
+
+    const roll = Math.random()
+
+    if (roll < 0.33 && syn.resources > 200) {
+      // Bribe guard: reduce trust-in-government by 0.1 for members' zone
+      syn.resources -= 200
+      for (const npc of living) {
+        if (syn.territory.includes(npc.zone)) {
+          npc.trust_in.government.intention = clamp(
+            npc.trust_in.government.intention - 0.10, 0, 1,
+          )
+        }
+      }
+      const text = tf('engine.syndicate_bribe', { name: syn.name }) as string
+      addFeedRaw(text, 'warning', state.year, state.day)
+      addChronicle(text, state.year, state.day, 'major')
+
+    } else if (roll < 0.66) {
+      // Protection racket: extract 5% wealth from merchants in territory
+      let extorted = 0
+      for (const npc of living) {
+        if (npc.role === 'merchant' && syn.territory.includes(npc.zone) && !syn.member_ids.includes(npc.id)) {
+          const take = npc.wealth * 0.05
+          npc.wealth = clamp(npc.wealth - take, 0, 50000)
+          npc.fear   = clamp(npc.fear + 10, 0, 100)
+          syn.resources += Math.floor(take)
+          extorted++
+        }
+      }
+      if (extorted > 0) {
+        const text = tf('engine.syndicate_racket', { name: syn.name, n: extorted }) as string
+        addFeedRaw(text, 'warning', state.year, state.day)
+        addChronicle(text, state.year, state.day, 'major')
+      }
+
+    } else {
+      // Recruit high-grievance NPC in territory zone
+      const existingMemberIds = new Set(syn.member_ids)
+      const recruitCandidates = living.filter(n =>
+        syn.territory.includes(n.zone) &&
+        n.grievance > 60 &&
+        !existingMemberIds.has(n.id) &&
+        !n.criminal_record,
+      )
+      if (recruitCandidates.length > 0) {
+        const target = recruitCandidates.sort((a, b) => b.grievance - a.grievance)[0]
+        target.criminal_record = true
+        syn.member_ids.push(target.id)
+        const text = tf('engine.syndicate_recruit', { name: syn.name, recruit: target.name }) as string
+        addFeedRaw(text, 'warning', state.year, state.day)
+        addChronicle(text, state.year, state.day, 'minor')
+      }
+    }
+
+    // Syndicate power erodes market legitimacy and government trust
+    const marketInst = state.institutions.find(i => i.id === 'market')
+    if (marketInst) {
+      marketInst.legitimacy = clamp(marketInst.legitimacy - 0.02, 0, 1)
+    }
+    if (guardInst) {
+      guardInst.legitimacy = clamp(guardInst.legitimacy - 0.01, 0, 1)
+    }
+  }
+
+  // ── Dissolution ────────────────────────────────────────────────────────────
+  state.syndicates = state.syndicates.filter(syn => {
+    if (syn.member_ids.length < 2) {
+      const text = tf('engine.syndicate_dissolved', { name: syn.name }) as string
+      addChronicle(text, state.year, state.day, 'major')
+      addFeedRaw(text, 'info', state.year, state.day)
+      return false
+    }
+    return true
+  })
+}
+
+
 // When political pressure is high and drift is significant, a referendum is
 // automatically proposed based on the most pressing crisis. NPCs "vote" based
 // on worldview alignment. After 7 days (168 ticks) it resolves — approved
