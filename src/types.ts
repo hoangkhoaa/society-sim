@@ -194,6 +194,12 @@ export interface NPC {
   capital: number                    // 0–100: owned productive capital
   capital_rents_from: number | null  // NPC id of capital owner (null = self-owned or none found)
   capital_rent_paid: number          // coins/tick currently paying as rent (0 if self-owned)
+
+  // ── Emergency role tracking ───────────────────────────────────────────────
+  // Set when a food/security crisis forces a temporary role reassignment.
+  // Cleared when the NPC reverts, or set to undefined after 90 days (role made permanent).
+  original_role?:       Role    // role held before emergency reassignment
+  emergency_role_tick?: number  // sim tick when the emergency switch happened
 }
 
 // ── Constitution ───────────────────────────────────────────────────────────

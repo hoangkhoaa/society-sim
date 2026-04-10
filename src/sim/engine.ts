@@ -1,6 +1,7 @@
 import type { WorldState, Constitution, NPC, SimEvent, NarrativeEntry, NPCIntervention, ActiveStrike, WorldDelta, InstitutionDelta } from '../types'
 import { createNPC, tickNPC, computeProductivity, RESIDENTIAL_ZONES } from './npc'
 import type { IndividualEvent, TickEventFlags } from './npc'
+import { checkEmergencyRoleReassignment, autoSurvivalRoleShift } from './roles'
 import { buildNetwork, MAX_STRONG_TIES, MAX_WEAK_TIES, MAX_INFO_TIES } from './network'
 import { initInstitutions, clamp, getSeason, getSeasonFactor, SEASON_LABELS, ZONE_ADJACENCY } from './constitution'
 import { addFeedRaw, addChronicle } from '../ui/feed'
@@ -237,6 +238,7 @@ export function tick(state: WorldState): void {
     applyIncomeInequalityEffects(state)
     processInheritance(state)
     checkRegimeEvents(state)
+    checkEmergencyRoleReassignment(state)
     applyTheocracyEffect(state)
     applyCommuneEffect(state)
     checkLegendaryNPCs(state)
@@ -863,18 +865,23 @@ function emitCrisisEvent(state: WorldState): void {
 
 // ── Population Viability & Societal Collapse ─────────────────────────────────
 //
-// Thresholds:
-//   collapse  < 15  — society cannot sustain itself; trigger end-game
-//   critical  < 30  — government dissolves; survival role-shifts begin
-//   survival  < 60  — partial role-shift (scholars/merchants → farmers if food scarce)
-//   normal   >= 60  — everything operates normally
+// Thresholds scale with initial_population (proportional, not absolute):
+//   collapse  < 3%  — society cannot sustain itself; trigger end-game
+//   critical  < 6%  — government dissolves; survival role-shifts begin
+//   survival  < 12% — partial role-shift (scholars/merchants → farmers if food scarce)
+//   normal   >= 12% — everything operates normally
+// Minimum floors (15 / 30 / 60) prevent degenerate edge cases in tiny games.
 
 let lastCollapseWarnDay = -1
 
 function checkPopulationViability(state: WorldState): void {
   const living = state.npcs.filter(n => n.lifecycle.is_alive).length
+  const initPop = state.initial_population ?? 500
+  const collapseThreshold = Math.max(15, Math.round(initPop * 0.03))
+  const criticalThreshold = Math.max(30, Math.round(initPop * 0.06))
+  const survivalThreshold = Math.max(60, Math.round(initPop * 0.12))
 
-  if (living < 15) {
+  if (living < collapseThreshold) {
     if (state.collapse_phase !== 'collapse') {
       state.collapse_phase = 'collapse'
       const text = t('engine.societal_collapse') as string
@@ -894,7 +901,7 @@ function checkPopulationViability(state: WorldState): void {
     return
   }
 
-  if (living < 30) {
+  if (living < criticalThreshold) {
     if (state.collapse_phase === 'normal') {
       // Government dissolves — emit once
       const govText = t('engine.collapse_govfail') as string
@@ -906,8 +913,8 @@ function checkPopulationViability(state: WorldState): void {
     return
   }
 
-  if (living < 60) {
-    state.collapse_phase = living < 30 ? 'critical' : 'normal'
+  if (living < survivalThreshold) {
+    state.collapse_phase = living < criticalThreshold ? 'critical' : 'normal'
     autoSurvivalRoleShift(state, living)
 
     // Emit a warning periodically (not more than once per 5 days)
@@ -922,56 +929,7 @@ function checkPopulationViability(state: WorldState): void {
   state.collapse_phase = 'normal'
 }
 
-let lastRoleShiftDay = -1
-
-/**
- * When population is critically low, NPCs abandon non-essential roles and become farmers
- * or craftsmen to focus on basic survival. Called from checkPopulationViability.
- */
-function autoSurvivalRoleShift(state: WorldState, livingCount: number): void {
-  // Only shift once per day to avoid thrashing
-  if (state.day === lastRoleShiftDay) return
-
-  const living = state.npcs.filter(n => n.lifecycle.is_alive && n.role !== 'child')
-  const farmers = living.filter(n => n.role === 'farmer')
-  const food    = state.macro.food
-
-  // Only shift if food is scarce OR population is critically low
-  const needsMoreFarmers = food < 40 || livingCount < 30
-  if (!needsMoreFarmers) return
-
-  // Determine which roles are "non-essential" for survival
-  // At critical levels (< 30) guards and leaders also shift
-  const nonEssentialRoles = livingCount < 30
-    ? ['scholar', 'merchant', 'guard', 'leader'] as const
-    : ['scholar', 'merchant'] as const
-
-  const shiftCandidates = living.filter(n => (nonEssentialRoles as readonly string[]).includes(n.role))
-  if (shiftCandidates.length === 0) return
-
-  // Don't shift everyone — keep minimum 1 of each essential non-farmer role if population allows
-  const maxShift = Math.ceil(shiftCandidates.length * 0.30)
-  let shifted = 0
-
-  for (const npc of shiftCandidates) {
-    if (shifted >= maxShift) break
-    // Don't shift if there are already enough farmers (> 40% of workforce)
-    const farmerRatio = (farmers.length + shifted) / Math.max(living.length, 1)
-    if (farmerRatio >= 0.40) break
-
-    npc.role = 'farmer'
-    // Reset income so their productivity curve restarts as a farmer
-    npc.daily_income = npc.daily_income * 0.5
-    shifted++
-  }
-
-  if (shifted > 0) {
-    lastRoleShiftDay = state.day
-    const text = tf('engine.collapse_roleshift', { count: shifted }) as string
-    addFeedRaw(text, 'warning', state.year, state.day)
-    addChronicle(text, state.year, state.day, 'major')
-  }
-}
+// autoSurvivalRoleShift and its throttle state have moved to roles.ts
 
 // ── Lifecycle Events (birth / marriage) ─────────────────────────────────────
 
@@ -2331,7 +2289,7 @@ function applyIncomeTax(state: WorldState): void {
   const taxRate = getIncomeTaxRate(state)
   if (taxRate <= 0) return
 
-  const EXEMPT_THRESHOLD = 5   // daily_income below this is exempt
+  const EXEMPT_THRESHOLD = 1   // daily_income below this is exempt
 
   for (const npc of state.npcs) {
     if (!npc.lifecycle.is_alive || npc.role === 'child') continue
@@ -2363,9 +2321,9 @@ function applyIncomeTax(state: WorldState): void {
 
 // Wages calibrated to match market income (~daily_income of a farmer/craftsman at avg productivity).
 // farmer: 0.12 * 0.7 * 24 ≈ 2.0/day, craftsman: 0.14 * 0.7 * 24 ≈ 2.4/day
-// Guard earns slightly above farmer (dangerous work), leader earns more (administrative burden).
-const GOVT_WAGE_GUARD  = 2.5
-const GOVT_WAGE_LEADER = 4.0
+// Guard earns above farmer (dangerous work); leader earns significantly more (administrative burden + authority).
+const GOVT_WAGE_GUARD  = 3.5
+const GOVT_WAGE_LEADER = 6.0
 
 function applyGovernmentWages(state: WorldState): void {
   // No wages when government has dissolved due to population collapse
@@ -2386,9 +2344,9 @@ function applyGovernmentWages(state: WorldState): void {
   for (const npc of guards) {
     const wage = GOVT_WAGE_GUARD * payRatio
     npc.wealth = clamp(npc.wealth + wage, 0, 50000)
-    // daily_income for govt roles: EMA toward actual daily wage (cadence matches market NPC EMA).
-    // wage is already in coins/day; multiply by 24 to match the grossIncome*24 scale in wealthTick.
-    npc.daily_income = npc.daily_income * 0.99 + wage * 24 * 0.01
+    // daily_income for govt roles: EMA toward actual daily wage.
+    // wage is already in coins/day; no ×24 needed (this is a per-day update, not per-tick).
+    npc.daily_income = npc.daily_income * 0.99 + wage * 0.01
     if (payRatio < 0.5) {
       npc.fear      = clamp(npc.fear + 5, 0, 100)
       npc.grievance = clamp(npc.grievance + 3, 0, 100)
@@ -2397,7 +2355,7 @@ function applyGovernmentWages(state: WorldState): void {
   for (const npc of leaders) {
     const wage = GOVT_WAGE_LEADER * payRatio
     npc.wealth = clamp(npc.wealth + wage, 0, 50000)
-    npc.daily_income = npc.daily_income * 0.99 + wage * 24 * 0.01
+    npc.daily_income = npc.daily_income * 0.99 + wage * 0.01
     if (payRatio < 0.5) {
       npc.fear      = clamp(npc.fear + 3, 0, 100)
       npc.grievance = clamp(npc.grievance + 5, 0, 100)
@@ -2642,14 +2600,17 @@ function processInheritance(state: WorldState): void {
 let lastCapitalistCrashTick = -9999
 let lastPeasantRevoltTick   = -9999
 let lastRationingCrisisTick = -9999
+let lastHeresyCrisisTick    = -9999
 
 function checkRegimeEvents(state: WorldState): void {
   const c = state.constitution
 
   // ── Capitalist market crash ──────────────────────────────────────────────
   // High market freedom + entrenched inequality → speculative bubble bursts periodically.
-  if (c.market_freedom > 0.65 && state.macro.gini > 0.50
-      && state.tick - lastCapitalistCrashTick > 90 * 24
+  // Raised gini threshold (0.55) and cooldown (120d) so crashes don't fire before the
+  // economy has had time to develop genuine speculative inequality.
+  if (c.market_freedom > 0.65 && state.macro.gini > 0.55
+      && state.tick - lastCapitalistCrashTick > 120 * 24
       && Math.random() < 0.003) {
     lastCapitalistCrashTick = state.tick
 
@@ -2679,9 +2640,10 @@ function checkRegimeEvents(state: WorldState): void {
 
   // ── Feudal peasant revolt ────────────────────────────────────────────────
   // High gini + high state power + high farmer grievance → periodic levy revolts.
+  // Probability raised to 1.2%/day so revolts fire reliably when conditions are met.
   if (c.gini_start > 0.55 && c.state_power > 0.60
       && state.tick - lastPeasantRevoltTick > 60 * 24
-      && Math.random() < 0.004) {
+      && Math.random() < 0.012) {
     const farmers = state.npcs.filter(n => n.lifecycle.is_alive && n.role === 'farmer')
     const avgGrievance = farmers.reduce((s, n) => s + n.grievance, 0) / Math.max(farmers.length, 1)
 
@@ -2705,10 +2667,10 @@ function checkRegimeEvents(state: WorldState): void {
   }
 
   // ── Socialist rationing crisis ───────────────────────────────────────────
-  // High state power + food shortage → forced emergency rationing declaration.
-  // If reserves are sufficient: hunger relief + trust boost.
-  // If reserves are depleted:   legitimacy collapse.
-  if (c.state_power > 0.70 && state.macro.food < 35
+  // High state power + severe food shortage → forced emergency rationing declaration.
+  // Threshold lowered to food < 25 (was 35) to differentiate from normal daily rationing
+  // (applyStateRationing handles the 25–35 range without narrative weight).
+  if (c.state_power > 0.70 && state.macro.food < 25
       && state.tick - lastRationingCrisisTick > 30 * 24
       && Math.random() < 0.005) {
     lastRationingCrisisTick = state.tick
@@ -2739,6 +2701,51 @@ function checkRegimeEvents(state: WorldState): void {
       if (govInst) govInst.legitimacy = clamp(govInst.legitimacy - 0.12, 0, 1)
 
       const text = t('engine.rationing_crisis') as string
+      addChronicle(text, state.year, state.day, 'critical')
+      addFeedRaw(text, 'critical', state.year, state.day)
+    }
+  }
+
+  // ── Theocracy: Heresy outbreak ───────────────────────────────────────────
+  // Rising political pressure in a theocratic society exposes hidden dissenters.
+  // The state cracks down: dissenters flee or mobilize, loyalists are reassured,
+  // moderates grow quietly fearful. Unlike daily scholar suppression, this is a
+  // visible crisis that harms government legitimacy and leaves a lasting scar.
+  if (c.state_power >= 0.70 && c.base_trust >= 0.65 && c.network_cohesion >= 0.70
+      && state.macro.political_pressure > 55
+      && state.tick - lastHeresyCrisisTick > 60 * 24
+      && Math.random() < 0.006) {
+    const dissidents = state.npcs.filter(n =>
+      n.lifecycle.is_alive &&
+      n.worldview.authority_trust < 0.35 &&
+      n.grievance > 40,
+    )
+    if (dissidents.length >= 5) {
+      lastHeresyCrisisTick = state.tick
+
+      for (const npc of dissidents) {
+        npc.fear         = clamp(npc.fear         + 20, 0, 100)
+        npc.isolation    = clamp(npc.isolation    + 10, 0, 100)
+        npc.action_state = Math.random() < 0.55 ? 'fleeing' : 'organizing'
+        npc.trust_in.government.intention = clamp(npc.trust_in.government.intention - 0.05, 0, 1)
+      }
+
+      // Broader population: loyalists feel vindicated; moderates grow fearful
+      const dissident_ids = new Set(dissidents.map(n => n.id))
+      for (const npc of state.npcs) {
+        if (!npc.lifecycle.is_alive || dissident_ids.has(npc.id)) continue
+        if (npc.worldview.authority_trust > 0.55) {
+          npc.trust_in.government.intention = clamp(npc.trust_in.government.intention + 0.01, 0, 1)
+        } else {
+          npc.fear = clamp(npc.fear + 5, 0, 100)
+        }
+      }
+
+      const govInst = state.institutions.find(i => i.id === 'government')
+      if (govInst) govInst.legitimacy = clamp(govInst.legitimacy - 0.05, 0, 1)
+
+      const n_d = dissidents.length
+      const text = tf('engine.heresy_outbreak', { n: n_d }) as string
       addChronicle(text, state.year, state.day, 'critical')
       addFeedRaw(text, 'critical', state.year, state.day)
     }

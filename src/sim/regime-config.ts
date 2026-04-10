@@ -172,7 +172,7 @@ export function getRegimeProfile(c: Constitution): RegimeProfile {
       variant, capitalMode,
       featureDefaults: { enable_human_elections: false, enable_press_ai: false },
       lockedFeatures:  ['enable_human_elections'],
-      npcTweaks: { fear_bonus: 28, isolation_bonus: 12, class_solidarity_bonus: 15, grievance_bonus: 20 },
+      npcTweaks: { fear_bonus: 18, isolation_bonus: 8, class_solidarity_bonus: 10, grievance_bonus: 10 },
       simRestrictions: {
         info_spread_mult: 0.15,   // information near-blackout; only propaganda
         info_ties_cap:    0.35,   // population atomized; distrust prevents connections

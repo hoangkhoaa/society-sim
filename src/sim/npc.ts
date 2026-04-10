@@ -273,8 +273,9 @@ function initialCapital(role: Role, constitution: Constitution): number {
 
   const profile = getRegimeProfile(constitution)
 
-  // State ownership (marxist): no private capital
-  if (profile.capitalMode === 'state') return 0
+  // State ownership (marxist): state provides tools & equipment to all workers.
+  // Workers don't own capital privately, but have access to state means of production.
+  if (profile.capitalMode === 'state') return role === 'leader' ? randInt(15, 30) : randInt(8, 20)
 
   // Collective: flat small share for everyone (commune / socialist)
   if (profile.capitalMode === 'collective') {
@@ -572,11 +573,19 @@ function applyResistanceBehavior(npc: NPC, state: WorldState, flags: TickEventFl
     npc.daily_income *= (1 - tradeResist * 0.02)
   }
 
-  // Food crisis → hoarding: NPCs eat less (hunger decays slower) but gain stress
-  if (m.food < 25 && npc.hunger > 30) {
-    npc.hunger = clamp(npc.hunger - 0.15, 0, 100)
+  // Food crisis → universal fear/stress (everyone is anxious when public supply fails)
+  // Hoarding benefit is wealth-gated: only those with private reserves can supplement their diet.
+  // Poor NPCs have nothing to hoard; their situation is entirely captured by Fix A (wealthFoodMod).
+  if (m.food < 25) {
     npc.stress = clamp(npc.stress + 0.3, 0, 100)
     npc.fear   = clamp(npc.fear   + 0.2, 0, 100)
+    // Private hoarding: only meaningful above comfortable wealth (wealthNorm > 1.0)
+    // Scales with surplus wealth — a lord can hoard much more than a middle-class artisan
+    const wealthNorm = clamp(npc.wealth / 150, 0, 2.0)
+    if (wealthNorm > 1.0 && npc.hunger > 30) {
+      const hoardBonus = (wealthNorm - 1.0) * 0.15   // 0 at wealth=150, 0.15 at wealth≥300
+      npc.hunger = clamp(npc.hunger - hoardBonus, 0, 100)
+    }
   }
 
   // Government crackdown (high guard power + low individual rights) → fear-driven compliance OR defiance
@@ -771,13 +780,31 @@ function decayNeeds(npc: NPC, state: WorldState): void {
     npc.exhaustion += (baseMetabolic + actionRate) * ageMod * sickMod
   }
 
-  // Graduated food recovery when working: more food → better hunger reduction
-  // Rates rebalanced to avoid binary feast/famine oscillation (was 4× asymmetric)
-  const hungerRecovery = foodLevel > 60 ? 0.8
-    : foodLevel > 30 ? 0.55
-    : foodLevel > 10 ? 0.25
+  // All NPCs eat when food is available.
+  // In equal societies (high safety_net) food is rationed uniformly.
+  // In stratified societies (low safety_net) wealth determines access during scarcity:
+  //   - lords/wealthy eat from private stores even in shortages
+  //   - serfs/destitute get almost nothing when public supply runs low
+  // When food is plentiful (>60%) class distinctions disappear — there's enough for all.
+  const inequalityEffect = 1.0 - state.constitution.safety_net  // 0 = equal dist., 1 = fully stratified
+  const wealthNorm       = clamp(npc.wealth / 150, 0, 2.0)      // 0 = destitute, 1 = comfortable, 2 = wealthy
+  // Modifier to food recovery rate based on wealth position
+  const wealthFoodMod = clamp(
+    foodLevel > 60
+      ? 1.0                                                                // plentiful → equal access
+      : foodLevel > 30
+      ? 1.0 + (wealthNorm - 1.0) * 0.35 * inequalityEffect               // moderate scarcity
+      : 1.0 + (wealthNorm - 1.0) * 0.55 * inequalityEffect,              // severe scarcity
+    0.05, 2.0,
+  )
+
+  const baseRecovery = foodLevel > 60 ? 0.55
+    : foodLevel > 30 ? 0.38
+    : foodLevel > 10 ? 0.18
     : 0
-  if (npc.action_state === 'working' && hungerRecovery > 0) npc.hunger -= hungerRecovery
+  const workBonus = npc.action_state === 'working' ? 0.25 : 0
+  const hungerRecovery = (baseRecovery + workBonus) * wealthFoodMod
+  if (hungerRecovery > 0) npc.hunger -= hungerRecovery
 
   // Isolation changes by action state:
   // Working = structured daily contact with coworkers → mild reduction
@@ -1353,9 +1380,9 @@ function wealthTick(npc: NPC, state: WorldState): void {
   }
 
   // Daily income: exponential moving average of gross daily earnings.
-  // Bug fix: previously used Max(0, net) which showed 0 whenever net was negative.
-  // Now uses gross (always ≥ 0) so income reflects actual work output.
-  npc.daily_income = npc.daily_income * 0.99 + grossIncome * 24
+  // EMA of daily income (coins/day). Factor 0.01 matches the govt wages formula so
+  // both market and state workers sit on the same scale: converges to grossIncome × 24.
+  npc.daily_income = npc.daily_income * 0.99 + grossIncome * 24 * 0.01
 
   // ── Shadow market (planned economies, criminals only) ─────────────────
   // Criminal NPCs in low-market-freedom societies earn illicit income by
@@ -1840,6 +1867,47 @@ const TRUST_DELTAS: Record<TrustEvent, { competence: number; intention: number }
   helped_me:        { competence: +0.02, intention: +0.04 },
   harmed_me:        { competence: -0.08, intention: -0.12 },
   silent_in_crisis: { competence: -0.04, intention: -0.06 },
+}
+
+// ── Role switching helpers ─────────────────────────────────────────────────
+// Used by roles.ts for emergency reassignments and crisis reversions.
+// Encapsulated here because they need access to private helpers
+// (assignZone, tOccVariant, inferMotivationType, generateDescription).
+
+/**
+ * Switch an NPC to a new role, preserving their original role for later reversion.
+ * Safe to call multiple times — original_role is only set on the first call.
+ */
+export function switchNPCRole(npc: NPC, newRole: Role, state: WorldState): void {
+  if (npc.original_role === undefined) {
+    npc.original_role       = npc.role
+    npc.emergency_role_tick = state.tick
+  }
+  npc.role            = newRole
+  npc.zone            = assignZone(newRole)
+  npc.home_zone       = npc.zone
+  npc.occupation      = tOccVariant(newRole, getRegimeProfile(state.constitution).variant)
+  npc.work_motivation = inferMotivationType(newRole, state.constitution, npc.id)
+  npc.daily_income   *= 0.5   // learning curve — income resets as they adapt to new role
+  npc.description     = generateDescription(npc)
+}
+
+/**
+ * Revert an NPC to their pre-emergency role.
+ * No-op if NPC has no saved original_role.
+ */
+export function revertNPCRole(npc: NPC, state: WorldState): void {
+  if (npc.original_role === undefined) return
+  const orig          = npc.original_role
+  npc.role            = orig
+  npc.zone            = assignZone(orig)
+  npc.home_zone       = npc.zone
+  npc.occupation      = tOccVariant(orig, getRegimeProfile(state.constitution).variant)
+  npc.work_motivation = inferMotivationType(orig, state.constitution, npc.id)
+  npc.daily_income   *= 0.7   // partial income recovery — skills haven't fully atrophied
+  npc.original_role        = undefined
+  npc.emergency_role_tick  = undefined
+  npc.description     = generateDescription(npc)
 }
 
 export function updateTrust(
