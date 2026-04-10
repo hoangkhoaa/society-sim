@@ -1,5 +1,6 @@
 import type { Lang } from '../i18n'
 import type { AIConfig, WorldState } from '../types'
+import type { OccVariant } from '../sim/regime-config'
 import { pick, type Localized } from './common'
 
 export interface PressScan {
@@ -248,22 +249,155 @@ export function scandalHeadline(lang: Lang): string {
 
 // ── Redaction note ────────────────────────────────────────────────────────────
 
-export function redactionNoteText(lang: Lang, censorshipProb: number): string {
+export function redactionNoteText(lang: Lang, censorshipProb: number, variant: OccVariant = 'default'): string {
+  // High-severity censorship: full propaganda denial
   if (censorshipProb >= 0.70) {
+    if (variant === 'warlord') {
+      return pick(lang, {
+        en: '🔇 [CONFISCATED BY MILITARY ORDER. DISTRIBUTION OF THIS DOCUMENT IS PUNISHABLE BY DEATH.]',
+        vi: '🔇 [BỊ TỊCH THU THEO LỆNH QUÂN SỰ. PHÂN PHÁT TÀI LIỆU NÀY CÓ THỂ BỊ XỬ TỬ.]',
+      })
+    }
+    if (variant === 'collective') {
+      return pick(lang, {
+        en: '🔇 [WITHDRAWN — This publication contains counter-revolutionary propaganda incompatible with the collective good.]',
+        vi: '🔇 [THU HỒI — Ấn phẩm này chứa tuyên truyền phản cách mạng, không phù hợp với lợi ích tập thể.]',
+      })
+    }
+    if (variant === 'theocracy') {
+      return pick(lang, {
+        en: '🔇 [CONDEMNED — This text has been deemed blasphemous and suppressed by order of the Holy Authority.]',
+        vi: '🔇 [BỊ KHAI TRỪ — Văn bản này bị xem là báng bổ và bị đình chỉ theo lệnh của Thẩm quyền Thánh.]',
+      })
+    }
+    if (variant === 'feudal') {
+      return pick(lang, {
+        en: '🔇 [BY DECREE — This parchment is condemned and confiscated by noble authority. Sedition shall not be tolerated.]',
+        vi: '🔇 [THEO SẮC LỆNH — Tờ giấy này bị kết tội và tịch thu bởi thẩm quyền quý tộc. Kẻ kích động loạn sẽ bị trừng phạt.]',
+      })
+    }
+    if (variant === 'capitalist') {
+      return pick(lang, {
+        en: '🔇 [REMOVED — Content flagged for unverified claims. Under review by the Platform Trust & Safety team.]',
+        vi: '🔇 [ĐÃ XÓA — Nội dung bị gắn cờ do có thông tin chưa được xác minh. Đang được xem xét bởi đội Tin cậy & An toàn Nền tảng.]',
+      })
+    }
+    if (variant === 'technocracy') {
+      return pick(lang, {
+        en: '🔇 [SUSPENDED — Algorithmic review detected policy violations. Content score: below threshold. Appeals require verified credentials.]',
+        vi: '🔇 [BỊ ĐÌNH CHỈ — Hệ thống thuật toán phát hiện vi phạm chính sách. Điểm nội dung: dưới ngưỡng. Kháng cáo yêu cầu thông tin xác nhận đã được duyệt.]',
+      })
+    }
     return pick(lang, {
       en: '🔇 [REMOVED — THIS ARTICLE CONTAINS MISINFORMATION. NO SUCH EVENTS OCCURRED. SOCIETY IS STABLE AND PROGRESSING.]',
       vi: '🔇 [ĐÃ XÓA — BÀI VIẾT NÀY CHỨA THÔNG TIN SAI LỆCH. KHÔNG CÓ SỰ KIỆN NÀO NHƯ VẬY. XÃ HỘI ỔN ĐỊNH VÀ PHÁT TRIỂN.]',
     })
   }
+  // Moderate censorship: official removal notice with era-appropriate language
   if (censorshipProb >= 0.40) {
+    if (variant === 'warlord') {
+      return pick(lang, {
+        en: '🔇 [Removed by military command. Access restricted for security reasons.]',
+        vi: '🔇 [Bị gỡ xuống theo lệnh quân sự. Quyền truy cập bị hạn chế vì lý do an ninh.]',
+      })
+    }
+    if (variant === 'collective') {
+      return pick(lang, {
+        en: '🔇 [Withdrawn for containing content contrary to the interests of the collective.]',
+        vi: '🔇 [Bị thu hồi vì chứa nội dung trái với lợi ích tập thể.]',
+      })
+    }
+    if (variant === 'theocracy') {
+      return pick(lang, {
+        en: '🔇 [Removed by order of the clergy for content contrary to approved doctrine.]',
+        vi: '🔇 [Bị gỡ xuống theo lệnh của giáo đoàn vì nội dung trái với giáo lý được phê duyệt.]',
+      })
+    }
+    if (variant === 'feudal') {
+      return pick(lang, {
+        en: '🔇 [Confiscated by order of the lord. Spreading seditious words is forbidden.]',
+        vi: '🔇 [Bị tịch thu theo lệnh của lãnh chúa. Lan truyền ngôn từ kích động là điều bị cấm.]',
+      })
+    }
+    if (variant === 'capitalist') {
+      return pick(lang, {
+        en: '🔇 [This content has been removed following a legal notice from relevant authorities.]',
+        vi: '🔇 [Nội dung này đã bị gỡ xuống theo yêu cầu pháp lý từ cơ quan có thẩm quyền.]',
+      })
+    }
+    if (variant === 'technocracy') {
+      return pick(lang, {
+        en: '🔇 [Content removed. Automated moderation flagged this post for review under Information Quality Protocol §7.]',
+        vi: '🔇 [Nội dung đã bị gỡ. Hệ thống kiểm duyệt tự động gắn cờ bài viết này theo Quy trình Chất lượng Thông tin §7.]',
+      })
+    }
     return pick(lang, {
       en: '🔇 [This article has been removed by order of the authorities on grounds of public security.]',
       vi: '🔇 [Bài viết này đã bị gỡ xuống theo lệnh của nhà chức trách vì lý do an ninh công cộng.]',
     })
   }
+  // Low censorship: minimal notice
+  if (variant === 'capitalist') {
+    return pick(lang, {
+      en: '🔇 [Post removed. Community guidelines violation.]',
+      vi: '🔇 [Bài đã bị gỡ. Vi phạm nguyên tắc cộng đồng.]',
+    })
+  }
+  if (variant === 'technocracy') {
+    return pick(lang, {
+      en: '🔇 [Removed by automated review.]',
+      vi: '🔇 [Bị gỡ bởi hệ thống xét duyệt tự động.]',
+    })
+  }
   return pick(lang, {
     en: '🔇 [Article removed.]',
     vi: '🔇 [Bài viết đã bị gỡ xuống.]',
+  })
+}
+
+// ── "Too late to censor" leak escape note ─────────────────────────────────────
+// Shown when censorship was attempted but the story had already spread too far.
+
+export function censorshipEscapedText(lang: Lang, variant: OccVariant = 'default'): string {
+  if (variant === 'warlord') {
+    return pick(lang, {
+      en: '⚠️ [Suppression order issued — but troops could not contain the spread in time.]',
+      vi: '⚠️ [Lệnh trấn áp đã ban ra — nhưng binh lính không thể ngăn chặn kịp thời.]',
+    })
+  }
+  if (variant === 'collective') {
+    return pick(lang, {
+      en: '⚠️ [Withdrawal ordered — article had already circulated beyond party channels.]',
+      vi: '⚠️ [Lệnh thu hồi đã ban ra — bài viết đã lan rộng ra ngoài kênh của đảng.]',
+    })
+  }
+  if (variant === 'theocracy') {
+    return pick(lang, {
+      en: '⚠️ [The Holy Authority sought to suppress this text — but it had already passed from hand to hand among the faithful.]',
+      vi: '⚠️ [Thẩm quyền Thánh cố gắng dập tắt văn bản này — nhưng nó đã lưu truyền trong dân chúng.]',
+    })
+  }
+  if (variant === 'feudal') {
+    return pick(lang, {
+      en: '⚠️ [The lord\'s men were sent to confiscate these words — yet too many mouths had already spoken them.]',
+      vi: '⚠️ [Tay chân của lãnh chúa được phái đi tịch thu — nhưng đã có quá nhiều người biết đến.]',
+    })
+  }
+  if (variant === 'capitalist') {
+    return pick(lang, {
+      en: '⚠️ [Takedown request submitted — content had already been reshared widely before action could be taken.]',
+      vi: '⚠️ [Yêu cầu gỡ xuống đã gửi — nội dung đã được chia sẻ rộng rãi trước khi kịp xử lý.]',
+    })
+  }
+  if (variant === 'technocracy') {
+    return pick(lang, {
+      en: '⚠️ [Automated removal triggered — propagation threshold exceeded before takedown completed.]',
+      vi: '⚠️ [Lệnh gỡ tự động đã khởi động — ngưỡng lan truyền bị vượt quá trước khi hoàn thành việc gỡ xuống.]',
+    })
+  }
+  return pick(lang, {
+    en: '⚠️ [Removal was attempted — but the information had already spread too widely to suppress.]',
+    vi: '⚠️ [Đã cố gắng gỡ xuống — nhưng thông tin đã lan ra quá rộng để có thể kiểm soát.]',
   })
 }
 

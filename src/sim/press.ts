@@ -29,8 +29,9 @@ import {
   redactionNoteText,
   censorshipLeakContent,
   suppressedLabel,
+  censorshipEscapedText,
 } from '../local/press'
-import { getRegimeProfile } from './regime-config'
+import { getRegimeProfile, type OccVariant } from './regime-config'
 import { clamp } from './constitution'
 
 // ── Snapshot of societal signals for condition matching ─────────────────────
@@ -184,14 +185,63 @@ function checkInvestigativeScandal(
 // monitoring → removal order, letting the player see the headline before it vanishes.
 
 /** Probability that a headline of this severity gets censored for the given regime. */
-function censorProbability(severity: 'info' | 'warning' | 'critical', censorshipProb: number): number {
+function censorProbability(severity: 'info' | 'warning' | 'critical', censorshipProb: number, variant: OccVariant): number {
   if (censorshipProb < 0.05) return 0          // free press — no censorship
-  if (severity === 'info')   return 0           // positive / neutral news is never suppressed
-  if (severity === 'warning') return censorshipProb * 0.65
-  return Math.min(0.95, censorshipProb * 1.15) // critical: above-base probability
+  // Warlord / collective regimes also suppress neutral-seeming 'info' items
+  // that could undermine the official narrative
+  if (severity === 'info') {
+    if (variant === 'warlord')   return censorshipProb * 0.40
+    if (variant === 'collective') return censorshipProb * 0.20
+    return 0                                   // free/moderate regimes: neutral news left alone
+  }
+  let base: number
+  if (severity === 'warning') {
+    // Authoritarian regimes act faster and harder on warning content
+    if (variant === 'warlord')    base = Math.min(0.95, censorshipProb * 1.10)
+    else if (variant === 'collective') base = Math.min(0.90, censorshipProb * 0.90)
+    else if (variant === 'feudal')     base = censorshipProb * 0.70
+    else if (variant === 'theocracy')  base = censorshipProb * 0.75
+    else base = censorshipProb * 0.65               // default / capitalist / technocracy
+  } else {
+    // critical severity: all regimes lean toward suppression; authoritarian ones especially so
+    if (variant === 'warlord')         base = Math.min(0.98, censorshipProb * 1.25)
+    else if (variant === 'collective') base = Math.min(0.95, censorshipProb * 1.20)
+    else if (variant === 'feudal')     base = Math.min(0.90, censorshipProb * 1.15)
+    else if (variant === 'theocracy')  base = Math.min(0.90, censorshipProb * 1.15)
+    else base = Math.min(0.95, censorshipProb * 1.15) // default
+  }
+  // Per-article luck jitter: ±25% of the base rate (simulates bureaucratic efficiency variance)
+  const jitter = (Math.random() - 0.5) * 0.25 * base
+  return clamp(base + jitter, 0, 0.98)
 }
 
-// redactionNoteText(lang, censorshipProb) is imported from local/press
+// redactionNoteText(lang, censorshipProb, variant) is imported from local/press
+
+/**
+ * Probability that a censorship attempt fails because the story has already
+ * leaked too widely by the time the takedown order arrives.
+ * Factors: open information networks, high political pressure, critical severity,
+ * and a base random chance representing "viral spread before takedown."
+ */
+function leakEscapeProbability(
+  severity: 'info' | 'warning' | 'critical',
+  infoSpreadMult: number,
+  politicalPressure: number,
+  variant: OccVariant,
+): number {
+  // Base escape chance — critical stories spread faster and are harder to kill
+  let base = severity === 'critical' ? 0.20 : severity === 'warning' ? 0.12 : 0.06
+  // Open information networks let news spread faster than censors can act
+  base += infoSpreadMult * 0.15
+  // Political pressure = more people paying attention / sharing
+  base += Math.max(0, politicalPressure - 40) / 100 * 0.20
+  // Authoritarian regimes invest more in rapid suppression — harder to escape
+  if (variant === 'warlord')         base *= 0.50
+  else if (variant === 'collective') base *= 0.60
+  else if (variant === 'feudal')     base *= 0.65
+  else if (variant === 'theocracy')  base *= 0.70
+  return clamp(base, 0, 0.70)
+}
 
 /** Apply censorship effect: visual redaction + NPC leak + rumor. */
 function applyCensorship(
@@ -199,13 +249,44 @@ function applyCensorship(
   entryId: string,
   headline: { text: string; severity: 'info' | 'warning' | 'critical' },
   censorshipProb: number,
+  variant: OccVariant,
   lang: Lang,
 ): void {
-  const note = redactionNoteText(lang, censorshipProb)
+  const restrictions = getRegimeProfile(state.constitution).simRestrictions
 
   // Delay visual censorship 2–6 real seconds (government monitoring → takedown order)
   const delayMs = 2000 + Math.random() * 4000
-  setTimeout(() => censorFeedEntry(entryId, note), delayMs)
+  setTimeout(() => {
+    // ── "Too late" check: did the story escape before censors arrived? ───────
+    const escapeProbNow = leakEscapeProbability(
+      headline.severity,
+      restrictions.info_spread_mult,
+      state.macro.political_pressure,
+      variant,
+    )
+    if (Math.random() < escapeProbNow) {
+      // Story spread too far — censorship fails; mark with escape note instead
+      const escapeNote = censorshipEscapedText(lang, variant)
+      censorFeedEntry(entryId, escapeNote)
+      // Boost NPC effects: seeing a failed suppression fuels trust collapse
+      const living = state.npcs.filter(n => n.lifecycle.is_alive)
+      const witnessCount = Math.max(1, Math.round(living.length * 0.10))
+      const witnesses = [...living]
+        .sort((a, b) => b.influence_score - a.influence_score)
+        .slice(0, witnessCount)
+      for (const npc of witnesses) {
+        npc.dissonance_acc = clamp(npc.dissonance_acc + 6, 0, 100)
+        npc.grievance      = clamp(npc.grievance + 5, 0, 100)
+        // Authority loses credibility when suppression visibly fails
+        npc.worldview.authority_trust = clamp(npc.worldview.authority_trust - 0.04, 0, 1)
+      }
+      return
+    }
+
+    // Censorship succeeds — apply normal redaction
+    const note = redactionNoteText(lang, censorshipProb, variant)
+    censorFeedEntry(entryId, note)
+  }, delayMs)
 
   // NPCs who "witnessed" the article before removal: opinion leaders + info-hub NPCs
   const living = state.npcs.filter(n => n.lifecycle.is_alive)
@@ -293,7 +374,9 @@ export async function runPressCycle(
     if (scandal) headlines.unshift({ text: scandal.text, severity: scandal.severity })
 
     // ── Censorship evaluation ───────────────────────────────────────────────
-    const restrictions  = getRegimeProfile(state.constitution).simRestrictions
+    const regimeProfile = getRegimeProfile(state.constitution)
+    const restrictions  = regimeProfile.simRestrictions
+    const variant       = regimeProfile.variant
     const lang          = getLang()
     const cProb         = restrictions.censorship_prob
 
@@ -311,7 +394,7 @@ export async function runPressCycle(
       const feedSev = h.severity === 'critical' ? 'critical' : h.severity === 'warning' ? 'warning' : 'info'
       const entryId = addFeedRaw(h.text, feedSev, state.year, state.day)
 
-      const willCensor = Math.random() < censorProbability(h.severity, cProb)
+      const willCensor = Math.random() < censorProbability(h.severity, cProb, variant)
 
       // Chronicle is the permanent historical record — marks censored articles
       const chronicleText = willCensor
@@ -325,7 +408,7 @@ export async function runPressCycle(
 
     // Apply censorship with delay (visual takedown) + NPC effects
     for (const { h, entryId, willCensor } of published) {
-      if (willCensor) applyCensorship(state, entryId, h, cProb, lang)
+      if (willCensor) applyCensorship(state, entryId, h, cProb, variant, lang)
     }
 
     // Spawn a rumor from critical headlines

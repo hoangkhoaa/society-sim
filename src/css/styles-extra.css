@@ -503,7 +503,7 @@ body[data-theme='light'] .labor-vals { color: #8a9fb4; }
   background: rgba(16, 18, 24, 0.94);
   border: 1px solid #2a2a30;
   border-radius: 8px;
-  padding: 12px 14px 10px;
+  padding: 12px 28px 10px 14px;
   z-index: 30;
   font-size: 12px;
   line-height: 1.55;
@@ -515,6 +515,21 @@ body[data-theme='light'] .labor-vals { color: #8a9fb4; }
 .story-card.critical { border-color: rgba(226,75,75,0.55); box-shadow: 0 0 18px rgba(226,75,75,0.25); }
 .story-card.fade-out { animation: story-card-out 0.35s ease forwards; }
 .story-card-icon  { font-size: 16px; margin-bottom: 3px; display: block; }
+.story-card-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  background: none;
+  border: none;
+  color: #666;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.story-card-close:hover { color: #ccc; }
+body[data-theme='light'] .story-card-close { color: #9aacbe; }
+body[data-theme='light'] .story-card-close:hover { color: #2a3a50; }
 .story-card-label {
   font-size: 9px;
   font-weight: 700;

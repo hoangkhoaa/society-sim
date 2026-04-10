@@ -39,17 +39,27 @@ export function showStoryCard(
   const textEl = document.createElement('p')
   textEl.textContent = text.length > 160 ? text.slice(0, 157) + '…' : text
 
-  card.append(iconEl, labelEl, textEl)
+  const closeBtn = document.createElement('button')
+  closeBtn.className = 'story-card-close'
+  closeBtn.textContent = '×'
+  closeBtn.setAttribute('aria-label', 'Dismiss')
+
+  function dismiss(): void {
+    if (_cardTimeout !== null) { clearTimeout(_cardTimeout); _cardTimeout = null }
+    card.classList.add('fade-out')
+    card.addEventListener('animationend', () => card.remove(), { once: true })
+    if (_activeCard === card) _activeCard = null
+  }
+
+  closeBtn.addEventListener('click', dismiss)
+  card.append(iconEl, labelEl, textEl, closeBtn)
   container.appendChild(card)
   _activeCard = card
 
   // Auto-dismiss after 8 seconds
   _cardTimeout = setTimeout(() => {
     if (_activeCard === card) {
-      card.classList.add('fade-out')
-      card.addEventListener('animationend', () => card.remove(), { once: true })
-      _activeCard = null
-      _cardTimeout = null
+      dismiss()
     }
   }, 8000)
 }
