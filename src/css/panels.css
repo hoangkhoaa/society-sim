@@ -339,3 +339,34 @@ body[data-theme='light'] .sp-action-btn:hover {
   border-radius: 3px;
   color: #666;
 }
+
+/* ── Pixel character section ───────────────────────────────────────────────── */
+.sp-pixel-section {
+  display: flex;
+  justify-content: center;
+  padding: 12px 12px 8px;
+  background: #080808;
+  border-bottom: 1px solid #1a1a1a;
+}
+.sp-pixel-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.sp-pixel-canvas {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  width: 80px;
+  height: auto;
+  border: 1px solid #1e1e1e;
+  border-radius: 2px;
+  background: #0d0d0d;
+}
+.sp-pixel-state {
+  font-size: 18px;
+  line-height: 1;
+  min-height: 20px;
+}
+body[data-theme='light'] .sp-pixel-section { background: #f0f0f0; }
+body[data-theme='light'] .sp-pixel-canvas  { border-color: #ccc; background: #e8e8e8; }
