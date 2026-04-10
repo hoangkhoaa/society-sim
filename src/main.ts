@@ -1113,6 +1113,88 @@ function updateRumors() {
   overlayLog.innerHTML = `${title}${rows}`
 }
 
+// ── Referendum banner ──────────────────────────────────────────────────────
+
+/** Compute live support % using the same logic as resolveReferendum in engine.ts. */
+function computeReferendumSupport(state: WorldState): number {
+  const ref = state.referendum
+  if (!ref) return 0
+  const living = state.npcs.filter(n => n.lifecycle.is_alive)
+  if (living.length === 0) return 0
+  let supportCount = 0
+  for (const npc of living) {
+    let supports = false
+    switch (ref.field) {
+      case 'safety_net':
+        supports = npc.worldview.collectivism > 0.50 || npc.hunger > 50
+        break
+      case 'individual_rights_floor':
+        supports = npc.worldview.authority_trust < 0.45 || npc.criminal_record
+        break
+      case 'market_freedom':
+        supports = npc.worldview.risk_tolerance > 0.55 || npc.role === 'merchant'
+        break
+      case 'state_power':
+        supports = npc.worldview.authority_trust > 0.60 || npc.role === 'guard' || npc.role === 'leader'
+        break
+    }
+    if (supports) supportCount++
+  }
+  return Math.round(supportCount / living.length * 100)
+}
+
+function renderReferendumBanner(state: WorldState): void {
+  const banner    = document.getElementById('referendum-banner')!
+  const ref       = state.referendum
+
+  if (!ref) {
+    banner.classList.add('hidden')
+    return
+  }
+
+  banner.classList.remove('hidden')
+
+  const supportPct  = computeReferendumSupport(state)
+  const daysLeft    = Math.max(0, Math.ceil((ref.expires_tick - state.tick) / 24))
+
+  const proposalEl  = document.getElementById('ref-proposal')!
+  const supportPctEl = document.getElementById('ref-support-pct')!
+  const supportBarEl = document.getElementById('ref-support-bar')!
+  const countdownEl = document.getElementById('ref-countdown')!
+  const detailsBtn  = document.getElementById('btn-ref-details')!
+
+  proposalEl.textContent  = ref.proposal_text
+  proposalEl.title        = ref.proposal_text
+  supportPctEl.textContent = `${supportPct}%`
+  supportBarEl.style.width = `${supportPct}%`
+  countdownEl.textContent  = tf('referendum.days', { n: daysLeft }) as string
+
+  detailsBtn.textContent = t('referendum.details_btn') as string
+
+  // Replace listener each render to avoid duplicates (using a flag)
+  if (!(detailsBtn as HTMLButtonElement & { _refListenerAttached?: boolean })._refListenerAttached) {
+    ;(detailsBtn as HTMLButtonElement & { _refListenerAttached?: boolean })._refListenerAttached = true
+    detailsBtn.addEventListener('click', () => {
+      if (!world?.referendum) return
+      const r        = world.referendum
+      const sp       = computeReferendumSupport(world)
+      const dl       = Math.max(0, Math.ceil((r.expires_tick - world.tick) / 24))
+      const fl       = t(`referendum.modal_field_${r.field}`) as string
+      const bodyHtml = `
+        <table style="width:100%;border-collapse:collapse;font-size:13px;line-height:1.7">
+          <tr><td style="color:#888;padding-right:12px">${t('referendum.modal_proposal') as string}</td><td><b>${r.proposal_text}</b></td></tr>
+          <tr><td style="color:#888">${t('referendum.modal_field') as string}</td><td>${fl}</td></tr>
+          <tr><td style="color:#888">${t('referendum.modal_current') as string}</td><td>${Math.round(r.current_value * 100)}%</td></tr>
+          <tr><td style="color:#888">${t('referendum.modal_proposed') as string}</td><td><b>${Math.round(r.proposed_value * 100)}%</b></td></tr>
+          <tr><td style="color:#888">${t('referendum.modal_support') as string}</td>
+            <td><b>${sp}%</b> <span style="font-size:11px;color:${sp > 50 ? '#5dcaa5' : '#e24b4b'}">(${sp > 50 ? '✅ passing' : '❌ failing'})</span></td></tr>
+          <tr><td style="color:#888">${t('referendum.modal_expires') as string}</td><td>${tf('referendum.modal_days_remaining', { n: dl }) as string}</td></tr>
+        </table>`
+      showInfo(t('referendum.modal_title') as string, bodyHtml)
+    })
+  }
+}
+
 // ── Consequence scheduler ──────────────────────────────────────────────────
 // Scheduled NPC interventions predicted by AI after an event fires.
 
@@ -1359,6 +1441,8 @@ function startSimLoop() {
       }
     }
     updateTopbar()
+    // Referendum banner — updated every tick to keep support % and countdown live
+    renderReferendumBanner(world)
     // Demographics updates every interval so numbers stay in sync with the sim
     // updateDemographics() also returns live pop count, avoiding a second scan
     const living = updateDemographics()
@@ -2016,6 +2100,10 @@ function applySideChannels(response: Awaited<ReturnType<typeof handlePlayerChat>
     if (wd.quarantine_add?.length)     parts.push(`quarantine added: ${wd.quarantine_add.join(', ')}`)
     if (wd.quarantine_remove?.length)  parts.push(`quarantine lifted: ${wd.quarantine_remove.join(', ')}`)
     if (wd.seed_rumor)                 parts.push(`rumor seeded`)
+    if (wd.trigger_referendum) {
+      const proposal = wd.trigger_referendum.proposal_text
+      addFeedRaw(tf('referendum.triggered', { proposal }) as string, 'political', world.year, world.day)
+    }
     if (parts.length) addFeedRaw(`🌍 ${parts.join(' | ')}`, 'info', world.year, world.day)
   }
   if (response.institution_deltas?.length) {

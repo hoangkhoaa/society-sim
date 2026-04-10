@@ -153,6 +153,20 @@
       <span id="ai-usage" title="AI requests · tokens used">0 req</span>
     </div>
 
+    <!-- Referendum banner — amber strip below topbar, hidden when no referendum active -->
+    <div id="referendum-banner" class="hidden">
+      <span id="ref-icon">🗳️</span>
+      <span id="ref-proposal"></span>
+      <span class="ref-divider">|</span>
+      <span data-i18n="referendum.support">Support</span>
+      <span id="ref-support-pct"></span>
+      <span class="ref-support-bar-wrap"><span id="ref-support-bar"></span></span>
+      <span class="ref-divider">|</span>
+      <span data-i18n="referendum.expires_in">Expires in</span>
+      <span id="ref-countdown"></span>
+      <button id="btn-ref-details" class="btn-ref-details"></button>
+    </div>
+
     <!-- Main area: map + feed -->
     <div id="main-area">
 
