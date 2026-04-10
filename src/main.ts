@@ -1310,6 +1310,8 @@ function updateEconomicsPanel() {
   const effEl = document.getElementById('ep-efficiency')
   const taxPoolEl = document.getElementById('ep-tax-pool')
   const taxRateEl = document.getElementById('ep-tax-rate')
+  const sanitationEl = document.getElementById('ep-sanitation')
+  const hospitalEl = document.getElementById('ep-hospital')
 
   if (gdpEl) gdpEl.textContent = `${Math.round(macro.gdp ?? 0)}`
   if (extractEl) {
@@ -1324,6 +1326,16 @@ function updateEconomicsPanel() {
   }
   if (taxPoolEl) taxPoolEl.textContent = `${Math.round(world.tax_pool ?? 0)}`
   if (taxRateEl) taxRateEl.textContent = `${Math.round(taxRate * 100)}%`
+  if (sanitationEl) {
+    const san = Math.round(world.public_health?.sanitation ?? 0)
+    sanitationEl.textContent = `${san}%`
+    sanitationEl.style.color = san < 20 ? '#e24b4b' : san < 50 ? '#ef9f27' : '#5dcaa5'
+  }
+  if (hospitalEl) {
+    const active = (world.public_health?.hospital_capacity ?? 0) > 0
+    hospitalEl.textContent = active ? '🏥 Active' : 'None'
+    hospitalEl.style.color = active ? '#5dcaa5' : '#aaa'
+  }
 }
 
 // Government cycle: runs once every 15 sim-days.

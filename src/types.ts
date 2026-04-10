@@ -462,6 +462,13 @@ export interface NetworkGraph {
 
 // ── World State ────────────────────────────────────────────────────────────
 
+export interface PublicHealth {
+  sanitation: number            // 0–100: water/waste management quality; decays daily, boosted by scholars
+  hospital_capacity: number     // 0 or 1: unlocked by health_investment policy spending ≥500
+  disease_resistance: number    // 0–1: derived from sanitation (sanitation/100)
+  funded_tick: number           // tick when last health_investment was funded (0 = never)
+}
+
 export interface WorldState {
   tick: number                  // 1 tick = 1 sim hour, 24 ticks = 1 day
   day: number
@@ -499,6 +506,9 @@ export interface WorldState {
 
   // Economy
   tax_pool: number              // government treasury — collected from income tax, spent by regime
+
+  // Public health infrastructure
+  public_health: PublicHealth
 
   // Human-driven governance (opt-in via settings)
   leader_id: number | null      // id of currently elected leader NPC (null = no election yet)

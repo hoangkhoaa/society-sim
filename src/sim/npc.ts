@@ -1601,7 +1601,10 @@ function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[])
 
   // ★ Illness tick-down & death
   if (npc.sick) {
-    npc.sick_ticks--
+    // Public health: hospital_capacity > 0 → sick NPCs in scholar_quarter recover 2× faster
+    const inHospitalZone = npc.zone === 'scholar_quarter' && (state.public_health?.hospital_capacity ?? 0) > 0
+    const recoveryRate = inHospitalZone ? 2 : 1
+    npc.sick_ticks -= recoveryRate
     if (npc.sick_ticks <= 0) {
       npc.sick = false
       events?.push({ type: 'recovery', npc })
@@ -1624,10 +1627,13 @@ function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[])
     const pollutionMult = state.macro.natural_resources < 20
       ? 1 + (20 - state.macro.natural_resources) / 20 * 2.5   // up to 3.5× at resources=0
       : 1.0
+    // Public health: disease_resistance reduces sickness probability
+    const healthMult = 1 - (state.public_health?.disease_resistance ?? 0) * 0.5
     const sicknessP = 0.00006
       * ageIllnessMult(npc.age)
       * medicineMult
       * pollutionMult
+      * healthMult
       * (1 + npc.exhaustion / 80)
       * (1 + npc.hunger / 80)
       * (1 + (state.active_events.some(e => e.type === 'epidemic') ? 4 : 0))
