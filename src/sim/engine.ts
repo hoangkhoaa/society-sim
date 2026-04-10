@@ -4,6 +4,7 @@ import type { IndividualEvent, TickEventFlags } from './npc'
 import { checkEmergencyRoleReassignment, autoSurvivalRoleShift } from './roles'
 import { buildNetwork, MAX_STRONG_TIES, MAX_WEAK_TIES, MAX_INFO_TIES } from './network'
 import { initInstitutions, clamp, getSeason, getSeasonFactor, SEASON_LABELS, ZONE_ADJACENCY } from './constitution'
+import { getRegimeProfile } from './regime-config'
 import { addFeedRaw, addChronicle } from '../ui/feed'
 import { t, tf } from '../i18n'
 import { checkFactions } from './factions'
@@ -54,10 +55,19 @@ export async function initWorld(constitution: Constitution, npcCount: number = M
     if (npcs[id]) npcs[id].info_ties = [...ties]
   }
 
-  // Influence score = normalized strong-tie degree centrality
-  const maxDegree = Math.max(...npcs.map(n => n.strong_ties.length), 1)
+  // Influence score: use the same formula as the daily computeBridgeScores() so
+  // scores are consistent from tick 0 onward (no discontinuity on first daily update).
+  // bridge_score = fraction of distinct zone-clusters spanned by an NPC's info_ties.
+  const totalClusters = Math.max(new Set([...clusters.values()]).size, 1)
   for (const npc of npcs) {
-    npc.influence_score = npc.strong_ties.length / maxDegree
+    const spannedClusters = new Set<number>()
+    for (const tid of npc.info_ties) {
+      const cluster = clusters.get(tid)
+      if (cluster !== undefined) spannedClusters.add(cluster)
+    }
+    npc.bridge_score = spannedClusters.size / totalClusters
+    const strongCentrality = npc.strong_ties.length / INFLUENCE_REFERENCE_DEGREE
+    npc.influence_score = clamp(strongCentrality * 0.6 + npc.bridge_score * 0.4, 0, 1)
   }
 
   const institutions = initInstitutions(constitution)
@@ -266,6 +276,11 @@ export function tick(state: WorldState): void {
     // Info tie refresh: every 30 sim-days (720 ticks)
     if (state.day % 30 === 0) {
       refreshInfoTies(state)
+    }
+
+    // Weak tie replenishment: every 7 sim-days — recovering societies re-knit social fabric
+    if (state.day % 7 === 0) {
+      replenishWeakTies(state)
     }
 
     // Class solidarity spreads daily; strikes checked daily
@@ -1453,7 +1468,8 @@ function maintainNetworkLinks(state: WorldState): void {
  */
 function refreshInfoTies(state: WorldState): void {
   const living = state.npcs.filter(n => n.lifecycle.is_alive)
-  const infoTarget = Math.round(10 + clamp(state.constitution.network_cohesion, 0.1, 1) * 30)
+  const restrictions = getRegimeProfile(state.constitution).simRestrictions
+  const infoTarget = Math.round((10 + clamp(state.constitution.network_cohesion, 0.1, 1) * 30) * restrictions.info_ties_cap)
 
   // Process ~20% of living NPCs per refresh cycle (spread load across calls)
   const sample = living.filter(() => Math.random() < 0.20)
@@ -1533,6 +1549,61 @@ function formOrganicStrongTies(state: WorldState): void {
         state.network.weak.get(a.id)?.delete(b.id)
         state.network.weak.get(b.id)?.delete(a.id)
       }
+    }
+  }
+}
+
+/**
+ * Weekly: rebuild weak ties for NPCs whose networks have contracted from fear or death.
+ * Mirrors the geographic tie logic in buildNetwork. Only activates when the NPC's fear
+ * is low — recovering societies naturally re-knit social fabric.
+ * Processes ~10% of eligible NPCs per call to spread the load.
+ */
+// NPC is eligible for replenishment when weak ties fall below this fraction of target.
+const WEAK_TIE_REPLENISHMENT_THRESHOLD = 0.70
+// Fraction of eligible NPCs processed per weekly call (load-spreading).
+const WEAK_TIE_REPLENISHMENT_SAMPLE_RATE = 0.10
+
+function replenishWeakTies(state: WorldState): void {
+  const cohesion = clamp(state.constitution.network_cohesion, 0.1, 1)
+  const weakTarget = Math.round(50 + cohesion * 100)
+  const restrictions = getRegimeProfile(state.constitution).simRestrictions
+
+  // Build zone index
+  const byZone: Record<string, NPC[]> = {}
+  for (const npc of state.npcs) {
+    if (!npc.lifecycle.is_alive) continue
+    if (!byZone[npc.zone]) byZone[npc.zone] = []
+    byZone[npc.zone].push(npc)
+  }
+
+  const living = state.npcs.filter(n => n.lifecycle.is_alive)
+  // Only NPCs with depleted weak ties and low enough fear are eligible
+  const eligible = living.filter(n => n.fear < 50 && n.weak_ties.length < weakTarget * WEAK_TIE_REPLENISHMENT_THRESHOLD)
+
+  for (const npc of eligible) {
+    if (Math.random() >= WEAK_TIE_REPLENISHMENT_SAMPLE_RATE) continue
+
+    const hop2 = (ZONE_ADJACENCY[npc.zone] ?? []).flatMap(z => ZONE_ADJACENCY[z] ?? [])
+    const pool = restrictions.cross_zone_ties
+      ? [...(byZone[npc.zone] ?? []),
+         ...(ZONE_ADJACENCY[npc.zone] ?? []).flatMap(z => byZone[z] ?? []),
+         ...hop2.flatMap(z => byZone[z] ?? [])]
+      : [...(byZone[npc.zone] ?? [])]
+
+    const existingWeak = new Set(npc.weak_ties)
+    const strongSet    = new Set(npc.strong_ties)
+    const candidates   = pool
+      .filter(c => c.id !== npc.id && !existingWeak.has(c.id) && !strongSet.has(c.id))
+      .sort(() => Math.random() - 0.5)
+      .slice(0, Math.min(5, weakTarget - npc.weak_ties.length))
+
+    for (const other of candidates) {
+      if (other.weak_ties.length >= MAX_WEAK_TIES) continue
+      npc.weak_ties.push(other.id)
+      other.weak_ties.push(npc.id)
+      state.network.weak.get(npc.id)?.add(other.id)
+      state.network.weak.get(other.id)?.add(npc.id)
     }
   }
 }
@@ -1660,8 +1731,9 @@ function checkLaborStrikes(state: WorldState): void {
 /**
  * Daily: recompute bridge_score (betweenness proxy) for each NPC and
  * update influence_score to reflect both strong-tie centrality and bridging power.
- * Bridge score = fraction of distinct zone-clusters spanned by an NPC's weak_ties.
- * A high bridge NPC controls cross-community information flow → more influence.
+ * Bridge score = fraction of distinct zone-clusters spanned by an NPC's info_ties.
+ * Using info_ties (ideological/information network) correctly captures cross-community
+ * information flow — geographic acquaintances (weak_ties) do not drive influence.
  */
 // Reference degree for influence normalization — "well-connected" = 15 strong ties.
 // Using a fixed reference (not population max) prevents inflation in small communities
@@ -1675,7 +1747,7 @@ function computeBridgeScores(state: WorldState): void {
     if (!npc.lifecycle.is_alive) { npc.bridge_score = 0; continue }
 
     const spannedClusters = new Set<number>()
-    for (const tid of npc.weak_ties) {
+    for (const tid of npc.info_ties) {
       const cluster = state.network.clusters.get(tid)
       if (cluster !== undefined) spannedClusters.add(cluster)
     }
@@ -1891,6 +1963,13 @@ function applyCrisisBonding(state: WorldState): void {
       b.strong_ties.push(a.id)
       state.network.strong.get(a.id)?.add(b.id)
       state.network.strong.get(b.id)?.add(a.id)
+      // Promoted to strong: remove the now-redundant weak tie between them
+      if (a.weak_ties.includes(b.id)) {
+        a.weak_ties = a.weak_ties.filter(id => id !== b.id)
+        b.weak_ties = b.weak_ties.filter(id => id !== a.id)
+        state.network.weak.get(a.id)?.delete(b.id)
+        state.network.weak.get(b.id)?.delete(a.id)
+      }
     }
   }
 }
