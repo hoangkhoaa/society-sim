@@ -1,4 +1,4 @@
-import type { WorldState, Constitution, NPC, SimEvent, NarrativeEntry, NPCIntervention, ActiveStrike, WorldDelta, InstitutionDelta } from '../types'
+import type { WorldState, Constitution, NPC, SimEvent, NarrativeEntry, NPCIntervention, ActiveStrike, WorldDelta, InstitutionDelta, PublicHealth } from '../types'
 import { createNPC, tickNPC, computeProductivity, RESIDENTIAL_ZONES, permanentRoleChange } from './npc'
 import type { IndividualEvent, TickEventFlags } from './npc'
 import { checkEmergencyRoleReassignment, autoSurvivalRoleShift } from './roles'
@@ -138,6 +138,12 @@ export async function initWorld(constitution: Constitution, npcCount: number = M
     last_election_day: -1,
     collapse_phase: 'normal',
     initial_population: population,
+    public_health: {
+      sanitation: 30,
+      hospital_capacity: 0,
+      disease_resistance: 0.30,
+      funded_tick: 0,
+    },
     stats: {
       god_calls: 0,
       intervention_count: 0,
@@ -259,6 +265,7 @@ export function tick(state: WorldState): void {
     checkReferendum(state)
     checkOppositionBehavior(state)
     checkEpidemicIntelligence(state)
+    updatePublicHealth(state)
     checkNarrativeEvents(state)
     checkRumors(state)
     checkMilestones(state)
@@ -326,9 +333,14 @@ function tickEvents(state: WorldState): void {
     // Apply per-tick effects to NPCs in affected zones (scan npcs once per event, no filter alloc)
     // Epidemic uses a higher mortality multiplier calibrated to give ~30% deaths at intensity=1
     // over a default 7-day event (168 ticks): per-tick rate ≈ intensity * 0.0024
-    const mortalityPerTick = ev.type === 'epidemic'
+    let mortalityPerTick = ev.type === 'epidemic'
       ? ev.effects_per_tick.displacement_chance * 0.006
       : ev.effects_per_tick.displacement_chance * 0.002
+
+    // Public health: hospital_capacity > 0 reduces epidemic per-tick mortality by 30%
+    if (ev.type === 'epidemic' && (state.public_health?.hospital_capacity ?? 0) > 0) {
+      mortalityPerTick *= 0.70
+    }
 
     for (const npc of state.npcs) {
       if (!npc.lifecycle.is_alive) continue
@@ -3295,7 +3307,11 @@ function checkEpidemicIntelligence(state: WorldState): void {
   const scholars = state.npcs.filter(n =>
     n.lifecycle.is_alive && n.role === 'scholar' && n.zone === 'scholar_quarter',
   )
-  const dailyCureGain = scholars.reduce((s, n) => s + computeProductivity(n, state), 0) * 0.8
+  let dailyCureGain = scholars.reduce((s, n) => s + computeProductivity(n, state), 0) * 0.8
+  // Public health: sanitation > 60 accelerates cure progress by 20%
+  if ((state.public_health?.sanitation ?? 0) > 60) {
+    dailyCureGain *= 1.20
+  }
   cureProgress.value += dailyCureGain
 
   // Quarantine: guards enforce zone lockdown on epidemic zones after 3 days
@@ -3330,6 +3346,40 @@ function checkEpidemicIntelligence(state: WorldState): void {
     // Lift quarantines after cure
     state.quarantine_zones = []
   }
+}
+
+// ── Public Health Infrastructure ──────────────────────────────────────────────
+// Runs daily. Sanitation decays slowly unless maintained by scholars.
+// Hospital capacity is unlocked by health_investment policy spending and expires after 30 days.
+// disease_resistance is derived from sanitation and reduces sickness probability.
+
+export function updatePublicHealth(state: WorldState): void {
+  const ph = state.public_health
+  if (!ph) return
+
+  // Sanitation decays 0.1 per day (0–100 scale)
+  ph.sanitation = clamp(ph.sanitation - 0.1, 0, 100)
+
+  // Scholar output boosts sanitation: each productive scholar in scholar_quarter contributes
+  const scholars = state.npcs.filter(n =>
+    n.lifecycle.is_alive && n.role === 'scholar' && n.zone === 'scholar_quarter',
+  )
+  const scholarBoost = scholars.reduce((s, n) => s + computeProductivity(n, state), 0) * 0.02
+  ph.sanitation = clamp(ph.sanitation + scholarBoost, 0, 100)
+
+  // Hospital capacity expires after 30 sim-days (720 ticks) since last funding
+  if (ph.hospital_capacity > 0 && ph.funded_tick > 0) {
+    const HOSPITAL_BOOST_DURATION = 30 * 24  // 30 sim-days in ticks
+    if (state.tick - ph.funded_tick >= HOSPITAL_BOOST_DURATION) {
+      ph.hospital_capacity = 0
+      const text = tf('engine.public_health.hospital_expired') as string
+      addChronicle(text, state.year, state.day, 'minor')
+      addFeedRaw(text, 'warning', state.year, state.day)
+    }
+  }
+
+  // disease_resistance is derived from sanitation: full sanitation (100) = 1.0 resistance
+  ph.disease_resistance = ph.sanitation / 100
 }
 
 // ── Human-Driven Elections ────────────────────────────────────────────────────

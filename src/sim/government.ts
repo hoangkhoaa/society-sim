@@ -59,6 +59,8 @@ export interface GovernmentPolicyAI {
   npc_solidarity_delta?: number    // applied to all workers (negative = pacify, positive = agitate)
   worker_solidarity_delta?: number // targeted at a specific role
   worker_role?: string             // which role to target with worker_solidarity_delta
+  // Public health
+  health_investment?: number       // coins spent on health infrastructure (300–600); unlocks hospital_capacity for 30 days
 }
 
 // ── Regime detection ──────────────────────────────────────────────────────────
@@ -202,7 +204,8 @@ Return JSON with EXACTLY TWO policy options — one stability-first, one trust-f
       "farmer_hunger_delta": <integer, optional>,
       "npc_solidarity_delta": <integer -30 to 10, optional>,
       "worker_solidarity_delta": <integer -40 to 10, optional>,
-      "worker_role": <"farmer"|"craftsman"|"merchant"|"scholar", required if worker_solidarity_delta set>
+      "worker_role": <"farmer"|"craftsman"|"merchant"|"scholar", required if worker_solidarity_delta set>,
+      "health_investment": <integer 300–600, optional; spends from tax pool to upgrade sanitation and unlock hospital capacity for 30 days>
     },
     {
       "option_label": "Label for option B (2–4 words)",
@@ -224,6 +227,8 @@ LABOR RELATIONS: class_solidarity (0–100) drives labor_unrest. When solidarity
 - Welfare regimes: use npc_happiness_delta + npc_grievance_delta instead of direct suppression
 - Feudal: can suppress harshly (solidarity -30) at cost of legitimacy
 Active strikes: workers currently on strike produce NOTHING until solidarity drops below 45.
+
+PUBLIC HEALTH: Sanitation (0–100) decays daily and is boosted by scholar activity. hospital_capacity = 0 by default; activated by health_investment (300–600 coins) for 30 days. When active: sick citizens in the scholar quarter recover faster; epidemic mortality -30%; cure research +20% when sanitation > 60. Use health_investment when an epidemic is active or citizen sickness is high.
 
 SCALE GUIDE: food_delta adds to raw food stock (population ~500 consumes ~250 units/day; each citizen needs ~0.5/day). A food_delta of +1500 adds about 3 days of full supply. The macro "food%" reflects stock vs. (population × 30-day buffer). NPC deltas are additive to current stat values (clamped 0–100).
 IMPORTANT — food procurement is NOT free. Every positive food_delta costs the state treasury (~0.4 coins per unit) and large injections (>1000) degrade natural resources from emergency farming. This means repeated food-supply policies will drain the tax pool and deplete natural capital. Prefer balanced solutions: combine a moderate food_delta with NPC hunger relief (npc_hunger_delta) and productivity incentives rather than maxing out food_delta each cycle. Recommended food_delta range: ±300 to ±1500 (cap at ±2000 for genuine emergencies only).
@@ -302,6 +307,21 @@ function applyPolicy(state: WorldState, policy: GovernmentPolicyAI): void {
   // If solidarity suppression is happening, a grievance backlash follows (repression paradox)
   if ((policy.npc_solidarity_delta ?? 0) < -15) {
     applyInterventions(state, [{ target: 'all', grievance_delta: Math.abs(policy.npc_solidarity_delta!) * 0.4 }])
+  }
+
+  // Public health investment: spend from tax pool, unlock hospital capacity for 30 days
+  if (policy.health_investment && policy.health_investment > 0) {
+    const cost = clamp(Math.round(policy.health_investment), 300, 600)
+    if ((state.tax_pool ?? 0) >= cost) {
+      state.tax_pool = Math.max(0, state.tax_pool - cost)
+      const ph = state.public_health
+      if (ph) {
+        ph.funded_tick = state.tick
+        ph.hospital_capacity = 1
+        ph.sanitation = clamp(ph.sanitation + 20, 0, 100)
+        ph.disease_resistance = ph.sanitation / 100
+      }
+    }
   }
 }
 
@@ -846,6 +866,7 @@ export async function runGovernmentCycle(
       `  Literacy: ${Math.round(state.macro.literacy)}%`,
       `  Labor unrest: ${Math.round(state.macro.labor_unrest ?? 0)}%`,
       `  Polarization: ${Math.round(state.macro.polarization ?? 0)}%`,
+      `  Public health — Sanitation: ${Math.round(state.public_health?.sanitation ?? 0)}%, Hospital: ${(state.public_health?.hospital_capacity ?? 0) > 0 ? 'active' : 'none'}, Tax pool: ${Math.round(state.tax_pool ?? 0)} coins`,
       ...oppLegitimacyLine,
       ...(state.active_strikes?.length ? [`  Active strikes: ${state.active_strikes.map(s => `${s.role} (demand: ${s.demand})`).join(', ')}`] : []),
       ...eventsBlock,

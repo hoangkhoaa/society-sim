@@ -408,6 +408,18 @@ const FALLBACK_POLICIES: Record<string, Localized<PolicyTemplate>> = {
       public_statement: 'Hội đồng đang hành động quyết đoán. Người dân hãy bình tĩnh và tin tưởng rằng tình hình đang được xử lý.',
     },
   },
+  health_investment: {
+    en: {
+      policy_name: 'Public Health Infrastructure Program',
+      description: 'The Council allocated funds to improve sanitation systems and establish a hospital quarter to combat sickness and epidemic outbreaks.',
+      public_statement: 'Clean water, proper sanitation, and medical care are not luxuries — they are the foundation of a productive society. The Council invests accordingly.',
+    },
+    vi: {
+      policy_name: 'Chương Trình Hạ Tầng Y Tế Công Cộng',
+      description: 'Hội đồng phân bổ ngân sách cải thiện hệ thống vệ sinh và thành lập khu bệnh viện để chống lại dịch bệnh và ốm đau.',
+      public_statement: 'Nước sạch, vệ sinh tốt và chăm sóc y tế không phải xa xỉ — đó là nền tảng của một xã hội năng động. Hội đồng đầu tư như vậy.',
+    },
+  },
 }
 
 export function getFallbackPolicy(lang: Lang, key: string): PolicyTemplate {
