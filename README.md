@@ -9,7 +9,7 @@
 
 **A living world. You set the rules — then watch 500 citizens adapt or collapse.**
 
-[![Game Screenshot](https://github.com/user-attachments/assets/eed5272b-5fcc-46d0-9b5d-d23c58eaa17c)](https://hoangkhoaa.github.io/society-sim/)
+[![Game Screenshot](https://github.com/user-attachments/assets/d0998ef1-aaeb-43b6-a6e3-7137fc5ca34d)](https://hoangkhoaa.github.io/society-sim/)
 
 </div>
 
@@ -42,11 +42,11 @@ Type *"create a major storm"* — an AI agent injects it as a structured event: 
 <table>
   <tr>
     <td align="center" width="50%">
-      <img src="https://github.com/user-attachments/assets/52a670ad-34e0-4bb8-b5da-1f5a99393295" alt="Onboarding — choose your AI provider" width="100%"/>
+      <img src="https://github.com/user-attachments/assets/5871e2c2-bd97-43be-9a8a-ca65cb84cc46" alt="Onboarding — choose your AI provider" width="100%"/>
       <sub><b>Step 1 — Choose AI Provider</b><br/>Connect Gemini, Claude, GPT-4o, Ollama, or play free without any key</sub>
     </td>
     <td align="center" width="50%">
-      <img src="https://github.com/user-attachments/assets/6b15cb8b-4677-4258-b45f-fb96cde8f1aa" alt="Society Setup — pick a preset" width="100%"/>
+      <img src="https://github.com/user-attachments/assets/fb75ee1d-5ad5-486c-9cd7-3f1af9e63f90" alt="Society Setup — pick a preset" width="100%"/>
       <sub><b>Step 2 — Design Your Society</b><br/>Pick a preset or describe your society in natural language</sub>
     </td>
   </tr>
