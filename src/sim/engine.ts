@@ -3200,7 +3200,13 @@ function checkOppositionBehavior(state: WorldState): void {
     const living = state.npcs.filter(n => n.lifecycle.is_alive)
     const highGrievance = living.filter(n => n.grievance > 60)
     const affected = Math.floor(highGrievance.length * 0.15)
-    const sample = highGrievance.slice().sort(() => Math.random() - 0.5).slice(0, affected)
+    // Fisher-Yates shuffle for unbiased random sampling
+    const pool = highGrievance.slice()
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[pool[i], pool[j]] = [pool[j], pool[i]]
+    }
+    const sample = pool.slice(0, affected)
     for (const npc of sample) {
       npc.trust_in.government.intention = clamp(npc.trust_in.government.intention - 0.01, 0, 1)
     }
