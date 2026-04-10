@@ -13,6 +13,7 @@ import {
   writingDirective,
 } from '../local/ai'
 import { getRegimeProfile } from '../sim/regime-config'
+import { isMarxistPresetEnabled } from '../build-features'
 
 // ── Conversation history (persists for the session) ────────────────────────
 
@@ -60,7 +61,7 @@ Role ratios must sum to 1.0. High farmer + low merchant → subsistence economy.
 
 Capital distribution auto-derived: feudal/warlord → lords own ~80%; marxist/collective → state owns all; default → Pareto spread.
 
-Presets: nordic, capitalist, socialist, feudal, theocracy, technocracy, warlord, commune, marxist — adapt and explain trade-offs.
+Presets: nordic, capitalist, socialist, feudal, theocracy, technocracy, warlord, commune${isMarxistPresetEnabled() ? ', marxist' : ''} — adapt and explain trade-offs.
 If not yet confirmed, reply conversationally — concise but insightful.
 
 ${langDirective(getLang())}`

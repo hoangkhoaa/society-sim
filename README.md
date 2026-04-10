@@ -57,17 +57,18 @@ Type *"create a major storm"* — an AI agent injects it as a structured event: 
 
 | Preset | Character |
 |--------|-----------|
-| 🏔 Nordic | High trust, strong safety net, low inequality |
-| 💹 Free Market | Low state power, high inequality, entrepreneurial |
-| ⚙ Planned Economy | Collectivist, redistributive, state-directed |
-| ⚔️ Feudalism | Rigid hierarchy, low mobility, high gini |
-| ⛪ Theocracy | Authority-heavy, ideological conformity |
-| 🧠 Technocracy | Scholar-led, meritocratic |
-| 🗡 Warlord State | Fragmented, high fear, low institutional trust |
-| 🌿 Commune | Egalitarian, decentralized, high solidarity |
-| ☭ Marxist | State ownership, planned economy, collectivist |
+| 🏔 Nordic-model social democracy | High trust, strong safety net, low inequality |
+| 💹 Liberal market economy | Low state power, high inequality, entrepreneurial |
+| 🏭 Centrally planned economy | Collectivist, redistributive, state-directed |
+| ⚔️ Feudal political order | Rigid hierarchy, low mobility, high gini |
+| ⛪ Theocratic governance | Authority-heavy, ideological conformity |
+| 🧠 Technocratic governance | Scholar-led, meritocratic |
+| 🗡 Fragmented warlord rule | Fragmented, high fear, low institutional trust |
+| 🌿 Egalitarian communal society | Egalitarian, decentralized, high solidarity |
 
 The constitution becomes the DNA of your society — shaping citizen worldviews, institutional power, wealth distribution, and work culture.
+
+**Developers:** an additional **state-planned / state-ownership** preset (Marxist-style) is available only when you build or run with `VITE_ENABLE_MARXIST_PRESET=true` (see `.env.example`). The public GitHub Pages build does not set this by default.
 
 **Step 3 — Observe.** The sim runs at 1 sim-hour per real second (1×/3×/10×). Watch macro stats shift, story cards fire, and the chronicle fill with emergent history.
 

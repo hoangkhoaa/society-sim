@@ -28,6 +28,7 @@ import { getSettings, openSettingsPanel, applyRegimeDefaults } from './ui/settin
 import { runElection } from './sim/engine'
 import { getRegimeProfile } from './sim/regime-config'
 import { setActiveSimRestrictions } from './sim/npc'
+import { isMarxistPresetEnabled } from './build-features'
 
 // ── App state ──────────────────────────────────────────────────────────────
 
@@ -472,7 +473,11 @@ setupInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') sendSetupMessage(setupInput.value)
 })
 
-// Preset buttons
+// Preset buttons (Marxist is opt-in via VITE_ENABLE_MARXIST_PRESET=true at build time)
+if (!isMarxistPresetEnabled()) {
+  document.querySelectorAll('.btn-preset[data-preset="marxist"]').forEach(el => el.remove())
+}
+
 document.querySelectorAll('.btn-preset').forEach(btn => {
   btn.addEventListener('click', () => {
     const preset = (btn as HTMLElement).dataset.preset as 'nordic' | 'capitalist' | 'socialist' | 'feudal' | 'theocracy' | 'technocracy' | 'warlord' | 'commune' | 'marxist'
