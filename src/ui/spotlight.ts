@@ -1,9 +1,10 @@
-import type { NPC, WorldState, AIConfig, NPCChatTurn } from '../types'
+import type { NPC, WorldState, AIConfig, NPCChatTurn, Role } from '../types'
 import { generateNPCThought } from '../ai/god-agent'
 import { handleNPCChat } from '../ai/npc-agent'
 import { t, tf, getLang } from '../i18n'
 import { getSettings } from './settings-panel'
 import { clamp } from '../sim/constitution'
+import { permanentRoleChange } from '../sim/npc'
 import {
   spLifeStoryTitle,
   spLegendary,
@@ -136,7 +137,7 @@ function wireSlider(root: ParentNode, id: string, onChange: (v: number) => void)
   })
 }
 
-function wireStatsEditor(npc: NPC, root: ParentNode): void {
+function wireStatsEditor(npc: NPC, state: WorldState, root: ParentNode): void {
   // Collapsible toggle
   const toggle = root.querySelector('#sp-edit-toggle')
   const body   = root.querySelector('#sp-edit-body') as HTMLElement | null
@@ -186,6 +187,15 @@ function wireStatsEditor(npc: NPC, root: ParentNode): void {
   const motSel = root.querySelector('#sp-edit-work-motivation') as HTMLSelectElement | null
   motSel?.addEventListener('change', () => {
     npc.work_motivation = motSel.value as NPC['work_motivation']
+  })
+
+  // Role (permanent career change)
+  const roleSel = root.querySelector('#sp-edit-role') as HTMLSelectElement | null
+  roleSel?.addEventListener('change', () => {
+    const newRole = roleSel.value as Role
+    if (newRole !== npc.role) {
+      permanentRoleChange(npc, newRole, state)
+    }
   })
 }
 
@@ -240,6 +250,14 @@ function renderEditPanel(npc: NPC): string {
             ).join('')}
           </select>
         </div>
+        <div class="sp-edit-group-title">Role</div>
+        <div class="sp-edit-row">
+          <select id="sp-edit-role" class="sp-edit-select">
+            ${(['farmer','craftsman','merchant','scholar','guard','leader'] as Role[]).map(r =>
+              `<option value="${r}"${npc.role === r ? ' selected' : ''}>${r}</option>`
+            ).join('')}
+          </select>
+        </div>
       </div>
     </div>
   `
@@ -272,7 +290,7 @@ export async function openSpotlight(npc: NPC, state: WorldState, config: AIConfi
 
   openEditBtn?.addEventListener('click', () => {
     openSubPanel(tf('sp.edit.title', { name: npc.name }), renderEditPanel(npc))
-    wireStatsEditor(npc, sideBody)
+    wireStatsEditor(npc, state, sideBody)
     _onNpcEdit?.()
   })
 

@@ -87,6 +87,7 @@ NOTE: effects_per_tick overrides default event effects. Use instant_kill_rate to
   "roles":["farmer"|"craftsman"|"scholar"|"merchant"|"guard"|"leader"],
   "kill":false,"kill_pct":0-100,"kill_cause":"violence"|"disease"|"accident"|"starvation"|"natural",
   "action_state":"working"|"resting"|"socializing"|"organizing"|"fleeing"|"complying"|"confront",
+  "new_role":"farmer"|"craftsman"|"scholar"|"merchant"|"guard"|"leader",
   "stress_delta":<-100..100>,"fear_delta":<-100..100>,"hunger_delta":<-100..100>,
   "grievance_delta":<-100..100>,"happiness_delta":<-100..100>,
   "solidarity_delta":<-100..100>,
@@ -99,7 +100,7 @@ NOTE: effects_per_tick overrides default event effects. Use instant_kill_rate to
   "worldview_delta":{"collectivism":<-1..1>,"authority_trust":<-1..1>,"risk_tolerance":<-1..1>,"time_preference":<-1..1>},
   "memory":{"type":"crisis"|"harmed"|"helped"|"trust_broken"|"windfall"|"loss","emotional_weight":<-100..100>}}],
 "answer":"brief","requires_confirm":true|false,"warning":"if catastrophic"}
-NOTE: roles use internal names (farmer/craftsman/scholar/merchant/guard/leader), never display names (Serf, Lord, etc.).
+NOTE: roles/target "role" filters by existing role. "new_role" reassigns the NPC to a different role permanently. Use new_role for role changes (career change, promotion, demotion, forced labour reassignment). roles uses internal names (farmer/craftsman/scholar/merchant/guard/leader), never display names (Serf, Lord, etc.).
 
 3. ANSWER — pure Q&A only:
 {"type":"answer","event":null,"interventions":null,"answer":"answer","requires_confirm":false}

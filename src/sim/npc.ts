@@ -1893,6 +1893,22 @@ export function switchNPCRole(npc: NPC, newRole: Role, state: WorldState): void 
 }
 
 /**
+ * Permanently change an NPC's role (manual edits, god-agent interventions).
+ * Unlike switchNPCRole, this clears any emergency tracking so the change
+ * is treated as the NPC's new permanent career — not reverted by crisis logic.
+ */
+export function permanentRoleChange(npc: NPC, newRole: Role, state: WorldState): void {
+  npc.role                 = newRole
+  npc.zone                 = assignZone(newRole)
+  npc.home_zone            = npc.zone
+  npc.occupation           = tOccVariant(newRole, getRegimeProfile(state.constitution).variant)
+  npc.work_motivation      = inferMotivationType(newRole, state.constitution, npc.id)
+  npc.original_role        = undefined   // this is not an emergency switch — treat as permanent
+  npc.emergency_role_tick  = undefined
+  npc.description          = generateDescription(npc)
+}
+
+/**
  * Revert an NPC to their pre-emergency role.
  * No-op if NPC has no saved original_role.
  */
