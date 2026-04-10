@@ -538,6 +538,7 @@ export interface NPCIntervention {
   kill_pct?: number    // 0-100: kill this % of selected candidates randomly (use instead of count for percentage-based kills)
   kill_cause?: DeathCause
   action_state?: ActionState
+  new_role?: Role      // permanently reassign NPC to this role (clears emergency tracking)
 
   // Additive stat deltas (clamped to valid ranges after application)
   stress_delta?: number

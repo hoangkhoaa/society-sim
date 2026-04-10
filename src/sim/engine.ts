@@ -1,5 +1,5 @@
 import type { WorldState, Constitution, NPC, SimEvent, NarrativeEntry, NPCIntervention, ActiveStrike, WorldDelta, InstitutionDelta } from '../types'
-import { createNPC, tickNPC, computeProductivity, RESIDENTIAL_ZONES } from './npc'
+import { createNPC, tickNPC, computeProductivity, RESIDENTIAL_ZONES, permanentRoleChange } from './npc'
 import type { IndividualEvent, TickEventFlags } from './npc'
 import { checkEmergencyRoleReassignment, autoSurvivalRoleShift } from './roles'
 import { buildNetwork, MAX_STRONG_TIES, MAX_WEAK_TIES, MAX_INFO_TIES } from './network'
@@ -488,6 +488,11 @@ function applyInterventionToNPC(npc: NPC, iv: NPCIntervention, state: WorldState
   // Action state override
   if (iv.action_state !== undefined) {
     npc.action_state = iv.action_state
+  }
+
+  // Permanent role reassignment (clears emergency tracking)
+  if (iv.new_role !== undefined && iv.new_role !== npc.role) {
+    permanentRoleChange(npc, iv.new_role, state)
   }
 
   // Additive stat deltas

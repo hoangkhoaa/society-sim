@@ -963,7 +963,7 @@ function updateDemographics(): number {
   document.getElementById('d-male')!.textContent   = `${males}`
   document.getElementById('d-female')!.textContent = `${pop - males}`
   document.getElementById('d-deaths')!.textContent = `${deaths}`
-  document.getElementById('d-leaving')!.textContent = `${leavingNow + fled}`
+  document.getElementById('d-leaving')!.textContent = `${fled}`
   document.getElementById('d-born')!.textContent = `${world.births_total ?? 0}`
   document.getElementById('d-immigrants')!.textContent = `${world.immigration_total ?? 0}`
 
