@@ -250,6 +250,8 @@ const translations = {
     'sp.chat.fallback.stress':    "I'm too exhausted to talk right now.",
     'sp.chat.fallback.happy':     "Good day! Things are going well enough, can't complain.",
     'sp.chat.fallback.neutral':   "Hmm. I'm not sure what to say to you.",
+    'sp.chat.memory_title':       '🧠 Memory',
+    'sp.chat.memory_label':       'From a past conversation:',
 
     // Spotlight — fields
     'sp.age':         'Age',
@@ -900,6 +902,8 @@ const translations = {
     'sp.chat.fallback.stress':    'Tôi quá kiệt sức để nói chuyện lúc này.',
     'sp.chat.fallback.happy':     'Chào anh! Mọi thứ cũng tạm ổn, không thể than phiền.',
     'sp.chat.fallback.neutral':   'Ừm... tôi không biết nên nói gì.',
+    'sp.chat.memory_title':       '🧠 Ký ức',
+    'sp.chat.memory_label':       'Từ cuộc trò chuyện trước:',
 
     // Spotlight — fields
     'sp.age':         'Tuổi',

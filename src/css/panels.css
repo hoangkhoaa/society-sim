@@ -269,6 +269,27 @@ body[data-theme='light'] .sp-edit-check-label:hover { color: #333; }
 .sp-chat-send-btn { font-size: 14px; padding: 0 6px; }
 .sp-chat-ai-btn { font-size: 12px; opacity: 0.85; white-space: nowrap; padding: 0 6px; }
 .sp-chat-ai-btn.sp-chat-ai-off { opacity: 0.45; filter: grayscale(1); }
+/* Chat memory (persistent summary) */
+.sp-chat-memory {
+  margin: 0 0 8px 0;
+  padding: 6px 10px;
+  background: rgba(120, 100, 200, 0.08);
+  border-left: 3px solid #6a5acd;
+  border-radius: 0 4px 4px 0;
+  font-size: 11px;
+  color: #9988cc;
+}
+.sp-chat-memory-title {
+  font-weight: 600;
+  margin-bottom: 2px;
+  color: #a898dd;
+}
+.sp-chat-memory-body {
+  opacity: 0.85;
+  line-height: 1.4;
+}
+body[data-theme='light'] .sp-chat-memory { background: rgba(100, 80, 180, 0.06); color: #6a5acd; }
+body[data-theme='light'] .sp-chat-memory-title { color: #5540b0; }
 /* NPC name links (spouse / romance target) */
 .sp-npc-link {
   background: none;
