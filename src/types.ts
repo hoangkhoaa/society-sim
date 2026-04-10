@@ -292,6 +292,22 @@ export interface Faction {
   last_action_tick: number
 }
 
+// ── Organized Crime Syndicate ─────────────────────────────────────────────
+// Criminal NPCs self-organize into syndicates when criminal population exceeds
+// 4% and inequality is high. Syndicates collect dues, run protection rackets,
+// bribe guards, and recruit high-grievance NPCs. Guard crackdowns can bust them.
+
+export interface Syndicate {
+  id: number
+  name: string
+  boss_id: number               // NPC id of the highest-wealth criminal who founded it
+  member_ids: number[]          // NPC ids of all members (including boss)
+  territory: string[]           // zones this syndicate operates in
+  resources: number             // accumulated wealth from dues and rackets
+  founded_tick: number
+  last_action_tick: number
+}
+
 // ── Tech Tree ──────────────────────────────────────────────────────────────
 
 export interface TechDiscovery {
@@ -468,6 +484,7 @@ export interface WorldState {
 
   // Extended systems
   factions: Faction[]
+  syndicates: Syndicate[]
   research_points: number
   discoveries: TechDiscovery[]
   referendum: Referendum | null
