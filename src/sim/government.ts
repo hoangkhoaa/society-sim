@@ -226,6 +226,7 @@ LABOR RELATIONS: class_solidarity (0–100) drives labor_unrest. When solidarity
 Active strikes: workers currently on strike produce NOTHING until solidarity drops below 45.
 
 SCALE GUIDE: food_delta adds to raw food stock (population ~500 consumes ~250 units/day; each citizen needs ~0.5/day). A food_delta of +1500 adds about 3 days of full supply. The macro "food%" reflects stock vs. (population × 30-day buffer). NPC deltas are additive to current stat values (clamped 0–100).
+IMPORTANT — food procurement is NOT free. Every positive food_delta costs the state treasury (~0.4 coins per unit) and large injections (>1000) degrade natural resources from emergency farming. This means repeated food-supply policies will drain the tax pool and deplete natural capital. Prefer balanced solutions: combine a moderate food_delta with NPC hunger relief (npc_hunger_delta) and productivity incentives rather than maxing out food_delta each cycle. Recommended food_delta range: ±300 to ±1500 (cap at ±2000 for genuine emergencies only).
 SEVERITY: "critical" only when at least one stat is below 25%, unrest exceeds 72%, or labor_unrest ≥ 82%; else "important".
 ${langNote}
 Only return JSON. No explanation outside JSON.`
@@ -236,6 +237,18 @@ Only return JSON. No explanation outside JSON.`
 function applyPolicy(state: WorldState, policy: GovernmentPolicyAI): void {
   if (policy.food_delta) {
     state.food_stock = clamp((state.food_stock ?? 0) + policy.food_delta, 0, 999999)
+    // Positive food injections have real economic costs:
+    //   • Treasury cost: emergency procurement, imports, or subsidized distribution.
+    //   • Soil/resource stress: intensive emergency harvesting degrades natural capital
+    //     for injections above a modest threshold.
+    if (policy.food_delta > 0) {
+      const procurementCost = Math.round(policy.food_delta * 0.4)
+      state.tax_pool = Math.max(0, (state.tax_pool ?? 0) - procurementCost)
+      if (policy.food_delta > 1000) {
+        const soilStress = Math.round((policy.food_delta - 1000) * 0.20)
+        state.natural_resources = clamp((state.natural_resources ?? 0) - soilStress, 0, 100000)
+      }
+    }
   }
   if (policy.resource_delta) {
     state.natural_resources = clamp((state.natural_resources ?? 0) + policy.resource_delta, 0, 100000)
@@ -313,7 +326,7 @@ function generateFallbackPolicy(state: WorldState, alerts: Alert[]): GovernmentP
       return {
         ...getFallbackPolicy(lang, 'food_authoritarian'),
         severity: isCritical ? 'critical' : 'important',
-        food_delta: isCritical ? 2500 : 1500,
+        food_delta: isCritical ? 1600 : 1000,
         npc_stress_delta: 12,
         npc_grievance_delta: 18,
         merchant_grievance_delta: 25,
@@ -323,7 +336,7 @@ function generateFallbackPolicy(state: WorldState, alerts: Alert[]): GovernmentP
       return {
         ...getFallbackPolicy(lang, 'food_libertarian'),
         severity: isCritical ? 'critical' : 'important',
-        food_delta: isCritical ? 2000 : 1200,
+        food_delta: isCritical ? 1300 : 800,
         npc_stress_delta: 5,
         merchant_grievance_delta: -15,
         farmer_stress_delta: 8,
@@ -333,7 +346,7 @@ function generateFallbackPolicy(state: WorldState, alerts: Alert[]): GovernmentP
       return {
         ...getFallbackPolicy(lang, 'food_theocratic'),
         severity: isCritical ? 'critical' : 'important',
-        food_delta: isCritical ? 2200 : 1400,
+        food_delta: isCritical ? 1400 : 900,
         npc_stress_delta: -5,
         npc_grievance_delta: -8,
         npc_fear_delta: 10,
@@ -343,7 +356,7 @@ function generateFallbackPolicy(state: WorldState, alerts: Alert[]): GovernmentP
     return {
       ...getFallbackPolicy(lang, 'food_default'),
       severity: isCritical ? 'critical' : 'important',
-      food_delta: isCritical ? 2000 : 1300,
+      food_delta: isCritical ? 1300 : 850,
       npc_hunger_delta: -15,
       npc_stress_delta: -8,
       npc_happiness_delta: 10,
@@ -412,7 +425,7 @@ function generateFallbackPolicy(state: WorldState, alerts: Alert[]): GovernmentP
       return {
         ...getFallbackPolicy(lang, 'resources_libertarian'),
         severity: isCritical ? 'critical' : 'important',
-        resource_delta: isCritical ? 6000 : 4000,
+        resource_delta: isCritical ? 4000 : 2500,
         npc_stress_delta: 5,
         merchant_grievance_delta: 10,
       }
@@ -420,7 +433,7 @@ function generateFallbackPolicy(state: WorldState, alerts: Alert[]): GovernmentP
     return {
       ...getFallbackPolicy(lang, 'resources_default'),
       severity: isCritical ? 'critical' : 'important',
-      resource_delta: isCritical ? 7000 : 4500,
+      resource_delta: isCritical ? 4500 : 3000,
       npc_stress_delta: 6,
       npc_grievance_delta: 10,
     }
@@ -443,7 +456,7 @@ function generateFallbackPolicy(state: WorldState, alerts: Alert[]): GovernmentP
         npc_solidarity_delta: -12,
         npc_grievance_delta: -18,
         npc_happiness_delta: 8,
-        food_delta: 1000,
+        food_delta: 600,
       }
     }
     // libertarian / technocratic
