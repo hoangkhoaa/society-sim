@@ -1157,42 +1157,33 @@ function renderReferendumBanner(state: WorldState): void {
   const supportPct  = computeReferendumSupport(state)
   const daysLeft    = Math.max(0, Math.ceil((ref.expires_tick - state.tick) / 24))
 
-  const proposalEl  = document.getElementById('ref-proposal')!
-  const supportPctEl = document.getElementById('ref-support-pct')!
-  const supportBarEl = document.getElementById('ref-support-bar')!
-  const countdownEl = document.getElementById('ref-countdown')!
-  const detailsBtn  = document.getElementById('btn-ref-details')!
+  document.getElementById('ref-proposal')!.textContent   = ref.proposal_text
+  ;(document.getElementById('ref-proposal')! as HTMLElement).title = ref.proposal_text
+  document.getElementById('ref-support-pct')!.textContent = `${supportPct}%`
+  ;(document.getElementById('ref-support-bar')! as HTMLElement).style.width = `${supportPct}%`
+  document.getElementById('ref-countdown')!.textContent  = tf('referendum.days', { n: daysLeft }) as string
+  document.getElementById('btn-ref-details')!.textContent = t('referendum.details_btn') as string
+}
 
-  proposalEl.textContent  = ref.proposal_text
-  proposalEl.title        = ref.proposal_text
-  supportPctEl.textContent = `${supportPct}%`
-  supportBarEl.style.width = `${supportPct}%`
-  countdownEl.textContent  = tf('referendum.days', { n: daysLeft }) as string
-
-  detailsBtn.textContent = t('referendum.details_btn') as string
-
-  // Replace listener each render to avoid duplicates (using a flag)
-  if (!(detailsBtn as HTMLButtonElement & { _refListenerAttached?: boolean })._refListenerAttached) {
-    ;(detailsBtn as HTMLButtonElement & { _refListenerAttached?: boolean })._refListenerAttached = true
-    detailsBtn.addEventListener('click', () => {
-      if (!world?.referendum) return
-      const r        = world.referendum
-      const sp       = computeReferendumSupport(world)
-      const dl       = Math.max(0, Math.ceil((r.expires_tick - world.tick) / 24))
-      const fl       = t(`referendum.modal_field_${r.field}`) as string
-      const bodyHtml = `
-        <table style="width:100%;border-collapse:collapse;font-size:13px;line-height:1.7">
-          <tr><td style="color:#888;padding-right:12px">${t('referendum.modal_proposal') as string}</td><td><b>${r.proposal_text}</b></td></tr>
-          <tr><td style="color:#888">${t('referendum.modal_field') as string}</td><td>${fl}</td></tr>
-          <tr><td style="color:#888">${t('referendum.modal_current') as string}</td><td>${Math.round(r.current_value * 100)}%</td></tr>
-          <tr><td style="color:#888">${t('referendum.modal_proposed') as string}</td><td><b>${Math.round(r.proposed_value * 100)}%</b></td></tr>
-          <tr><td style="color:#888">${t('referendum.modal_support') as string}</td>
-            <td><b>${sp}%</b> <span style="font-size:11px;color:${sp > 50 ? '#5dcaa5' : '#e24b4b'}">(${sp > 50 ? '✅ passing' : '❌ failing'})</span></td></tr>
-          <tr><td style="color:#888">${t('referendum.modal_expires') as string}</td><td>${tf('referendum.modal_days_remaining', { n: dl }) as string}</td></tr>
-        </table>`
-      showInfo(t('referendum.modal_title') as string, bodyHtml)
-    })
-  }
+function openReferendumDetails(): void {
+  if (!world?.referendum) return
+  const r  = world.referendum
+  const sp = computeReferendumSupport(world)
+  const dl = Math.max(0, Math.ceil((r.expires_tick - world.tick) / 24))
+  const fl = t(`referendum.modal_field_${r.field}`) as string
+  const statusKey = sp > 50 ? 'referendum.modal_status_passing' : 'referendum.modal_status_failing'
+  const statusColor = sp > 50 ? '#5dcaa5' : '#e24b4b'
+  const bodyHtml = `
+    <table style="width:100%;border-collapse:collapse;font-size:13px;line-height:1.7">
+      <tr><td style="color:#888;padding-right:12px">${t('referendum.modal_proposal') as string}</td><td><b>${r.proposal_text}</b></td></tr>
+      <tr><td style="color:#888">${t('referendum.modal_field') as string}</td><td>${fl}</td></tr>
+      <tr><td style="color:#888">${t('referendum.modal_current') as string}</td><td>${Math.round(r.current_value * 100)}%</td></tr>
+      <tr><td style="color:#888">${t('referendum.modal_proposed') as string}</td><td><b>${Math.round(r.proposed_value * 100)}%</b></td></tr>
+      <tr><td style="color:#888">${t('referendum.modal_support') as string}</td>
+        <td><b>${sp}%</b> <span style="font-size:11px;color:${statusColor}">(${t(statusKey) as string})</span></td></tr>
+      <tr><td style="color:#888">${t('referendum.modal_expires') as string}</td><td>${tf('referendum.modal_days_remaining', { n: dl }) as string}</td></tr>
+    </table>`
+  showInfo(t('referendum.modal_title') as string, bodyHtml)
 }
 
 // ── Consequence scheduler ──────────────────────────────────────────────────
@@ -1415,6 +1406,7 @@ async function triggerGovernment() {
 }
 
 btnGov.addEventListener('click', () => { void triggerGovernment() })
+document.getElementById('btn-ref-details')!.addEventListener('click', openReferendumDetails)
 
 // 1 tick = 1 sim-hour; 1000ms interval = 1 tick/second at 1× → 1 real second = 1 sim-hour
 const BASE_TICK_MS = 1000
