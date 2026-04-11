@@ -90,6 +90,8 @@ export function settingsToggleCopy(lang: Lang): {
   npcThoughtsDesc:    string
   pressAILabel:       string
   pressAIDesc:        string
+  scienceAILabel:     string
+  scienceAIDesc:      string
   consequencesLabel:  string
   consequencesDesc:   string
 } {
@@ -114,6 +116,11 @@ export function settingsToggleCopy(lang: Lang): {
     pressAIDesc:        pick(lang, {
       en: 'AI generates newspaper headlines every 5 days. Off → no AI headlines.',
       vi: 'AI tạo tiêu đề báo mỗi 5 ngày. Tắt → không có tin tức AI.',
+    }),
+    scienceAILabel:     pick(lang, { en: '🔬 Science Discoveries',    vi: '🔬 Phát minh khoa học' }),
+    scienceAIDesc:      pick(lang, {
+      en: 'AI generates rare society-inspired breakthroughs (every ~45–90 days). Off → template fallback.',
+      vi: 'AI tạo phát minh khoa học hiếm lấy cảm hứng từ xã hội (mỗi ~45–90 ngày). Tắt → dùng template.',
     }),
     consequencesLabel:  pick(lang, { en: '🔮 Consequence Prediction', vi: '🔮 Dự đoán hậu quả' }),
     consequencesDesc:   pick(lang, {

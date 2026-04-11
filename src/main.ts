@@ -23,6 +23,7 @@ import {
 } from './ui/spotlight'
 import { runGovernmentCycle, detectRegime, type GovernmentPolicyAI } from './sim/government'
 import { checkPressTrigger, resetPressRuntimeState } from './sim/press'
+import { checkScienceTrigger, resetScienceRuntimeState } from './sim/science'
 import { resetNarrativeRuntimeState } from './sim/narratives'
 import { getSettings, openSettingsPanel, applyRegimeDefaults } from './ui/settings-panel'
 import { runElection } from './engine'
@@ -547,6 +548,7 @@ async function startGame(constitution: Constitution) {
   if (dAges) dAges.innerHTML = ''
   resetNarrativeRuntimeState()
   resetPressRuntimeState()
+  resetScienceRuntimeState()
 
   // Show the game screen immediately so the user sees the UI rather than a frozen setup screen
   showScreen('screen-game')
@@ -1545,6 +1547,9 @@ function startSimLoop() {
     const settings    = getSettings()
     const pressConfig = (settings.enable_press_ai && aiConfig) ? aiConfig : null
     checkPressTrigger(world, pressConfig)
+    // Science discovery: probability-gated, fires rarely (~every 45–90 sim-days)
+    const scienceConfig = (settings.enable_science_ai && aiConfig) ? aiConfig : null
+    checkScienceTrigger(world, scienceConfig)
     // Election cycle: when human elections enabled, run every N sim-days
     if (settings.enable_human_elections) {
       const cycleLen = Math.max(30, settings.election_cycle_days)
@@ -2064,13 +2069,15 @@ document.getElementById('btn-speed')!.addEventListener('click', function () {
   if (aiConfig && speed > prevSpeed) {
     const rpm = aiConfig.rpm_limit
     if (rpm > 0) {
-      // At faster speeds sim-days pass faster → more government + press cycles per real minute.
+      // At faster speeds sim-days pass faster → more government + press + science cycles per real minute.
       // At 1×: 1 real sec = 1 sim-hour → 1 sim-day ≈ 24s → ~2.5 days/min
       // At 3×: ~7.5 days/min  At 12×: ~30 days/min  At 24×: ~60 days/min
       const daysPerMin = (speed * 60) / 24
       const govCallsPerMin = daysPerMin / 15
       const pressCallsPerMin = getSettings().enable_press_ai ? daysPerMin / 5 : 0
-      const bgPerMin = govCallsPerMin + pressCallsPerMin
+      // Science fires rarely (~every 60 days on average with probability gating)
+      const scienceCallsPerMin = getSettings().enable_science_ai ? daysPerMin / 60 : 0
+      const bgPerMin = govCallsPerMin + pressCallsPerMin + scienceCallsPerMin
       const remaining = getRemainingRPM(rpm)
       const estimate = bgPerMin.toFixed(1)
 
@@ -2078,6 +2085,7 @@ document.getElementById('btn-speed')!.addEventListener('click', function () {
         addFeedRaw(
           `⚠️ Speed ${speed}× will use ~${estimate} AI calls/min for government` +
           (pressCallsPerMin > 0 ? ` + press` : '') +
+          (scienceCallsPerMin > 0 ? ` + science` : '') +
           `. Your RPM limit is ${rpm}. ` +
           (remaining < 5 ? `Only ${remaining} calls left this minute — game may pause AI features until budget recovers.` : `${remaining} calls remaining.`),
           'warning',

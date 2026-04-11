@@ -746,6 +746,7 @@ export interface GameSettings {
   enable_government_ai:          boolean   // LLM drives policy generation
   enable_npc_thoughts:           boolean   // LLM generates spotlight daily thoughts
   enable_press_ai:               boolean   // LLM generates press headlines
+  enable_science_ai:             boolean   // LLM generates rare society-inspired scientific discoveries
   enable_consequence_prediction: boolean   // LLM predicts event ripple effects
   /** Town map: street fill + markings, custom underlay + layout, or zones only. */
   map_background_mode:           MapBackgroundMode
