@@ -1,7 +1,7 @@
 import './css/main.css'
 import type { AIConfig, AIProvider, Constitution, NPC, WorldState } from './types'
 import { setupGreeting, setupChat, applyPreset, handlePlayerChat, resetInGameHistory, predictConsequences, generateConstitutionText } from './ai/god-agent'
-import { listAvailableModels, PROVIDER_MODELS, getAIUsage, getRemainingRPM, getWaitSeconds, initKeyRing } from './ai/provider'
+import { listAvailableModels, PROVIDER_MODELS, getAIUsage, getRemainingRPM, initKeyRing } from './ai/provider'
 import { addFeedRaw, addFeedThinking, setFeedFilter, setChronicleFilter, refreshChronicleTimestamps } from './ui/feed'
 import { showConfirm, showInfo, showPolicyChoice, type PolicyDisplayCard } from './ui/modal'
 import { initWorld, tick, spawnEvent, applyInterventions, applyInstantEventDeaths, getIncomeTaxRate, MIN_NPC_COUNT, DEFAULT_NPC_COUNT, applyConstitutionPatch, applyWorldDelta, applyInstitutionDeltas } from './engine'
@@ -1507,9 +1507,9 @@ async function triggerGovernment() {
   if (!world || govBusy) return
   govBusy = true
   updateGovCooldown()
-  const rpmBudget = aiConfig ? getRemainingRPM(aiConfig.rpm_limit) : Infinity
   const settings = getSettings()
-  const govConfig = (settings.enable_government_ai && rpmBudget >= 2) ? aiConfig : null
+  // Let callAI(waitForSlot) handle RPM; do not skip LLM here — old rpmBudget>=2 blocked gov AI incorrectly.
+  const govConfig = (settings.enable_government_ai && aiConfig) ? aiConfig : null
   const leaderNpc = (settings.enable_human_elections && world.leader_id != null)
     ? world.npcs[world.leader_id] ?? undefined
     : undefined
@@ -1571,8 +1571,7 @@ function startSimLoop() {
     // Free press: every 5 sim-days — generates headlines before government reads them
     // If RPM budget is tight, press runs in template-only mode (pass null config)
     const settings    = getSettings()
-    const rpmBudget   = aiConfig ? getRemainingRPM(aiConfig.rpm_limit) : Infinity
-    const pressConfig = (rpmBudget >= 3 && settings.enable_press_ai) ? aiConfig : null
+    const pressConfig = (settings.enable_press_ai && aiConfig) ? aiConfig : null
     checkPressTrigger(world, pressConfig)
     // Election cycle: when human elections enabled, run every N sim-days
     if (settings.enable_human_elections) {
@@ -1588,14 +1587,7 @@ function startSimLoop() {
     // Government cycle: every GOV_PERIOD_DAYS sim-days
     const govPeriod = Math.floor(world.day / GOV_PERIOD_DAYS)
     if (govPeriod !== lastGovernmentPeriod && world.day >= GOV_PERIOD_DAYS && !govBusy) {
-      const govConfig  = (rpmBudget >= 2 && settings.enable_government_ai) ? aiConfig : null
-      if (!govConfig && aiConfig && settings.enable_government_ai) {
-        const wait = getWaitSeconds(aiConfig.rpm_limit)
-        addFeedRaw(
-          tf('gov.policy_delayed', { seconds: Math.ceil(wait) }),
-          'info', world.year, world.day,
-        )
-      }
+      const govConfig = (settings.enable_government_ai && aiConfig) ? aiConfig : null
       govBusy = true
       lastGovernmentPeriod = govPeriod
       const _settings = getSettings()
@@ -2105,7 +2097,7 @@ document.getElementById('btn-speed')!.addEventListener('click', function () {
       // At 3×: ~7.5 days/min  At 12×: ~30 days/min  At 24×: ~60 days/min
       const daysPerMin = (speed * 60) / 24
       const govCallsPerMin = daysPerMin / 15
-      const pressCallsPerMin = aiConfig.token_mode === 'unlimited' ? daysPerMin / 5 : 0
+      const pressCallsPerMin = getSettings().enable_press_ai ? daysPerMin / 5 : 0
       const bgPerMin = govCallsPerMin + pressCallsPerMin
       const remaining = getRemainingRPM(rpm)
       const estimate = bgPerMin.toFixed(1)

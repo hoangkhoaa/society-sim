@@ -4,7 +4,7 @@
 // aggregate NPC behavior and societal trends.  Two modes:
 //   1. Template mode (default): picks from ~100 pre-written templates keyed
 //      to macro conditions + NPC behavioral signals.
-//   2. AI mode (token_mode === 'unlimited'): calls the LLM for richer text.
+//   2. AI mode: when runPressCycle receives AIConfig, calls the LLM for richer headlines.
 //
 // Headlines feed into the main feed & chronicle and are also passed as context
 // to the Government cycle so it can "read the press" before deciding policy.

@@ -148,8 +148,9 @@ Return JSON array:
 Only return JSON. No commentary.`
 }
 
+/** True when the sim loop passed an API config — caller already gated on settings + key. */
 export function pressShouldUseAI(config: AIConfig | null): boolean {
-  return !!config && config.token_mode === 'unlimited'
+  return config != null
 }
 
 export function pressSnapshotPrompt(state: WorldState, scan: PressScan): string {
