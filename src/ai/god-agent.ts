@@ -76,7 +76,8 @@ RESPONSE TYPES (always return valid JSON):
 {"type":"event","event":{
   "type":"storm"|"drought"|"flood"|"tsunami"|"epidemic"|"resource_boom"|"harsh_winter"|"trade_offer"|
          "refugee_wave"|"ideology_import"|"external_threat"|"blockade"|"scandal_leak"|"charismatic_npc"|
-         "martyr"|"tech_shift"|"wildfire"|"earthquake"|"nuclear_explosion"|"bombing"|"meteor_strike"|"volcanic_eruption",
+         "martyr"|"tech_shift"|"wildfire"|"earthquake"|"nuclear_explosion"|"bombing"|"meteor_strike"|"volcanic_eruption"|
+         "heatwave"|"landslide"|"tornado"|"locust_plague"|"festival"|"golden_harvest"|"cultural_renaissance",
   "intensity":0.0-1.0,"zones":[...],"duration_ticks":<n>,"narrative_open":"vivid opening",
   "effects_per_tick":{"instant_kill_rate":0.0-1.0,"instant_kill_cause":"violence"|"accident"|"disease"|"starvation"|"natural","food_stock_delta":<n>,"stress_delta":<n>,"trust_delta":<n>,"displacement_chance":0.0-1.0}},
 "interventions":null,"answer":"brief","requires_confirm":true|false,"warning":"if catastrophic"}
@@ -146,6 +147,8 @@ RULES:
 - ALWAYS interpret commands as actions. NEVER explain why you can't — always find the closest event/intervention type and execute it.
 - Inventions, discoveries, innovations → "tech_shift" event (high intensity for major breakthroughs). Narrate the discovery in "narrative_open". NEVER set instant_kill_rate for tech_shift or any positive/beneficial event.
 - Natural disasters, wars, plagues → appropriate event type. Social unrest, rebellions → intervention + optional event.
+- Extreme heat, heat wave → "heatwave". Mudslide/debris flow → "landslide". Whirlwind/cyclone → "tornado". Crop-eating insects → "locust_plague".
+- Community celebration, holiday, fair → "festival". Bumper crop/harvest bounty → "golden_harvest". Arts/culture movement → "cultural_renaissance".
 - Policies, laws, reforms → constitution change (type:"intervention" + "constitution" field) or world_delta.
 - "answer" type is ONLY for pure informational questions ("what is gini?", "how many people?"). Never use "answer" for action commands.
 - Convert ANY command — no matter how creative or fictional — into the most fitting response type. If in doubt, use "tech_shift" or "intervention".
@@ -168,7 +171,7 @@ function tokenModeDirective(config: AIConfig): string {
 - Never return type "intervention".
 - Only return "event" or "answer".
 - ALWAYS map any command (invention, policy, disaster, social change) to the closest valid "event" type. Never refuse or explain.
-- Inventions/discoveries → "tech_shift". Weather/nature → matching disaster. Social unrest → "charismatic_npc" or "martyr".
+- Inventions/discoveries → "tech_shift". Weather/nature → matching disaster. Social unrest → "charismatic_npc" or "martyr". Community celebration → "festival". Bumper crop → "golden_harvest". Arts/culture → "cultural_renaissance".
 - Only return "answer" when the Architect is explicitly asking a direct question (not issuing a command).`
   }
   if (config.token_mode === 'events_plus_npc_control') {

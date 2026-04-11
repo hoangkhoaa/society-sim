@@ -403,6 +403,7 @@ export function spawnEvent(state: WorldState, partial: Partial<SimEvent>): SimEv
 // Positive event types that should NEVER kill NPCs regardless of what AI returns
 const NON_LETHAL_EVENT_TYPES = new Set([
   'resource_boom', 'trade_offer', 'tech_shift', 'charismatic_npc', 'ideology_import',
+  'festival', 'golden_harvest', 'cultural_renaissance',
 ])
 
 export function applyInstantEventDeaths(state: WorldState, ev: SimEvent): number {
@@ -455,6 +456,15 @@ function defaultEffects(type: string, intensity: number): SimEvent['effects_per_
     bombing:           { food_stock_delta: -i * 150, stress_delta: i * 15, trust_delta: -i * 15, displacement_chance: i * 0.70, instant_kill_rate: i * 0.30, instant_kill_cause: 'violence' },
     meteor_strike:     { food_stock_delta: -i * 400, stress_delta: i * 18, trust_delta: -i * 18, displacement_chance: i * 0.90, instant_kill_rate: i * 0.45, instant_kill_cause: 'accident' },
     volcanic_eruption: { food_stock_delta: -i * 350, stress_delta: i * 16, trust_delta: -i * 16, displacement_chance: i * 0.80, instant_kill_rate: i * 0.40, instant_kill_cause: 'accident' },
+    // ── Additional natural disasters ──────────────────────────────────────────
+    heatwave:          { food_stock_delta: -i * 60,  stress_delta: i * 3,  trust_delta: -i * 2,  displacement_chance: i * 0.06 },
+    landslide:         { food_stock_delta: -i * 90,  stress_delta: i * 7,  trust_delta: -i * 5,  displacement_chance: i * 0.35, instant_kill_rate: i * 0.12, instant_kill_cause: 'accident' },
+    tornado:           { food_stock_delta: -i * 80,  stress_delta: i * 8,  trust_delta: -i * 6,  displacement_chance: i * 0.45, instant_kill_rate: i * 0.18, instant_kill_cause: 'accident' },
+    locust_plague:     { food_stock_delta: -i * 180, stress_delta: i * 4,  trust_delta: -i * 3,  displacement_chance: i * 0.08 },
+    // ── Positive social / economic events ─────────────────────────────────────
+    festival:          { food_stock_delta: -i * 20,  stress_delta: -i * 5, trust_delta: +i * 4,  displacement_chance: 0 },
+    golden_harvest:    { food_stock_delta: +i * 150, stress_delta: -i * 3, trust_delta: +i * 4,  displacement_chance: 0 },
+    cultural_renaissance: { food_stock_delta: 0,     stress_delta: -i * 4, trust_delta: +i * 5,  displacement_chance: 0 },
   }
   return map[type] ?? { food_stock_delta: 0, stress_delta: 0, trust_delta: 0, displacement_chance: 0 }
 }

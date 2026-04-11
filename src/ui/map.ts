@@ -659,6 +659,10 @@ function drawAtmosphere(world: WorldState, W: number, H: number) {
   if (weather.snow > 0) drawSnow(W, H, weather.snow)
   if (weather.dryFog > 0) drawDryFog(W, H, weather.dryFog)
   if (weather.smoke > 0) drawSmoke(W, H, weather.smoke)
+  if (weather.haze > 0) drawHaze(W, H, weather.haze)
+  if (weather.dust > 0) drawDust(W, H, weather.dust)
+  if (weather.swarm > 0) drawSwarm(W, H, weather.swarm)
+  if (weather.glimmer > 0) drawGlimmer(W, H, weather.glimmer)
 
   drawTimeBadge(hour, dayLight, W)
 }
@@ -671,19 +675,31 @@ function computeDaylight(hour: number): number {
   return 0.4
 }
 
-function computeWeather(world: WorldState): { rain: number; snow: number; dryFog: number; smoke: number } {
+function computeWeather(world: WorldState): { rain: number; snow: number; dryFog: number; smoke: number; haze: number; dust: number; swarm: number; glimmer: number } {
   let rain = 0
   let snow = 0
   let dryFog = 0
   let smoke = 0
+  let haze = 0
+  let dust = 0
+  let swarm = 0
+  let glimmer = 0
   for (const ev of world.active_events) {
     const k = Math.max(0.15, Math.min(1, ev.intensity))
     if (ev.type === 'storm' || ev.type === 'flood' || ev.type === 'tsunami') rain = Math.max(rain, k)
     if (ev.type === 'harsh_winter') snow = Math.max(snow, k)
     if (ev.type === 'drought') dryFog = Math.max(dryFog, k)
     if (ev.type === 'wildfire' || ev.type === 'nuclear_explosion' || ev.type === 'bombing' || ev.type === 'volcanic_eruption' || ev.type === 'meteor_strike') smoke = Math.max(smoke, k)
+    if (ev.type === 'heatwave') haze = Math.max(haze, k)
+    // Landslide and earthquake both kick up dust clouds from collapsing terrain
+    if (ev.type === 'landslide' || ev.type === 'earthquake') dust = Math.max(dust, k)
+    // Tornado: airborne debris (dust) + driven rain from the storm column
+    if (ev.type === 'tornado') dust = Math.max(dust, k)
+    if (ev.type === 'tornado') rain = Math.max(rain, k * 0.4)
+    if (ev.type === 'locust_plague') swarm = Math.max(swarm, k)
+    if (ev.type === 'festival' || ev.type === 'golden_harvest' || ev.type === 'cultural_renaissance') glimmer = Math.max(glimmer, k)
   }
-  return { rain, snow, dryFog, smoke }
+  return { rain, snow, dryFog, smoke, haze, dust, swarm, glimmer }
 }
 
 function drawRain(W: number, H: number, intensity: number) {
@@ -745,6 +761,85 @@ function drawSmoke(W: number, H: number, intensity: number) {
     ctx.ellipse(x, y, w, h, 0, 0, Math.PI * 2)
     ctx.fill()
   }
+  ctx.restore()
+}
+
+function drawHaze(W: number, H: number, intensity: number) {
+  if (!ctx) return
+  ctx.save()
+  // Shimmering orange heat gradient that pulses gently
+  const pulse = 0.5 + 0.5 * Math.sin(frameCount * 0.03)
+  const grd = ctx.createLinearGradient(0, 0, W, H)
+  grd.addColorStop(0, `rgba(240,130,20,${0.04 + intensity * 0.07 + pulse * 0.02})`)
+  grd.addColorStop(0.5, `rgba(255,160,40,${0.02 + intensity * 0.05})`)
+  grd.addColorStop(1, `rgba(230,110,10,${0.04 + intensity * 0.07})`)
+  ctx.fillStyle = grd
+  ctx.fillRect(0, 0, W, H)
+  ctx.restore()
+}
+
+function drawDust(W: number, H: number, intensity: number) {
+  if (!ctx) return
+  const particles = Math.min(180, Math.floor(60 + intensity * 140))
+  ctx.save()
+  ctx.fillStyle = `rgba(175,145,90,${0.06 + intensity * 0.09})`
+  for (let i = 0; i < particles; i++) {
+    const x = ((i * 83 + frameCount * (6 + intensity * 8)) % (W + 60)) - 30
+    const y = ((i * 61 + frameCount * (3 + intensity * 4)) % (H + 50)) - 25
+    const r = 1.5 + (i % 4) * 0.8
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  // Overlay brownish dust haze
+  const haze = ctx.createLinearGradient(0, 0, W, H)
+  haze.addColorStop(0, `rgba(160,120,60,${0.03 + intensity * 0.06})`)
+  haze.addColorStop(1, `rgba(140,100,40,${0.04 + intensity * 0.07})`)
+  ctx.fillStyle = haze
+  ctx.fillRect(0, 0, W, H)
+  ctx.restore()
+}
+
+function drawSwarm(W: number, H: number, intensity: number) {
+  if (!ctx) return
+  const dots = Math.min(280, Math.floor(80 + intensity * 220))
+  ctx.save()
+  ctx.fillStyle = `rgba(60,70,20,${0.30 + intensity * 0.25})`
+  for (let i = 0; i < dots; i++) {
+    // Chaotic swarm movement — each dot has its own erratic offset
+    const wave = Math.sin(frameCount * 0.07 + i * 0.9) * 18
+    const x = ((i * 97 + frameCount * (7 + (i % 5) * 2) + wave) % (W + 20)) - 10
+    const y = ((i * 53 + frameCount * (5 + (i % 3) * 2)) % (H + 20)) - 10
+    ctx.beginPath()
+    ctx.arc(x, y, 0.9, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.restore()
+}
+
+function drawGlimmer(W: number, H: number, intensity: number) {
+  if (!ctx) return
+  const sparks = Math.min(120, Math.floor(30 + intensity * 90))
+  ctx.save()
+  // Warm golden background glow
+  const grd = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7)
+  grd.addColorStop(0, `rgba(255,220,80,${0.04 + intensity * 0.06})`)
+  grd.addColorStop(1, `rgba(220,170,40,0)`)
+  ctx.fillStyle = grd
+  ctx.fillRect(0, 0, W, H)
+  // Twinkling sparkle dots
+  for (let i = 0; i < sparks; i++) {
+    const flicker = 0.4 + 0.6 * Math.abs(Math.sin(frameCount * 0.12 + i * 1.7))
+    const x = (i * 113 + Math.sin(i * 0.5) * 40) % W
+    const y = (i * 79  + Math.cos(i * 0.7) * 30) % H
+    const r = 0.8 + (i % 3) * 0.5
+    ctx.globalAlpha = flicker * (0.3 + intensity * 0.4)
+    ctx.fillStyle = `rgba(255,230,100,1)`
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.globalAlpha = 1
   ctx.restore()
 }
 
@@ -873,6 +968,15 @@ const EVENT_ZONE_TINTS: Partial<Record<string, EventZoneTint>> = {
   meteor_strike:     [120,  50, 200],
   external_threat:   [160,  30,  30],
   blockade:          [130,  60,  20],
+  // New disasters
+  heatwave:          [230, 120,  10],
+  landslide:         [140,  90,  40],
+  tornado:           [ 80,  70, 100],
+  locust_plague:     [ 90, 110,  20],
+  // Positive events
+  festival:          [230, 180,  20],
+  golden_harvest:    [200, 170,   0],
+  cultural_renaissance: [180, 140,  60],
 }
 
 // Zone icons displayed in the top-left of each district block

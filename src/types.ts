@@ -27,6 +27,8 @@ export type EventType =
   | 'trade_offer' | 'refugee_wave' | 'ideology_import' | 'external_threat' | 'blockade'
   | 'scandal_leak' | 'charismatic_npc' | 'martyr' | 'tech_shift' | 'wildfire' | 'earthquake'
   | 'nuclear_explosion' | 'bombing' | 'meteor_strike' | 'volcanic_eruption'
+  | 'heatwave' | 'landslide' | 'tornado' | 'locust_plague'
+  | 'festival' | 'golden_harvest' | 'cultural_renaissance'
 export type EventSource = 'player' | 'institution' | 'natural' | 'cascade'
 export type MemoryType = 'trust_broken' | 'helped' | 'harmed' | 'crisis' | 'windfall' | 'loss' | 'illness' | 'crime' | 'accident'
 export type MessageChannel = 'public' | 'private' | 'signal' | 'rumor'
