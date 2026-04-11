@@ -21,15 +21,17 @@ interface ZoneInfo {
 }
 
 const ZONE_LAYOUT: Record<string, ZoneInfo> = {
-  north_farm:        { seed: [0.29,  0.165], darkColor: '#143a21', lightColor: '#b8f2cb' },
-  scholar_quarter:   { seed: [0.80,  0.165], darkColor: '#1b2b60', lightColor: '#c6d5ff' },
-  residential_west:  { seed: [0.125, 0.50],  darkColor: '#42256b', lightColor: '#dcc7ff' },
-  plaza:             { seed: [0.39,  0.50],  darkColor: '#23523f', lightColor: '#bdeedd' },
-  market_square:     { seed: [0.64,  0.50],  darkColor: '#7a4f13', lightColor: '#ffe0b0' },
-  guard_post:        { seed: [0.885, 0.50], darkColor: '#6a1f2f', lightColor: '#ffc2cf' },
-  south_farm:        { seed: [0.175, 0.835], darkColor: '#2a5f2f', lightColor: '#c8f0b8' },
-  workshop_district: { seed: [0.51,  0.835], darkColor: '#5f3721', lightColor: '#f5ccb2' },
-  residential_east:  { seed: [0.835, 0.835], darkColor: '#2f3f8f', lightColor: '#cdd4ff' },
+  north_farm:          { seed: [0.23,  0.165], darkColor: '#143a21', lightColor: '#b8f2cb' },
+  clinic_district:     { seed: [0.52,  0.165], darkColor: '#0d3d5c', lightColor: '#b0e0ff' },
+  scholar_quarter:     { seed: [0.80,  0.165], darkColor: '#1b2b60', lightColor: '#c6d5ff' },
+  residential_west:    { seed: [0.125, 0.50],  darkColor: '#42256b', lightColor: '#dcc7ff' },
+  plaza:               { seed: [0.39,  0.50],  darkColor: '#23523f', lightColor: '#bdeedd' },
+  market_square:       { seed: [0.64,  0.50],  darkColor: '#7a4f13', lightColor: '#ffe0b0' },
+  guard_post:          { seed: [0.885, 0.50], darkColor: '#6a1f2f', lightColor: '#ffc2cf' },
+  south_farm:          { seed: [0.155, 0.835], darkColor: '#2a5f2f', lightColor: '#c8f0b8' },
+  underworld_quarter:  { seed: [0.395, 0.835], darkColor: '#2d1040', lightColor: '#d4a8ff' },
+  workshop_district:   { seed: [0.575, 0.835], darkColor: '#5f3721', lightColor: '#f5ccb2' },
+  residential_east:    { seed: [0.835, 0.835], darkColor: '#2f3f8f', lightColor: '#cdd4ff' },
 }
 
 // ── Fixed zone bounding rectangles ──────────────────────────────────────────
@@ -45,15 +47,17 @@ const ZONE_LAYOUT: Record<string, ZoneInfo> = {
 interface ZoneRect { x1: number; y1: number; x2: number; y2: number }
 
 const ZONE_RECTS: Record<string, ZoneRect> = {
-  north_farm:        { x1: 0.02, y1: 0.02, x2: 0.56, y2: 0.31 },
-  scholar_quarter:   { x1: 0.62, y1: 0.02, x2: 0.98, y2: 0.31 },
-  residential_west:  { x1: 0.02, y1: 0.37, x2: 0.23, y2: 0.63 },
-  plaza:             { x1: 0.29, y1: 0.37, x2: 0.49, y2: 0.63 },
-  market_square:     { x1: 0.55, y1: 0.37, x2: 0.73, y2: 0.63 },
-  guard_post:        { x1: 0.79, y1: 0.37, x2: 0.98, y2: 0.63 },
-  south_farm:        { x1: 0.02, y1: 0.69, x2: 0.33, y2: 0.98 },
-  workshop_district: { x1: 0.39, y1: 0.69, x2: 0.63, y2: 0.98 },
-  residential_east:  { x1: 0.69, y1: 0.69, x2: 0.98, y2: 0.98 },
+  north_farm:          { x1: 0.02, y1: 0.02, x2: 0.43, y2: 0.31 },
+  clinic_district:     { x1: 0.47, y1: 0.02, x2: 0.58, y2: 0.31 },
+  scholar_quarter:     { x1: 0.62, y1: 0.02, x2: 0.98, y2: 0.31 },
+  residential_west:    { x1: 0.02, y1: 0.37, x2: 0.23, y2: 0.63 },
+  plaza:               { x1: 0.29, y1: 0.37, x2: 0.49, y2: 0.63 },
+  market_square:       { x1: 0.55, y1: 0.37, x2: 0.73, y2: 0.63 },
+  guard_post:          { x1: 0.79, y1: 0.37, x2: 0.98, y2: 0.63 },
+  south_farm:          { x1: 0.02, y1: 0.69, x2: 0.29, y2: 0.98 },
+  underworld_quarter:  { x1: 0.33, y1: 0.69, x2: 0.43, y2: 0.98 },
+  workshop_district:   { x1: 0.47, y1: 0.69, x2: 0.63, y2: 0.98 },
+  residential_east:    { x1: 0.69, y1: 0.69, x2: 0.98, y2: 0.98 },
 }
 
 // ── Road junction waypoints ─────────────────────────────────────────────────
@@ -62,33 +66,40 @@ const ZONE_RECTS: Record<string, ZoneRect> = {
 // NPCs travel: zone_centroid → waypoints → dest_centroid.
 
 const ROAD_WAYPOINTS: Record<string, [number, number][]> = {
-  'north_farm|residential_west':        [[0.26, 0.34]],
-  'north_farm|plaza':                   [[0.39, 0.34]],
-  'north_farm|scholar_quarter':         [[0.59, 0.165]],
-  'guard_post|scholar_quarter':         [[0.885, 0.34]],
-  'market_square|scholar_quarter':      [[0.64,  0.34]],
-  'plaza|residential_west':             [[0.26, 0.50]],
-  'residential_west|south_farm':        [[0.125, 0.66]],
-  'market_square|plaza':                [[0.52, 0.50]],
-  'plaza|south_farm':                   [[0.26, 0.66]],
-  'plaza|workshop_district':            [[0.52, 0.66]],
-  'guard_post|market_square':           [[0.76, 0.50]],
-  'market_square|workshop_district':    [[0.66, 0.66]],
-  'market_square|residential_east':     [[0.76, 0.66]],
-  'guard_post|residential_east':        [[0.835, 0.66]],
-  'south_farm|workshop_district':       [[0.36, 0.835]],
-  'residential_east|workshop_district': [[0.66, 0.835]],
+  'north_farm|residential_west':           [[0.26, 0.34]],
+  'north_farm|plaza':                      [[0.39, 0.34]],
+  'north_farm|clinic_district':            [[0.45, 0.165]],
+  'clinic_district|plaza':                 [[0.52, 0.34], [0.52, 0.50]],
+  'clinic_district|scholar_quarter':       [[0.59, 0.165]],
+  'clinic_district|market_square':         [[0.52, 0.34], [0.64, 0.50]],
+  'guard_post|scholar_quarter':            [[0.885, 0.34]],
+  'market_square|scholar_quarter':         [[0.64,  0.34]],
+  'plaza|residential_west':               [[0.26, 0.50]],
+  'residential_west|south_farm':           [[0.125, 0.66]],
+  'market_square|plaza':                   [[0.52, 0.50]],
+  'plaza|south_farm':                      [[0.26, 0.66]],
+  'plaza|underworld_quarter':              [[0.36, 0.66]],
+  'plaza|workshop_district':               [[0.52, 0.66]],
+  'guard_post|market_square':              [[0.76, 0.50]],
+  'market_square|workshop_district':       [[0.66, 0.66]],
+  'market_square|residential_east':        [[0.76, 0.66]],
+  'guard_post|residential_east':           [[0.835, 0.66]],
+  'south_farm|underworld_quarter':         [[0.31, 0.835]],
+  'underworld_quarter|workshop_district':  [[0.45, 0.835]],
+  'residential_east|workshop_district':    [[0.66, 0.835]],
 }
 
 // ── Road topology for multi-hop routing ─────────────────────────────────────
 // Vertical road segments: centre-x and the y-range they span.
 const V_ROAD_SEGS: { x: number; yMin: number; yMax: number }[] = [
-  { x: 0.59, yMin: 0,    yMax: 0.34 },   // V-top
+  { x: 0.45, yMin: 0,    yMax: 0.34 },   // V-top-left (top row → H1, serving clinic_district)
+  { x: 0.59, yMin: 0,    yMax: 0.34 },   // V-top-right (top row → H1, serving scholar_quarter gap)
   { x: 0.26, yMin: 0.34, yMax: 0.66 },   // V1
   { x: 0.52, yMin: 0.34, yMax: 0.66 },   // V2
   { x: 0.76, yMin: 0.34, yMax: 0.66 },   // V3
-  { x: 0.36, yMin: 0.66, yMax: 1.00 },   // V4
-  { x: 0.66, yMin: 0.66, yMax: 1.00 },   // V5
+  { x: 0.31, yMin: 0.66, yMax: 1.00 },   // V4 (south_farm ↔ underworld_quarter)
+  { x: 0.45, yMin: 0.66, yMax: 1.00 },   // V5 (underworld_quarter ↔ workshop_district)
+  { x: 0.66, yMin: 0.66, yMax: 1.00 },   // V6 (workshop_district ↔ residential_east)
 ]
 const H_ROAD_YS = [0.34, 0.66] as const   // H1, H2 centre-lines
 
@@ -211,15 +222,17 @@ function findZonePath(from: string, to: string): string[] {
 // During resting, NPCs visually move to residential zones, populating them.
 
 const WORK_TO_HOME: Record<string, string> = {
-  north_farm:        'residential_west',
-  south_farm:        'residential_west',
-  workshop_district: 'residential_east',
-  market_square:     'residential_east',
-  scholar_quarter:   'residential_east',
-  plaza:             'residential_west',
-  guard_post:        'guard_post',
-  residential_west:  'residential_west',
-  residential_east:  'residential_east',
+  north_farm:          'residential_west',
+  south_farm:          'residential_west',
+  workshop_district:   'residential_east',
+  market_square:       'residential_east',
+  scholar_quarter:     'residential_east',
+  clinic_district:     'residential_east',
+  underworld_quarter:  'residential_west',
+  plaza:               'residential_west',
+  guard_post:          'guard_post',
+  residential_west:    'residential_west',
+  residential_east:    'residential_east',
 }
 
 function getVisualZone(workZone: string, action: string): string {
@@ -229,23 +242,27 @@ function getVisualZone(workZone: string, action: string): string {
 // ── Role colors ────────────────────────────────────────────────────────────
 
 const ROLE_COLORS_DARK: Record<Role, string> = {
-  farmer:    '#5de2b7',
-  craftsman: '#4ea9ff',
-  merchant:  '#ffbe52',
-  scholar:   '#b39bff',
-  guard:     '#ff6f7a',
-  leader:    '#f5fbff',
-  child:     '#d8dde6',
+  farmer:     '#5de2b7',
+  craftsman:  '#4ea9ff',
+  merchant:   '#ffbe52',
+  scholar:    '#b39bff',
+  guard:      '#ff6f7a',
+  leader:     '#f5fbff',
+  child:      '#d8dde6',
+  healthcare: '#5dd8f5',
+  gang:       '#cc4466',
 }
 
 const ROLE_COLORS_LIGHT: Record<Role, string> = {
-  farmer:    '#0f8f63',
-  craftsman: '#1e63d8',
-  merchant:  '#b16a00',
-  scholar:   '#6645d4',
-  guard:     '#c5364c',
-  leader:    '#243043',
-  child:     '#6d7788',
+  farmer:     '#0f8f63',
+  craftsman:  '#1e63d8',
+  merchant:   '#b16a00',
+  scholar:    '#6645d4',
+  guard:      '#c5364c',
+  leader:     '#243043',
+  child:      '#6d7788',
+  healthcare: '#0a7fa8',
+  gang:       '#880033',
 }
 
 function roleColor(role: Role, light: boolean): string {
@@ -981,15 +998,17 @@ const EVENT_ZONE_TINTS: Partial<Record<string, EventZoneTint>> = {
 
 // Zone icons displayed in the top-left of each district block
 const ZONE_ICONS: Record<string, string> = {
-  north_farm:        '🌾',
-  south_farm:        '🌿',
-  workshop_district: '⚒',
-  market_square:     '⚖',
-  scholar_quarter:   '📜',
-  residential_west:  '🏠',
-  residential_east:  '🏡',
-  guard_post:        '⚔',
-  plaza:             '🏛',
+  north_farm:         '🌾',
+  south_farm:         '🌿',
+  workshop_district:  '⚒',
+  market_square:      '⚖',
+  scholar_quarter:    '📜',
+  residential_west:   '🏠',
+  residential_east:   '🏡',
+  guard_post:         '⚔',
+  plaza:              '🏛',
+  clinic_district:    '🏥',
+  underworld_quarter: '🌒',
 }
 
 function drawZoneRect(

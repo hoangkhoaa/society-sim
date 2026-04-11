@@ -546,7 +546,7 @@ function renderEditPanel(npc: NPC): string {
         <div class="sp-edit-group-title">Role</div>
         <div class="sp-edit-row">
           <select id="sp-edit-role" class="sp-edit-select">
-            ${(['farmer','craftsman','merchant','scholar','guard','leader'] as Role[]).map(r =>
+            ${(['farmer','craftsman','merchant','scholar','guard','leader','healthcare','gang'] as Role[]).map(r =>
               `<option value="${r}"${npc.role === r ? ' selected' : ''}>${r}</option>`
             ).join('')}
           </select>

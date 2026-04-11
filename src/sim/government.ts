@@ -289,7 +289,7 @@ function applyPolicy(state: WorldState, policy: GovernmentPolicyAI): void {
 
   // All-worker solidarity suppression / agitation
   if (policy.npc_solidarity_delta !== undefined) {
-    const workerRoles = ['farmer', 'craftsman', 'merchant', 'scholar'] as const
+    const workerRoles = ['farmer', 'craftsman', 'merchant', 'scholar', 'healthcare'] as const
     for (const role of workerRoles) {
       interventions.push({ target: 'role', roles: [role], solidarity_delta: policy.npc_solidarity_delta })
     }
