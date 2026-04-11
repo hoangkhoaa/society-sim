@@ -99,7 +99,7 @@ const ROLE_CONFIG: Record<Role, RoleConfig> = {
     wealth_expectation: 550,
     exhaustion_rate:    0.55,   // heavy physical — patrols, standing watch
     schedule_offset:    { start:  0, end:  0 },  // handled by rotation logic in normalRoutine
-    income_rate:        0.00,   // paid via tax pool (see engine.ts applyGovernmentWages)
+    income_rate:        0.00,   // paid via tax pool (see engine/economy applyGovernmentWages)
     govt_paid:          true,
     zones:              ['guard_post', 'plaza'],
     can_strike:         false,  // guards ARE the enforcement arm; striking is incoherent
@@ -419,7 +419,7 @@ function assignRole(idx: number, total: number, ratios: Constitution['role_ratio
   return 'farmer'
 }
 
-// Zones where children and families live. Exported so engine.ts can use the same list.
+// Zones where children and families live. Exported so the sim engine can use the same list.
 export const RESIDENTIAL_ZONES = ['residential_west', 'residential_east'] as const
 
 function assignZone(role: Role): string {

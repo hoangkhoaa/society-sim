@@ -67,7 +67,7 @@
         </div>
         <div class="form-row">
           <label for="npc-count-input" data-i18n="onboarding.npc_count">Starting population (NPCs)</label>
-          <input type="number" id="npc-count-input" min="500" step="1" value="500"
+          <input type="number" id="npc-count-input" min="500" step="1" value="1000"
             style="width:100%">
           <small class="onboarding-security-hint" data-i18n="onboarding.npc_count_hint">Minimum 500. More NPCs = richer simulation but slower performance.</small>
         </div>
@@ -102,7 +102,7 @@
         <button class="btn-preset" data-preset="technocracy" data-i18n="setup.preset_technocracy">🧠 Technocratic governance</button>
         <button class="btn-preset" data-preset="warlord" data-i18n="setup.preset_warlord">🗡 Fragmented warlord rule</button>
         <button class="btn-preset" data-preset="commune" data-i18n="setup.preset_commune">🌿 Egalitarian communal society</button>
-        <button class="btn-preset" data-preset="marxist" data-i18n="setup.preset_marxist">🔴 State-planned economy</button>
+        <button class="btn-preset" data-preset="marxist" data-i18n="setup.preset_marxist">🟥 State-planned economy</button>
       </div>
       <div id="setup-messages" class="message-list"></div>
       <div class="setup-input-row">
@@ -141,7 +141,8 @@
           <button class="top-dropdown-item" id="btn-toggle-rumors" data-i18n="panels.rumors">🗣 Rumors</button>
           <button class="top-dropdown-item" id="btn-toggle-econ"   data-i18n="panels.economics">💰 Economics</button>
           <button class="top-dropdown-item" id="btn-toggle-npc-contacts" data-i18n="panels.npc_contacts">📇 Contacts</button>
-          <button class="top-dropdown-item" id="btn-toggle-legend" data-i18n="panels.network">🕸 Network</button>
+          <button class="top-dropdown-item" id="btn-toggle-network" data-i18n="panels.network">🕸 Network</button>
+          <button class="top-dropdown-item" id="btn-toggle-legend" data-i18n="panels.map_legend">📋 Map legend</button>
           <div class="top-dropdown-divider"></div>
           <button class="top-dropdown-item top-dropdown-danger" id="btn-end-game" data-i18n="endgame.btn">☄️ End Game</button>
         </div>

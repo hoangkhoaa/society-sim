@@ -733,6 +733,12 @@ export const ZONES = [
 
 export type Zone = typeof ZONES[number]
 
+/**
+ * Map display: underlay only / underlay + blurred district grid / sharp synthetic map.
+ * Custom art: `setMapBackgroundPainter` (see map module).
+ */
+export type MapBackgroundMode = 'background_only' | 'background_blurred_layout' | 'layout_only'
+
 export interface GameSettings {
   // AI-Driven features
   enable_human_elections:        boolean   // Step 6: NPCs elect a real leader NPC
@@ -741,6 +747,8 @@ export interface GameSettings {
   enable_npc_thoughts:           boolean   // LLM generates spotlight daily thoughts
   enable_press_ai:               boolean   // LLM generates press headlines
   enable_consequence_prediction: boolean   // LLM predicts event ripple effects
+  /** Town map: street fill + markings, custom underlay + layout, or zones only. */
+  map_background_mode:           MapBackgroundMode
 }
 
 export const FEED_ICONS: Record<string, string> = {

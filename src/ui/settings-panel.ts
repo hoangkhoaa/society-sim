@@ -3,7 +3,8 @@
 // provides getSettings() for other modules to read current preferences.
 
 import { getLang, t, type Lang } from '../i18n'
-import type { GameSettings } from '../types'
+import type { GameSettings, MapBackgroundMode } from '../types'
+import { requestMapRedraw } from './map'
 import type { RegimeProfile, SimRestrictions } from '../sim/regime-config'
 import {
   settingsTabRegime,
@@ -30,6 +31,22 @@ const DEFAULTS: GameSettings = {
   enable_npc_thoughts:           true,
   enable_press_ai:               true,
   enable_consequence_prediction: true,
+  map_background_mode:           'layout_only',
+}
+
+const MAP_BG_MODES = new Set<MapBackgroundMode>([
+  'background_only',
+  'background_blurred_layout',
+  'layout_only',
+])
+
+function normalizeMapBackgroundMode(v: unknown): MapBackgroundMode {
+  if (v === 'off') return 'background_only'
+  if (v === 'with_layout') return 'background_blurred_layout'
+  if (typeof v === 'string' && MAP_BG_MODES.has(v as MapBackgroundMode)) {
+    return v as MapBackgroundMode
+  }
+  return DEFAULTS.map_background_mode
 }
 
 // ── State ──────────────────────────────────────────────────────────────────────
@@ -42,7 +59,14 @@ let _simRestrictions: SimRestrictions | null = null
 function loadSettings(): void {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY)
-    if (raw) _settings = { ...DEFAULTS, ...JSON.parse(raw) }
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<GameSettings>
+      _settings = {
+        ...DEFAULTS,
+        ...parsed,
+        map_background_mode: normalizeMapBackgroundMode(parsed.map_background_mode),
+      }
+    }
   } catch {
     _settings = { ...DEFAULTS }
   }
@@ -216,6 +240,10 @@ function renderPanel(): void {
         _lockedFeatures.has('enable_consequence_prediction'),
       )}
 
+      <div class="stg-divider"></div>
+
+      ${renderMapBackgroundRow()}
+
     </div>
 
     <div class="stg-tab-content" id="stg-content-regime"
@@ -251,6 +279,16 @@ function renderPanel(): void {
       saveSettings()
     })
   })
+
+  panelBody.querySelectorAll<HTMLSelectElement>('select[data-map-bg]').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const v = sel.value as MapBackgroundMode
+      if (!MAP_BG_MODES.has(v)) return
+      s.map_background_mode = v
+      saveSettings()
+      requestMapRedraw()
+    })
+  })
 }
 
 function clampNum(v: number, lo: number, hi: number): number {
@@ -283,6 +321,33 @@ function renderNumberRow(key: string, label: string, value: number, min: number,
       </div>
       <input class="stg-num-input" type="number" min="${min}" max="${max}" value="${value}"
              data-num="${key}" />
+    </div>`
+}
+
+function mapBgOptionLabel(mode: MapBackgroundMode): string {
+  switch (mode) {
+    case 'background_only':
+      return String(t('settings.map_bg.background_only'))
+    case 'background_blurred_layout':
+      return String(t('settings.map_bg.background_blurred_layout'))
+    case 'layout_only':
+      return String(t('settings.map_bg.layout_only'))
+  }
+}
+
+function renderMapBackgroundRow(): string {
+  const val = _settings.map_background_mode
+  const modes: MapBackgroundMode[] = ['background_only', 'background_blurred_layout', 'layout_only']
+  const options = modes.map(m =>
+    `<option value="${m}"${val === m ? ' selected' : ''}>${mapBgOptionLabel(m)}</option>`,
+  ).join('')
+  return `
+    <div class="stg-row stg-row-select">
+      <div class="stg-row-info">
+        <div class="stg-row-label">${t('settings.map_bg.label')}</div>
+        <div class="stg-row-desc">${t('settings.map_bg.desc')}</div>
+      </div>
+      <select class="stg-select" data-map-bg="1" aria-label="${String(t('settings.map_bg.label'))}">${options}</select>
     </div>`
 }
 

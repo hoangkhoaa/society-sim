@@ -28,6 +28,27 @@ import {
   spRentsFromLabel,
   spNoneLabel,
 } from '../local/ui'
+import { isNpcVisualCommuting } from './map'
+
+/** Map commute animation vs sim `action_state` (mid-commute “resting” is not asleep yet). */
+function spotlightActivityPresentation(npc: NPC): { emoji: string; label: string } {
+  if (isNpcVisualCommuting(npc.id)) {
+    if (npc.action_state === 'resting')
+      return { emoji: '🚶', label: t('sp.activity_commute_home') as string }
+    if (npc.action_state === 'working')
+      return { emoji: '🚶', label: t('sp.activity_commute_work') as string }
+    return { emoji: '🚶', label: t('sp.activity_commute_other') as string }
+  }
+  const emojiByState: Record<string, string> = {
+    working: '⚒️', resting: '😴', socializing: '💬', family: '🏠',
+    organizing: '✊', fleeing: '🏃', complying: '🫡', confront: '⚠️',
+  }
+  const em = emojiByState[npc.action_state] ?? '❓'
+  const key = `sp.act.${npc.action_state}`
+  const tr = t(key) as string
+  const label = tr === key ? npc.action_state : tr
+  return { emoji: em, label }
+}
 
 const panel   = document.getElementById('spotlight')!
 const spName  = document.getElementById('sp-name')!
@@ -412,7 +433,7 @@ function wireNpcChatPanel(npc: NPC, state: WorldState, config: AIConfig | null):
       chatThread.appendChild(thinkEl)
       chatThread.scrollTop = chatThread.scrollHeight
 
-      if (_chatNpc.action_state === 'resting') {
+      if (_chatNpc.action_state === 'resting' && !isNpcVisualCommuting(_chatNpc.id)) {
         const sleepResponses = [
           tf('sp.chat.sleeping_1', { name: _chatNpc.name }),
           tf('sp.chat.sleeping_2', { name: _chatNpc.name }),
@@ -547,7 +568,7 @@ function renderEditPanel(npc: NPC): string {
         <div class="sp-edit-row">
           <select id="sp-edit-role" class="sp-edit-select">
             ${(['farmer','craftsman','merchant','scholar','guard','leader','healthcare','gang'] as Role[]).map(r =>
-              `<option value="${r}"${npc.role === r ? ' selected' : ''}>${r}</option>`
+              `<option value="${r}"${npc.role === r ? ' selected' : ''}>${String(t(`role.${r}`))}</option>`
             ).join('')}
           </select>
         </div>
@@ -708,11 +729,6 @@ const PIXEL_CLOTH: Record<string, string> = {
   farmer: '#5d7a3e', craftsman: '#8a6040', scholar: '#4060a0',
   merchant: '#a08020', guard: '#405070', leader: '#802020', child: '#8050a0',
 }
-const PIXEL_STATE_EMOJI: Record<string, string> = {
-  working: '⚒️', resting: '😴', socializing: '💬', family: '🏠',
-  organizing: '✊', fleeing: '🏃', complying: '🫡', confront: '⚠️',
-}
-
 function renderPixelCharacterSection(): string {
   return `
     <div class="sp-section sp-pixel-section sp-pixel-section--flush">
@@ -823,10 +839,10 @@ function drawPixelCharacter(npc: NPC): void {
     ctx.globalAlpha = 1.0
   }
 
-  // --- Action state emoji ---
+  // --- Action state emoji (aligned with spotlight activity row / commute) ---
   const stateEl = document.getElementById('sp-pixel-state')
   if (stateEl) {
-    stateEl.textContent = PIXEL_STATE_EMOJI[npc.action_state] ?? ''
+    stateEl.textContent = spotlightActivityPresentation(npc).emoji
   }
 }
 
@@ -981,20 +997,22 @@ function renderStatic(npc: NPC, state: WorldState): string {
     <div class="sp-section">
       <div class="sp-section-title">${t('sp.status')}</div>
       ${(() => {
-        const actionState = npc.action_state
-        const actionEmoji: Record<string, string> = {
-          working: '⚒️', resting: '😴', socializing: '💬', family: '🏠',
-          organizing: '✊', fleeing: '🏃', complying: '🫡', confront: '⚠️',
-        }
+        const { emoji: actEm, label: actLabel } = spotlightActivityPresentation(npc)
         const actionColor: Record<string, string> = {
           working: '#c0a0ff', resting: '#7f77dd', socializing: '#5dcaa5', family: '#e87ca0',
           organizing: '#ef9f27', fleeing: '#e24b4b', complying: '#378add', confront: '#ff6b35',
         }
-        const em    = actionEmoji[actionState] ?? '❓'
-        const color = actionColor[actionState] ?? '#aaa'
+        const color = isNpcVisualCommuting(npc.id) ? '#5dcaa5' : (actionColor[npc.action_state] ?? '#aaa')
+        const zoneKey = `zone.${npc.zone}`
+        const zoneTr = t(zoneKey) as string
+        const zoneLabel = zoneTr === zoneKey ? npc.zone : zoneTr
         return `<div class="sp-row">
           <span class="sp-label">${t('sp.current_activity') as string}</span>
-          <span class="sp-value" style="color:${color}">${em} ${actionState}</span>
+          <span class="sp-value" style="color:${color}">${actEm} ${escapeHtml(actLabel)}</span>
+        </div>
+        <div class="sp-row">
+          <span class="sp-label">${t('sp.location') as string}</span>
+          <span class="sp-value">${escapeHtml(zoneLabel)}</span>
         </div>`
       })()}
       ${statBar(t('sp.stress')     as string, npc.stress,      '#e24b4b')}

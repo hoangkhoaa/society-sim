@@ -245,7 +245,7 @@ CURRENT STATE:
 ${npc.on_strike ? '- ON STRIKE: demanding better conditions' : ''}
 ${npc.sick ? '- Currently sick and suffering' : ''}
 ${npc.criminal_record ? '- Has a criminal record' : ''}
-${(npc.enmity_ids?.length ?? 0) > 0 ? `- Holds grudges against ${npc.enmity_ids.length} person(s) — deep-seated hostility toward them` : ''}
+${(npc.enmity_ids?.length ?? 0) > 0 ? `- Holds grudges against ${npc.enmity_ids?.length ?? 0} person(s) — deep-seated hostility toward them` : ''}
 
 TRUST IN GOVERNMENT (how you feel about the state):
 - Competence ${(npc.trust_in.government?.competence ?? 0).toFixed(2)} | Intention ${(npc.trust_in.government?.intention ?? 0).toFixed(2)}

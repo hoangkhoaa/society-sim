@@ -4,7 +4,7 @@ import { setupGreeting, setupChat, applyPreset, handlePlayerChat, resetInGameHis
 import { listAvailableModels, PROVIDER_MODELS, getAIUsage, getRemainingRPM, getWaitSeconds, initKeyRing } from './ai/provider'
 import { addFeedRaw, addFeedThinking, setFeedFilter, setChronicleFilter, refreshChronicleTimestamps } from './ui/feed'
 import { showConfirm, showInfo, showPolicyChoice, type PolicyDisplayCard } from './ui/modal'
-import { initWorld, tick, spawnEvent, applyInterventions, applyInstantEventDeaths, getIncomeTaxRate, MIN_NPC_COUNT, applyConstitutionPatch, applyWorldDelta, applyInstitutionDeltas } from './sim/engine'
+import { initWorld, tick, spawnEvent, applyInterventions, applyInstantEventDeaths, getIncomeTaxRate, MIN_NPC_COUNT, DEFAULT_NPC_COUNT, applyConstitutionPatch, applyWorldDelta, applyInstitutionDeltas } from './engine'
 import {
   setLang,
   t,
@@ -13,7 +13,7 @@ import {
   getStoredLangPreference,
   isSupportedLang,
 } from './i18n'
-import { initMap, setMapPaused, setMapLegendVisible, triggerMapShake } from './ui/map'
+import { initMap, setMapPaused, setMapLegendVisible, setMapNetworkVisible, triggerMapShake } from './ui/map'
 import {
   resetNPCChatHistories,
   registerSpotlightCallbacks,
@@ -25,7 +25,7 @@ import { runGovernmentCycle, detectRegime, type GovernmentPolicyAI } from './sim
 import { checkPressTrigger, resetPressRuntimeState } from './sim/press'
 import { resetNarrativeRuntimeState } from './sim/narratives'
 import { getSettings, openSettingsPanel, applyRegimeDefaults } from './ui/settings-panel'
-import { runElection } from './sim/engine'
+import { runElection } from './engine'
 import { getRegimeProfile } from './sim/regime-config'
 import { setActiveSimRestrictions } from './sim/npc'
 import { isMarxistPresetEnabled } from './build-features'
@@ -528,7 +528,7 @@ async function startGame(constitution: Constitution) {
 
   try {
   // initWorld is now async — it yields every 50 NPCs so the UI stays responsive
-  const npcCount = Math.max(MIN_NPC_COUNT, parseInt(npcCountInput?.value || '500', 10) || MIN_NPC_COUNT)
+  const npcCount = Math.max(MIN_NPC_COUNT, parseInt(npcCountInput?.value || String(DEFAULT_NPC_COUNT), 10) || MIN_NPC_COUNT)
   world = await initWorld(constitution, npcCount)
   // Apply regime-specific defaults, locked features, and sim restrictions
   const regimeProfile = getRegimeProfile(constitution)
@@ -542,7 +542,7 @@ async function startGame(constitution: Constitution) {
 
   // Initialize the canvas map
   const mapCanvas = document.getElementById('map-canvas') as HTMLCanvasElement
-  initMap(mapCanvas, () => world, () => aiConfig)
+  initMap(mapCanvas, () => world, () => aiConfig, getSettings)
 
   // Resolve preset description keys through i18n
   const desc = constitution.description.startsWith('preset.')
@@ -835,7 +835,7 @@ function checkStatDeltas(macro: WorldState['macro']) {
 
 // ── Strike readiness warning ───────────────────────────────────────────────
 // Fires a feed warning once per 3 days when a role is close to strike threshold.
-// Threshold (engine.ts): solidarity > 72 AND grievance > 58 AND gini > 0.42
+// Threshold (engine/network-dynamics): solidarity > 72 AND grievance > 58 AND gini > 0.42
 // We warn at 80% of those values and cooldown per role to avoid spam.
 
 const _strikeWarnCooldown: Partial<Record<string, number>> = {}
@@ -1013,7 +1013,7 @@ function updateDemographics(): number {
 // ── Labor tension: per-role solidarity + grievance ─────────────────────────
 
 const STRIKEABLE_ROLES = ['farmer', 'craftsman', 'merchant', 'scholar', 'healthcare'] as const
-// Strike thresholds (mirrors engine.ts checkLaborStrikes)
+// Strike thresholds (mirrors engine checkLaborStrikes)
 const STRIKE_SOL_THRESH = 72
 const STRIKE_GRIEV_THRESH = 58
 // Warn when within 80% of threshold
@@ -1128,7 +1128,7 @@ function updateRumors() {
 
 // ── Referendum banner ──────────────────────────────────────────────────────
 
-/** Compute live support % using the same logic as resolveReferendum in engine.ts. */
+/** Compute live support % using the same logic as resolveReferendum in engine/politics. */
 function computeReferendumSupport(state: WorldState): number {
   const ref = state.referendum
   if (!ref) return 0
@@ -1259,6 +1259,7 @@ registerSpotlightCallbacks(
 const btnPause = document.getElementById('btn-pause')!
 const btnToggleDemo = document.getElementById('btn-toggle-demo') as HTMLButtonElement
 const btnToggleRumors = document.getElementById('btn-toggle-rumors') as HTMLButtonElement
+const btnToggleNetwork = document.getElementById('btn-toggle-network') as HTMLButtonElement
 const btnToggleLegend = document.getElementById('btn-toggle-legend') as HTMLButtonElement
 const btnToggleEcon = document.getElementById('btn-toggle-econ') as HTMLButtonElement
 const btnToggleNpcContacts = document.getElementById('btn-toggle-npc-contacts') as HTMLButtonElement
@@ -1268,7 +1269,12 @@ btnPanelsToggle?.addEventListener('click', (e) => {
   e.stopPropagation()
   panelsDropdown?.classList.toggle('open')
 })
-document.addEventListener('click', () => panelsDropdown?.classList.remove('open'))
+document.addEventListener('click', (e) => {
+  if (!panelsDropdown) return
+  const t = e.target as Node
+  if (panelsDropdown.contains(t)) return
+  panelsDropdown.classList.remove('open')
+})
 const btnTheme = document.getElementById('btn-theme')!
 btnTheme.addEventListener('click', toggleTheme)
 
@@ -1281,11 +1287,13 @@ const npcContactsPanel = document.getElementById('npc-contacts-panel') as HTMLEl
 const DEMO_VISIBLE_KEY = 'ui_demographics_visible'
 const RUMORS_VISIBLE_KEY = 'ui_rumors_visible'
 const LEGEND_VISIBLE_KEY = 'ui_legend_visible'
+const NETWORK_VISIBLE_KEY = 'ui_network_visible'
 const ECON_VISIBLE_KEY = 'ui_econ_visible'
 const NPC_CONTACTS_VISIBLE_KEY = 'ui_npc_contacts_visible'
 let demographicsVisible = localStorage.getItem(DEMO_VISIBLE_KEY) !== '0'
 let rumorsVisible = localStorage.getItem(RUMORS_VISIBLE_KEY) !== '0'
 let legendVisible = localStorage.getItem(LEGEND_VISIBLE_KEY) !== '0'
+let networkVisible = localStorage.getItem(NETWORK_VISIBLE_KEY) !== '0'
 let econVisible = localStorage.getItem(ECON_VISIBLE_KEY) === '1'
 let npcContactsVisible = localStorage.getItem(NPC_CONTACTS_VISIBLE_KEY) === '1'
 
@@ -1295,9 +1303,11 @@ function applyOverlayVisibility() {
   econPanel.classList.toggle('hidden', !econVisible)
   npcContactsPanel.classList.toggle('hidden', !npcContactsVisible)
   setMapLegendVisible(legendVisible)
+  setMapNetworkVisible(networkVisible)
 
   btnToggleDemo.classList.toggle('active', demographicsVisible)
   btnToggleRumors.classList.toggle('active', rumorsVisible)
+  btnToggleNetwork.classList.toggle('active', networkVisible)
   btnToggleLegend.classList.toggle('active', legendVisible)
   btnToggleEcon.classList.toggle('active', econVisible)
   btnToggleNpcContacts.classList.toggle('active', npcContactsVisible)
@@ -1312,6 +1322,12 @@ btnToggleDemo.addEventListener('click', () => {
 btnToggleRumors.addEventListener('click', () => {
   rumorsVisible = !rumorsVisible
   localStorage.setItem(RUMORS_VISIBLE_KEY, rumorsVisible ? '1' : '0')
+  applyOverlayVisibility()
+})
+
+btnToggleNetwork.addEventListener('click', () => {
+  networkVisible = !networkVisible
+  localStorage.setItem(NETWORK_VISIBLE_KEY, networkVisible ? '1' : '0')
   applyOverlayVisibility()
 })
 

@@ -85,6 +85,25 @@ body[data-theme='light'] .stg-row { border-bottom-color: #e8eef6; }
 
 .stg-row-num { align-items: center; }
 
+.stg-row-select { align-items: center; }
+
+.stg-select {
+  flex-shrink: 0;
+  max-width: min(200px, 46vw);
+  background: #1a1a1a;
+  border: 1px solid #2e2e2e;
+  color: #ccc;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+body[data-theme='light'] .stg-select {
+  background: #eef3f9;
+  border-color: #c5d2e0;
+  color: #2a3a52;
+}
+
 .stg-row-info { flex: 1; min-width: 0; }
 .stg-row-label {
   font-size: 12px;

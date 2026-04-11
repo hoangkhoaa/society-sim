@@ -145,15 +145,30 @@ POLLUTION: natural_resources drives environmental health. When resources % < 20 
 "answer":"brief","requires_confirm":true}
 NOTE: Only triggers if no referendum is already active. Use for democratic reforms, popular demands, or player-initiated votes. The outcome is decided by NPC worldviews — not guaranteed to pass.
 
+── LIMITS & HONEST GUIDANCE (IMPORTANT) ──
+Some requests have **no real effect** in the simulation (the engine simply does not implement them). Do **not** invent JSON that pretends they worked. Instead return type **"answer"** with a short honest explanation + **concrete guidance** for the Architect.
+
+Use **answer** (not event/intervention) when the ask is one of these:
+• **Role mix / jobs split after founding** — \`role_ratios\` and population composition are fixed at world creation. Mid-game you can only use \`constitution\` for numeric laws (market_freedom, state_power, safety_net, …), not role percentages. Suggest: start a new society if they want a different class structure.
+• **Target one citizen by name** — You do not receive every NPC name in context. Suggest: click them on the **map** to open spotlight (their id is tied to selection), or use interventions with \`target:"zone"\` / \`target:"role"\` / \`npc_ids\` if they know ids.
+• **Intervention roles filter** — NPC interventions accept \`roles\` / \`new_role\` only among: farmer, craftsman, scholar, merchant, guard, leader. healthcare & gang exist in the world but are **not** in that reassignment list; use zone events or stat deltas on \`target:"all"\` with narrative flavor instead of invalid \`new_role\`.
+• **Pure cosmetics / meta** — Renaming the city, flags, UI layout, “make the feed prettier” — not simulated. Mention: **Settings** (gear), **theme** button, **panels** menu for overlays; map toggles for ties/legend.
+• **New map zones, buildings, roads** — Geography is fixed. Approximate with **zone-targeted events** or interventions scoped to existing zones.
+• **Guaranteed referendum / election outcomes** — Votes emerge from NPC worldviews; you cannot script the final result. Suggest watching macro trust/polarization or using \`world_delta.trigger_referendum\` and accepting uncertainty.
+• **Play as one NPC first-person, or full diplomatic treaties between named countries** — Not a mode in this build. Closest hooks: interventions, events, constitution reform, institutions.
+
+When you **can** map harm/help to the engine, still prefer a real **event** / **intervention** / **world_delta** / **constitution** response. Use **answer** only when mapping would be **misleading** (player would think something changed when it cannot).
+
 RULES:
-- ALWAYS interpret commands as actions. NEVER explain why you can't — always find the closest event/intervention type and execute it.
+- Interpret **most** commands as sim actions: map them to the closest **event**, **intervention**, **world_delta**, **constitution**, or **institution_deltas** when a real effect exists.
+- When no honest mapping exists, return **type "answer"** with limits + what to try instead (see LIMITS & HONEST GUIDANCE).
 - Inventions, discoveries, innovations → "tech_shift" event (high intensity for major breakthroughs). Narrate the discovery in "narrative_open". NEVER set instant_kill_rate for tech_shift or any positive/beneficial event.
 - Natural disasters, wars, plagues → appropriate event type. Social unrest, rebellions → intervention + optional event.
 - Extreme heat, heat wave → "heatwave". Mudslide/debris flow → "landslide". Whirlwind/cyclone → "tornado". Crop-eating insects → "locust_plague".
 - Community celebration, holiday, fair → "festival". Bumper crop/harvest bounty → "golden_harvest". Arts/culture movement → "cultural_renaissance".
 - Policies, laws, reforms → constitution change (type:"intervention" + "constitution" field) or world_delta.
-- "answer" type is ONLY for pure informational questions ("what is gini?", "how many people?"). Never use "answer" for action commands.
-- Convert ANY command — no matter how creative or fictional — into the most fitting response type. If in doubt, use "tech_shift" or "intervention".
+- "answer" type is for **informational questions** AND for **out-of-scope requests** (with guidance). Do not use "answer" when a valid event/intervention clearly applies.
+- For creative commands that **do** affect the sim, map to the most fitting response type; if in doubt, use "tech_shift" or "intervention" — unless the LIMITS section says otherwise.
 - To kill an exact percentage: use intervention with kill:true + kill_pct:<0-100>. Example: kill_pct:99 kills 99% of targeted NPCs.
 - To kill specific people (assassination, execution): intervention with kill:true + target:"id_list" or target:"role".
 - For events: use effects_per_tick.instant_kill_rate to override default kill fraction (e.g. 0.99 for 99% instant death).
@@ -161,7 +176,7 @@ RULES:
 - Multiple side-channels can combine: e.g. interventions[] + world_delta + constitution in one response.
 - Constitution reform: always set requires_confirm:true.
 
-ZONES: "north_farm","south_farm","workshop_district","market_square","scholar_quarter","residential_east","residential_west","guard_post","plaza"
+ZONES: "north_farm","south_farm","clinic_district","scholar_quarter","workshop_district","market_square","guard_post","plaza","residential_east","residential_west","underworld_quarter"
 
 ALWAYS return valid JSON. Be dramatic and concise.
 ${langDirective(getLang())}`
@@ -172,9 +187,9 @@ function tokenModeDirective(config: AIConfig): string {
     return `TOKEN MODE: EVENTS ONLY.
 - Never return type "intervention".
 - Only return "event" or "answer".
-- ALWAYS map any command (invention, policy, disaster, social change) to the closest valid "event" type. Never refuse or explain.
+- Map commands (invention, policy, disaster, social change) to the closest valid "event" when the sim can represent them.
 - Inventions/discoveries → "tech_shift". Weather/nature → matching disaster. Social unrest → "charismatic_npc" or "martyr". Community celebration → "festival". Bumper crop → "golden_harvest". Arts/culture → "cultural_renaissance".
-- Only return "answer" when the Architect is explicitly asking a direct question (not issuing a command).`
+- Return "answer" for (a) direct informational questions, or (b) requests the engine cannot represent even as an event — use the LIMITS & HONEST GUIDANCE rules: explain + tell the Architect what they can do instead (e.g. Settings, map click, new game for role mix).`
   }
   if (config.token_mode === 'events_plus_npc_control') {
     return `TOKEN MODE: EVENTS + NPC CONTROL.

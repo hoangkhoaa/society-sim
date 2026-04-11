@@ -1,8 +1,10 @@
-import type { WorldState, Role } from '../types'
+import type { WorldState, Role, GameSettings, MapBackgroundMode } from '../types'
 import { openSpotlight, close as closeSpotlight } from './spotlight'
 import type { AIConfig } from '../types'
 import { t } from '../i18n'
 import { ZONE_ADJACENCY } from '../sim/constitution'
+import mapArtDay from '../map/basic-day.png'
+import mapArtNight from '../map/basic-night.png'
 
 // ── Town layout ─────────────────────────────────────────────────────────────
 // Three horizontal bands that read like a real settlement from above:
@@ -275,6 +277,7 @@ let canvas: HTMLCanvasElement | null = null
 let ctx: CanvasRenderingContext2D | null = null
 let getWorld: (() => WorldState | null) | null = null
 let getConfig: (() => AIConfig | null) | null = null
+let getGameSettings: (() => Readonly<GameSettings>) | null = null
 let animFrame: number | null = null
 let hoveredNPCId: number | null = null
 let frameCount = 0
@@ -284,6 +287,171 @@ let _needsMapRedraw = true
 let _visibilityListenerAttached = false
 let _mapSelectNpcListenerAttached = false
 let _legendVisible = true
+/** When false, hide social tie lines (info/strong/family + selection overlay). */
+let _mapNetworkVisible = true
+
+/** Inset for town layout (zones, NPCs, roads). Background art is drawn full-bleed on the canvas outside this rect. */
+export const MAP_VIEWPORT_PADDING = 0.1
+
+/** Target blur radius in **output** (inner map) pixels for `background_blurred_layout`. */
+export const MAP_LAYOUT_BLUR_PX = 4
+
+/** Roads + zones are blurred at this scale then scaled up — much cheaper than full-res `filter: blur`. */
+const MAP_BLUR_LAYER_DOWNSAMPLE = 0.5
+
+/** Light scrim over underlay before blurred layout (reduces background show-through). 0–1 */
+const MAP_BLUR_UNDERLAY_SCRIM_LIGHT = 0.07
+const MAP_BLUR_UNDERLAY_SCRIM_DARK = 0.11
+
+let _blurScratch: HTMLCanvasElement | null = null
+let _blurScratchCtx: CanvasRenderingContext2D | null = null
+
+function getBlurScratchContext(ow: number, oh: number): CanvasRenderingContext2D | null {
+  if (!_blurScratch) {
+    _blurScratch = document.createElement('canvas')
+    _blurScratchCtx = _blurScratch.getContext('2d', { alpha: true })
+  }
+  if (!_blurScratch || !_blurScratchCtx) return null
+  if (_blurScratch.width !== ow || _blurScratch.height !== oh) {
+    _blurScratch.width = ow
+    _blurScratch.height = oh
+  }
+  return _blurScratchCtx
+}
+
+export interface MapViewportRect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/** Last inner map rect in canvas pixels — used for hit-testing after padding. */
+let _lastMapViewport: MapViewportRect | null = null
+
+/**
+ * Optional underlay when mode is `background_only` or `background_blurred_layout`.
+ * Context origin is the top-left of the inner map; draw in [0, w) × [0, h).
+ */
+export type MapBackgroundPainter = (
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  light: boolean,
+) => void
+
+let _mapBackgroundPainter: MapBackgroundPainter | null = null
+
+let _mapBgDay: HTMLImageElement | null = null
+let _mapBgNight: HTMLImageElement | null = null
+
+function startMapBackgroundImageLoad(): void {
+  const bump = () => { _needsMapRedraw = true }
+  const afterDecode = (img: HTMLImageElement) => {
+    if (typeof img.decode === 'function') {
+      void img.decode().then(bump).catch(bump)
+    } else {
+      bump()
+    }
+  }
+  const wire = (img: HTMLImageElement) => {
+    img.onload = () => afterDecode(img)
+    img.onerror = bump
+  }
+  if (!_mapBgDay) {
+    const d = new Image()
+    wire(d)
+    d.src = mapArtDay
+    _mapBgDay = d
+    if (d.complete) afterDecode(d)
+  }
+  if (!_mapBgNight) {
+    const n = new Image()
+    wire(n)
+    n.src = mapArtNight
+    _mapBgNight = n
+    if (n.complete) afterDecode(n)
+  }
+}
+
+function drawImageCover(ctx: CanvasRenderingContext2D, img: HTMLImageElement, W: number, H: number): void {
+  const iw = img.naturalWidth
+  const ih = img.naturalHeight
+  if (iw <= 0 || ih <= 0) return
+  const scale = Math.max(W / iw, H / ih)
+  const dw = iw * scale
+  const dh = ih * scale
+  const dx = (W - dw) / 2
+  const dy = (H - dh) / 2
+  ctx.drawImage(img, dx, dy, dw, dh)
+}
+
+function mapBackgroundImageDrawable(img: HTMLImageElement | null): img is HTMLImageElement {
+  return Boolean(img && img.complete && img.naturalWidth > 0)
+}
+
+/** Day vs night art from sim clock; if no world yet, UI theme picks default. */
+function pickMapBackgroundImage(lightUi: boolean, world: WorldState | null): HTMLImageElement | null {
+  const dayOk = mapBackgroundImageDrawable(_mapBgDay)
+  const nightOk = mapBackgroundImageDrawable(_mapBgNight)
+  if (!dayOk && !nightOk) return null
+  const useNight = world ? computeDaylight(world.tick % 24) < 0.55 : !lightUi
+  if (useNight && nightOk) return _mapBgNight
+  if (dayOk) return _mapBgDay
+  return nightOk ? _mapBgNight : null
+}
+
+/** Full-canvas backdrop (edge-to-edge). Custom inner painter uses solid margins here; bundled art covers whole canvas. */
+function drawFullCanvasMapBackdrop(
+  canvasW: number,
+  canvasH: number,
+  light: boolean,
+  world: WorldState | null,
+  bgMode: MapBackgroundMode,
+): void {
+  if (!ctx) return
+  const painterFillsInner =
+    _mapBackgroundPainter != null &&
+    (bgMode === 'background_only' || bgMode === 'background_blurred_layout')
+  if (painterFillsInner) {
+    ctx.fillStyle = light ? '#c9c4b9' : '#111418'
+    ctx.fillRect(0, 0, canvasW, canvasH)
+    return
+  }
+  const img = pickMapBackgroundImage(light, world)
+  if (img) {
+    drawImageCover(ctx, img, canvasW, canvasH)
+    return
+  }
+  ctx.fillStyle = light ? '#c9c4b9' : '#111418'
+  ctx.fillRect(0, 0, canvasW, canvasH)
+}
+
+export function setMapBackgroundPainter(painter: MapBackgroundPainter | null): void {
+  _mapBackgroundPainter = painter
+  _needsMapRedraw = true
+}
+
+export function requestMapRedraw(): void {
+  _needsMapRedraw = true
+}
+
+export function computeMapViewportRect(canvasW: number, canvasH: number): MapViewportRect {
+  const mx = canvasW * MAP_VIEWPORT_PADDING
+  const my = canvasH * MAP_VIEWPORT_PADDING
+  return { x: mx, y: my, w: canvasW - 2 * mx, h: canvasH - 2 * my }
+}
+
+function currentMapBackgroundMode(): MapBackgroundMode {
+  return getGameSettings?.().map_background_mode ?? 'layout_only'
+}
+
+/** Convert canvas pixel coords to inner-map coords; null if settings/viewport unavailable. */
+function canvasToInnerMap(mx: number, my: number): { lx: number; ly: number } | null {
+  const vp = _lastMapViewport
+  if (!vp || vp.w <= 0 || vp.h <= 0) return null
+  return { lx: mx - vp.x, ly: my - vp.y }
+}
 
 // ── Selection state ───────────────────────────────────────────────────────────
 let selectedNPCId: number | null = null
@@ -296,6 +464,11 @@ export function setMapPaused(value: boolean) {
 
 export function setMapLegendVisible(value: boolean) {
   _legendVisible = value
+  _needsMapRedraw = true
+}
+
+export function setMapNetworkVisible(value: boolean) {
+  _mapNetworkVisible = value
   _needsMapRedraw = true
 }
 
@@ -345,6 +518,11 @@ interface FamilyCluster {
 }
 
 const npcVisuals = new Map<number, NPCVisual>()
+
+/** True while the map animates this NPC along a commute path (spotlight uses this vs raw `resting`). */
+export function isNpcVisualCommuting(npcId: number): boolean {
+  return npcVisuals.get(npcId)?.commute != null
+}
 
 function getOrInitVisual(npc: { id: number; x: number; y: number; zone: string; action_state: string }): NPCVisual {
   if (!npcVisuals.has(npc.id)) {
@@ -522,11 +700,13 @@ export function initMap(
   canvasEl: HTMLCanvasElement,
   worldGetter: () => WorldState | null,
   configGetter: () => AIConfig | null,
+  settingsGetter: () => Readonly<GameSettings>,
 ) {
   canvas  = canvasEl
   ctx     = canvasEl.getContext('2d')
   getWorld  = worldGetter
   getConfig = configGetter
+  getGameSettings = settingsGetter
 
   resizeCanvas()
   window.addEventListener('resize', resizeCanvas)
@@ -557,6 +737,7 @@ export function initMap(
     })
   }
 
+  startMapBackgroundImageLoad()
   _needsMapRedraw = true
   drawLoop()
 }
@@ -632,15 +813,32 @@ function draw() {
   }
 
   const world = getWorld?.()
+  const vp = computeMapViewportRect(W, H)
+  _lastMapViewport = vp
+  const bgMode = currentMapBackgroundMode()
+  const light0 = isLightTheme()
+
   if (!world) {
-    drawCityBackground(W, H, isLightTheme())
-    drawPlaceholder(W, H)
+    drawFullCanvasMapBackdrop(W, H, light0, null, bgMode)
+    ctx.save()
+    ctx.translate(vp.x, vp.y)
+    if (bgMode === 'background_only' || bgMode === 'background_blurred_layout') {
+      if (_mapBackgroundPainter) _mapBackgroundPainter(ctx, vp.w, vp.h, light0)
+    }
+    drawPlaceholder(vp.w, vp.h)
+    ctx.restore()
     if (sx !== 0 || sy !== 0) ctx.restore()
     return
   }
 
-  drawZones(world, W, H)
-  drawNPCs(world, W, H)
+  drawFullCanvasMapBackdrop(W, H, light0, world, bgMode)
+
+  ctx.save()
+  ctx.translate(vp.x, vp.y)
+  drawZones(world, vp.w, vp.h, bgMode)
+  drawNPCs(world, vp.w, vp.h)
+  ctx.restore()
+
   drawAtmosphere(world, W, H)
   if (_legendVisible) drawLegend(W, H)
 
@@ -898,13 +1096,6 @@ function lightenHex(hex: string, mul: number): string {
 // The road network is the background. Zone rectangles are painted on top;
 // the background colour shows through in the gaps = streets.
 
-function drawCityBackground(W: number, H: number, light: boolean) {
-  if (!ctx) return
-  // Asphalt/pavement base colour
-  ctx.fillStyle = light ? '#c9c4b9' : '#111418'
-  ctx.fillRect(0, 0, W, H)
-}
-
 function drawRoadMarkings(W: number, H: number, light: boolean) {
   if (!ctx) return
   ctx.save()
@@ -1053,17 +1244,10 @@ function drawZoneRect(
   ctx.stroke()
 }
 
-function drawZones(world: WorldState, W: number, H: number) {
-  if (!ctx) return
-  const light = isLightTheme()
-
-  // 1. City ground / road background
-  drawCityBackground(W, H, light)
-
-  // 2. Road markings (kerbs + centre dashes + junctions)
-  drawRoadMarkings(W, H, light)
-
-  // 3. Compute event tints per zone
+function computeZoneEventTints(world: WorldState): {
+  zoneTintAlpha: Record<string, number>
+  zoneTintColor: Record<string, EventZoneTint>
+} {
   const zoneTintAlpha: Record<string, number> = {}
   const zoneTintColor: Record<string, EventZoneTint> = {}
   const pulse = 0.5 + 0.5 * Math.sin(frameCount * 0.05)
@@ -1079,13 +1263,11 @@ function drawZones(world: WorldState, W: number, H: number) {
       }
     }
   }
+  return { zoneTintAlpha, zoneTintColor }
+}
 
-  // 4. Zone blocks
-  for (const zone of Object.keys(ZONE_RECTS)) {
-    drawZoneRect(zone, W, H, light, zoneTintAlpha[zone] ?? 0, zoneTintColor[zone])
-  }
-
-  // 5. Zone labels + icons
+function drawZoneLabels(W: number, H: number, light: boolean, iconAlpha = 0.70) {
+  if (!ctx) return
   ctx.textAlign = 'center'
   for (const [key, info] of Object.entries(ZONE_LAYOUT)) {
     const rect = ZONE_RECTS[key]
@@ -1094,13 +1276,11 @@ function drawZones(world: WorldState, W: number, H: number) {
     const cy  = info.seed[1] * H
     const zoneLabel = String(t(`zone.${key}`))
 
-    // Icon (slightly above centroid)
     ctx.font = '14px system-ui'
-    ctx.globalAlpha = 0.70
+    ctx.globalAlpha = iconAlpha
     ctx.fillText(ZONE_ICONS[key] ?? '', cx, cy - 8)
     ctx.globalAlpha = 1
 
-    // Label
     ctx.font = light ? '700 10px system-ui' : '600 9px system-ui'
     if (light) {
       ctx.fillStyle = 'rgba(255,255,255,0.9)'
@@ -1115,6 +1295,80 @@ function drawZones(world: WorldState, W: number, H: number) {
     ctx.fillText(zoneLabel, cx, cy + 8)
   }
   ctx.textAlign = 'left'
+}
+
+function drawZoneBlocks(
+  W: number,
+  H: number,
+  light: boolean,
+  zoneTintAlpha: Record<string, number>,
+  zoneTintColor: Record<string, EventZoneTint>,
+) {
+  for (const zone of Object.keys(ZONE_RECTS)) {
+    drawZoneRect(zone, W, H, light, zoneTintAlpha[zone] ?? 0, zoneTintColor[zone])
+  }
+}
+
+function drawZones(world: WorldState, W: number, H: number, bgMode: MapBackgroundMode) {
+  if (!ctx) return
+  const light = isLightTheme()
+  const { zoneTintAlpha, zoneTintColor } = computeZoneEventTints(world)
+
+  if (bgMode === 'background_only') {
+    if (_mapBackgroundPainter) _mapBackgroundPainter(ctx, W, H, light)
+    return
+  }
+
+  if (bgMode === 'layout_only') {
+    drawRoadMarkings(W, H, light)
+    drawZoneBlocks(W, H, light, zoneTintAlpha, zoneTintColor)
+    drawZoneLabels(W, H, light)
+    return
+  }
+
+  // background_blurred_layout — sharp underlay, scrim, blurred roads + blocks (low-res blur), sharp labels
+  if (_mapBackgroundPainter) _mapBackgroundPainter(ctx, W, H, light)
+
+  ctx.fillStyle = light
+    ? `rgba(255,255,255,${MAP_BLUR_UNDERLAY_SCRIM_LIGHT})`
+    : `rgba(0,0,0,${MAP_BLUR_UNDERLAY_SCRIM_DARK})`
+  ctx.fillRect(0, 0, W, H)
+
+  const scale = MAP_BLUR_LAYER_DOWNSAMPLE
+  const ow = Math.max(1, Math.round(W * scale))
+  const oh = Math.max(1, Math.round(H * scale))
+  const blurOnScratch = (MAP_LAYOUT_BLUR_PX * ow) / W
+  const bctx = getBlurScratchContext(ow, oh)
+
+  if (!bctx) {
+    ctx.save()
+    ctx.filter = `blur(${MAP_LAYOUT_BLUR_PX}px)`
+    drawRoadMarkings(W, H, light)
+    drawZoneBlocks(W, H, light, zoneTintAlpha, zoneTintColor)
+    ctx.restore()
+  } else {
+    const mainCtx = ctx
+    bctx.setTransform(1, 0, 0, 1, 0, 0)
+    bctx.clearRect(0, 0, ow, oh)
+    bctx.save()
+    bctx.setTransform(ow / W, 0, 0, oh / H, 0, 0)
+    bctx.filter = `blur(${blurOnScratch}px)`
+    try {
+      ctx = bctx
+      drawRoadMarkings(W, H, light)
+      drawZoneBlocks(W, H, light, zoneTintAlpha, zoneTintColor)
+    } finally {
+      ctx = mainCtx
+    }
+    bctx.restore()
+
+    mainCtx.save()
+    mainCtx.imageSmoothingEnabled = true
+    mainCtx.drawImage(bctx.canvas, 0, 0, ow, oh, 0, 0, W, H)
+    mainCtx.restore()
+  }
+
+  drawZoneLabels(W, H, light, 0.88)
 }
 
 // ── Selected NPC relationship overlay ─────────────────────────────────────────
@@ -1264,134 +1518,138 @@ function drawNPCs(world: WorldState, W: number, H: number) {
   const hasSelection = relatedIds.size > 0
 
   // ── Family bond lines (spouse pairs in same render zone) ─────────────────
-  const drawnFamilyPairs = new Set<string>()
-  for (const npc of world.npcs) {
-    if (!npc.lifecycle.is_alive) continue
-    if (npc.lifecycle.spouse_id === null) continue
-    const sid = npc.lifecycle.spouse_id
-    if (sid < 0 || sid >= world.npcs.length) continue
-    const pairKey = npc.id < sid ? `${npc.id}-${sid}` : `${sid}-${npc.id}`
-    if (drawnFamilyPairs.has(pairKey)) continue
-    drawnFamilyPairs.add(pairKey)
+  if (_mapNetworkVisible) {
+    const drawnFamilyPairs = new Set<string>()
+    for (const npc of world.npcs) {
+      if (!npc.lifecycle.is_alive) continue
+      if (npc.lifecycle.spouse_id === null) continue
+      const sid = npc.lifecycle.spouse_id
+      if (sid < 0 || sid >= world.npcs.length) continue
+      const pairKey = npc.id < sid ? `${npc.id}-${sid}` : `${sid}-${npc.id}`
+      if (drawnFamilyPairs.has(pairKey)) continue
+      drawnFamilyPairs.add(pairKey)
 
-    const spouse = world.npcs[sid]
-    if (!spouse?.lifecycle.is_alive) continue
+      const spouse = world.npcs[sid]
+      if (!spouse?.lifecycle.is_alive) continue
 
-    const aPos = posMap.get(npc.id)
-    const bPos = posMap.get(sid)
-    if (!aPos || !bPos) continue
+      const aPos = posMap.get(npc.id)
+      const bPos = posMap.get(sid)
+      if (!aPos || !bPos) continue
 
-    // In selection mode: only draw bonds that involve the selected NPC or its connections
-    if (hasSelection && !relatedIds.has(npc.id) && !relatedIds.has(sid)) continue
+      // In selection mode: only draw bonds that involve the selected NPC or its connections
+      if (hasSelection && !relatedIds.has(npc.id) && !relatedIds.has(sid)) continue
 
-    const aVis = npcVisuals.get(npc.id)
-    const bVis = npcVisuals.get(sid)
-    if (!aVis || !bVis || aVis.renderZone !== bVis.renderZone) continue
+      const aVis = npcVisuals.get(npc.id)
+      const bVis = npcVisuals.get(sid)
+      if (!aVis || !bVis || aVis.renderZone !== bVis.renderZone) continue
 
-    const dist = Math.hypot(aPos.px - bPos.px, aPos.py - bPos.py)
-    if (dist > 90) continue  // only draw when close together
+      const dist = Math.hypot(aPos.px - bPos.px, aPos.py - bPos.py)
+      if (dist > 90) continue  // only draw when close together
 
-    const bothResting = npc.action_state === 'resting' && spouse.action_state === 'resting'
-    const alpha = bothResting ? 0.35 : 0.12
-    ctx.beginPath()
-    ctx.moveTo(aPos.px, aPos.py)
-    ctx.lineTo(bPos.px, bPos.py)
-    ctx.strokeStyle = `rgba(255,200,120,${alpha})`  // warm golden family bond
-    ctx.lineWidth = 0.8
-    ctx.globalAlpha = 1
-    ctx.stroke()
+      const bothResting = npc.action_state === 'resting' && spouse.action_state === 'resting'
+      const alpha = bothResting ? 0.35 : 0.12
+      ctx.beginPath()
+      ctx.moveTo(aPos.px, aPos.py)
+      ctx.lineTo(bPos.px, bPos.py)
+      ctx.strokeStyle = `rgba(255,200,120,${alpha})`  // warm golden family bond
+      ctx.lineWidth = 0.8
+      ctx.globalAlpha = 1
+      ctx.stroke()
+    }
   }
 
   // ── Social relationship lines ──────────────────────────────────────────
   // Skipped in selection mode — drawSelectedNPCTies handles the selected NPC's ties.
-  const drawnPairs = new Set<string>()
-  const drawnInfoPairs = new Set<string>()
-  const pulse = 0.5 + 0.5 * Math.sin(frameCount * 0.05)  // 0–1 pulsing
+  if (_mapNetworkVisible && !hasSelection) {
+    const drawnPairs = new Set<string>()
+    const drawnInfoPairs = new Set<string>()
+    const pulse = 0.5 + 0.5 * Math.sin(frameCount * 0.05)  // 0–1 pulsing
 
-  if (!hasSelection) for (const npc of world.npcs) {
-    if (!npc.lifecycle.is_alive) continue
-    const aPos = posMap.get(npc.id)
-    if (!aPos) continue
+    for (const npc of world.npcs) {
+      if (!npc.lifecycle.is_alive) continue
+      const aPos = posMap.get(npc.id)
+      if (!aPos) continue
 
-    // Draw information-network ties (info_ties) as blue/cyan dashed lines
-    // Visible when NPCs are actively sharing information (socializing or organizing)
-    const isActiveInfo = npc.action_state === 'socializing' || npc.action_state === 'organizing'
-    if (isActiveInfo && npc.info_ties) {
-      for (const tid of npc.info_ties) {
+      // Draw information-network ties (info_ties) as blue/cyan dashed lines
+      // Visible when NPCs are actively sharing information (socializing or organizing)
+      const isActiveInfo = npc.action_state === 'socializing' || npc.action_state === 'organizing'
+      if (isActiveInfo && npc.info_ties) {
+        for (const tid of npc.info_ties) {
+          const pairKey = npc.id < tid ? `${npc.id}-${tid}` : `${tid}-${npc.id}`
+          if (drawnInfoPairs.has(pairKey)) continue
+          drawnInfoPairs.add(pairKey)
+
+          const bNpc = world.npcs[tid]
+          if (!bNpc?.lifecycle.is_alive) continue
+          const bPos = posMap.get(bNpc.id)
+          if (!bPos) continue
+
+          // Info ties can span across zones — use a longer draw distance than direct ties
+          const dist = Math.hypot(aPos.px - bPos.px, aPos.py - bPos.py)
+          if (dist > INFO_TIE_MAX_DRAW_PX) continue
+
+          const bIsActive = bNpc.action_state === 'socializing' || bNpc.action_state === 'organizing'
+          if (!bIsActive) continue
+
+          const infoAlpha = INFO_TIE_BASE_ALPHA + pulse * INFO_TIE_PULSE_ALPHA
+          ctx.beginPath()
+          ctx.moveTo(aPos.px, aPos.py)
+          ctx.lineTo(bPos.px, bPos.py)
+          ctx.strokeStyle = `rgba(80,160,255,${infoAlpha})`  // blue — information network
+          ctx.lineWidth = 0.6
+          ctx.setLineDash([3, 5])  // dashed to distinguish from direct ties
+          ctx.globalAlpha = 1
+          ctx.stroke()
+          ctx.setLineDash([])  // reset dash
+          ctx.globalAlpha = 1
+        }
+      }
+
+      // Draw direct strong-tie lines (face-to-face connections)
+      for (const tid of npc.strong_ties) {
         const pairKey = npc.id < tid ? `${npc.id}-${tid}` : `${tid}-${npc.id}`
-        if (drawnInfoPairs.has(pairKey)) continue
-        drawnInfoPairs.add(pairKey)
+        if (drawnPairs.has(pairKey)) continue
+        drawnPairs.add(pairKey)
 
         const bNpc = world.npcs[tid]
         if (!bNpc?.lifecycle.is_alive) continue
         const bPos = posMap.get(bNpc.id)
         if (!bPos) continue
 
-        // Info ties can span across zones — use a longer draw distance than direct ties
+        // Canvas-space distance
         const dist = Math.hypot(aPos.px - bPos.px, aPos.py - bPos.py)
-        if (dist > INFO_TIE_MAX_DRAW_PX) continue
+        if (dist > DIRECT_TIE_MAX_DRAW_PX) continue  // direct ties are geographic — draw only nearby
 
-        const bIsActive = bNpc.action_state === 'socializing' || bNpc.action_state === 'organizing'
-        if (!bIsActive) continue
+        const isSocializing = npc.action_state === 'socializing' || bNpc.action_state === 'socializing'
+        const isOrganizing  = npc.action_state === 'organizing'  || bNpc.action_state === 'organizing'
+        const isFleeing     = npc.action_state === 'fleeing'
 
-        const infoAlpha = INFO_TIE_BASE_ALPHA + pulse * INFO_TIE_PULSE_ALPHA
+        let lineColor: string
+
+        if (isOrganizing) {
+          lineColor = `rgba(239,159,39,${0.3 + pulse * 0.3})`  // amber — mobilising
+        } else if (isSocializing) {
+          lineColor = `rgba(93,202,165,${0.25 + pulse * 0.2})`  // teal — socialising
+        } else if (isFleeing) {
+          lineColor = `rgba(226,75,75,0.15)`  // red dim — panic network
+        } else {
+          lineColor = `rgba(255,255,255,0.05)`  // near-invisible working ties
+        }
+
         ctx.beginPath()
         ctx.moveTo(aPos.px, aPos.py)
         ctx.lineTo(bPos.px, bPos.py)
-        ctx.strokeStyle = `rgba(80,160,255,${infoAlpha})`  // blue — information network
-        ctx.lineWidth = 0.6
-        ctx.setLineDash([3, 5])  // dashed to distinguish from direct ties
+        ctx.strokeStyle = lineColor
+        ctx.lineWidth = isSocializing || isOrganizing ? 1 : 0.5
         ctx.globalAlpha = 1
         ctx.stroke()
-        ctx.setLineDash([])  // reset dash
         ctx.globalAlpha = 1
       }
     }
-
-    // Draw direct strong-tie lines (face-to-face connections)
-    for (const tid of npc.strong_ties) {
-      const pairKey = npc.id < tid ? `${npc.id}-${tid}` : `${tid}-${npc.id}`
-      if (drawnPairs.has(pairKey)) continue
-      drawnPairs.add(pairKey)
-
-      const bNpc = world.npcs[tid]
-      if (!bNpc?.lifecycle.is_alive) continue
-      const bPos = posMap.get(bNpc.id)
-      if (!bPos) continue
-
-      // Canvas-space distance
-      const dist = Math.hypot(aPos.px - bPos.px, aPos.py - bPos.py)
-      if (dist > DIRECT_TIE_MAX_DRAW_PX) continue  // direct ties are geographic — draw only nearby
-
-      const isSocializing = npc.action_state === 'socializing' || bNpc.action_state === 'socializing'
-      const isOrganizing  = npc.action_state === 'organizing'  || bNpc.action_state === 'organizing'
-      const isFleeing     = npc.action_state === 'fleeing'
-
-      let lineColor: string
-
-      if (isOrganizing) {
-        lineColor = `rgba(239,159,39,${0.3 + pulse * 0.3})`  // amber — mobilising
-      } else if (isSocializing) {
-        lineColor = `rgba(93,202,165,${0.25 + pulse * 0.2})`  // teal — socialising
-      } else if (isFleeing) {
-        lineColor = `rgba(226,75,75,0.15)`  // red dim — panic network
-      } else {
-        lineColor = `rgba(255,255,255,0.05)`  // near-invisible working ties
-      }
-
-      ctx.beginPath()
-      ctx.moveTo(aPos.px, aPos.py)
-      ctx.lineTo(bPos.px, bPos.py)
-      ctx.strokeStyle = lineColor
-      ctx.lineWidth = isSocializing || isOrganizing ? 1 : 0.5
-      ctx.globalAlpha = 1
-      ctx.stroke()
-      ctx.globalAlpha = 1
-    }
-  } // end if (!hasSelection)
+  }
 
   // ── Selected NPC relationship overlay (over normal ties, under dots) ────
-  drawSelectedNPCTies(world, posMap)
+  if (_mapNetworkVisible) drawSelectedNPCTies(world, posMap)
 
   // ── NPC dots ────────────────────────────────────────────────────────────
   for (const npc of world.npcs) {
@@ -1643,8 +1901,10 @@ function onMouseMove(e: MouseEvent) {
   const rect = canvas.getBoundingClientRect()
   const mx = e.clientX - rect.left
   const my = e.clientY - rect.top
+  const local = canvasToInnerMap(mx, my)
+  if (!local) return
 
-  const nextHover = getNPCAtPosition(world, mx, my)
+  const nextHover = getNPCAtPosition(world, local.lx, local.ly)
   if (nextHover !== hoveredNPCId) {
     hoveredNPCId = nextHover
     _needsMapRedraw = true
@@ -1661,8 +1921,10 @@ function onClick(e: MouseEvent) {
   const rect = canvas.getBoundingClientRect()
   const mx = e.clientX - rect.left
   const my = e.clientY - rect.top
+  const local = canvasToInnerMap(mx, my)
+  if (!local) return
 
-  const npcId = getNPCAtPosition(world, mx, my)
+  const npcId = getNPCAtPosition(world, local.lx, local.ly)
   if (npcId !== null) {
     const npc = world.npcs.find(n => n.id === npcId)
     if (npc) {
@@ -1682,3 +1944,6 @@ function onKeyDown(e: KeyboardEvent) {
     closeSpotlight()
   }
 }
+
+// Start fetching/decoding bundled map art as soon as the app loads (not only after initMap).
+if (typeof Image !== 'undefined') startMapBackgroundImageLoad()

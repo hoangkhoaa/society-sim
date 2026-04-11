@@ -195,7 +195,7 @@ function revertEmergencyRoles(state: WorldState): void {
 // ── Main entry point ───────────────────────────────────────────────────────
 
 /**
- * Called once per sim-day from engine.ts.
+ * Called once per sim-day from the engine tick.
  * Updates hysteresis counters and triggers reassignment / reversion as needed.
  */
 export function checkEmergencyRoleReassignment(state: WorldState): void {
@@ -249,7 +249,7 @@ export function checkEmergencyRoleReassignment(state: WorldState): void {
 
 // ── autoSurvivalRoleShift ─────────────────────────────────────────────────
 // Last-resort: when population is critically low, abandon non-essential roles
-// and focus on farming. Called from checkPopulationViability in engine.ts.
+// and focus on farming. Called from checkPopulationViability in engine/macro.
 
 export function autoSurvivalRoleShift(state: WorldState, livingCount: number): void {
   if (state.day === lastSurvivalDay) return

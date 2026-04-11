@@ -6,7 +6,7 @@
 import type { WorldState, AIConfig, NPCIntervention, Constitution, NPC } from '../types'
 import { callAI, extractJSON } from '../ai/provider'
 import { addFeedRaw, addChronicle } from '../ui/feed'
-import { applyInterventions } from './engine'
+import { applyInterventions } from '../engine'
 import { clamp } from './constitution'
 import { getLang, tf, type Lang } from '../i18n'
 import { getLatestHeadlines } from './press'
