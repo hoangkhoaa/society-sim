@@ -608,7 +608,7 @@ const translations = {
                         'Magistrate', 'Alderman', 'Tribune', 'Steward', 'Prefect'],
     'occ.child':       ['Child'],
     'occ.healthcare':  ['Doctor', 'Nurse', 'Medic', 'Surgeon', 'Pharmacist', 'Midwife', 'Healer', 'Paramedic',
-                        'Orderly', 'Herbalist Practitioner', 'Field Surgeon', 'Apothecary'],
+                        'Orderly', 'Clinical Pharmacist', 'Field Surgeon', 'Sanitation Officer'],
     'occ.gang':        ['Enforcer', 'Fence', 'Lookout', 'Smuggler', 'Racketeer', 'Thug',
                         'Hustler', 'Street Boss', 'Pickpocket', 'Loan Shark', 'Fixer', 'Runner'],
 
@@ -1316,7 +1316,7 @@ const translations = {
                         'Quan tòa địa phương', 'Thị nghị viên', 'Đại biểu dân', 'Quản lý', 'Tri huyện'],
     'occ.child':       ['Trẻ em'],
     'occ.healthcare':  ['Bác sĩ', 'Y tá', 'Nhân viên y tế', 'Phẫu thuật viên', 'Dược sĩ', 'Nữ hộ sinh',
-                        'Người chữa bệnh', 'Nhân viên cấp cứu', 'Hộ lý', 'Lang y', 'Phẫu thuật viên thực địa', 'Thầy thuốc'],
+                        'Người chữa bệnh', 'Nhân viên cấp cứu', 'Hộ lý', 'Dược sĩ lâm sàng', 'Phẫu thuật viên thực địa', 'Nhân viên vệ sinh dịch tễ'],
     'occ.gang':        ['Tay sai', 'Tay đường dây', 'Kẻ canh gác', 'Buôn lậu', 'Ăn bảo kê', 'Côn đồ',
                         'Kẻ lừa đảo', 'Trùm đường phố', 'Kẻ móc túi', 'Cho vay nặng lãi', 'Kẻ trung gian', 'Đưa tin'],
 

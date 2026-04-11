@@ -142,7 +142,7 @@ const ROLE_CONFIG: Record<Role, RoleConfig> = {
     worldview_bonus:    { authority_trust: -0.25, risk_tolerance: +0.20, collectivism: -0.10 },
     wealth_expectation: 500,
     exhaustion_rate:    0.35,   // irregular bursts of activity; mostly night operations
-    schedule_offset:    { start: +6, end: +6 },  // overridden by isNightShiftWorker; active dusk–dawn
+    schedule_offset:    { start: 0, end: 0 },  // unused: gang is always a night-shift worker via isNightShiftWorker
     income_rate:        0.08,   // illicit earnings from shadow economy
     govt_paid:          false,
     zones:              ['underworld_quarter'],

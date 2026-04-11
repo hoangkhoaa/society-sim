@@ -92,8 +92,8 @@ const ROAD_WAYPOINTS: Record<string, [number, number][]> = {
 // ── Road topology for multi-hop routing ─────────────────────────────────────
 // Vertical road segments: centre-x and the y-range they span.
 const V_ROAD_SEGS: { x: number; yMin: number; yMax: number }[] = [
-  { x: 0.45, yMin: 0,    yMax: 0.34 },   // V-top-left (clinic_district ↔ H1)
-  { x: 0.59, yMin: 0,    yMax: 0.34 },   // V-top-right (clinic_district ↔ scholar_quarter)
+  { x: 0.45, yMin: 0,    yMax: 0.34 },   // V-top-left (top row → H1, serving clinic_district)
+  { x: 0.59, yMin: 0,    yMax: 0.34 },   // V-top-right (top row → H1, serving scholar_quarter gap)
   { x: 0.26, yMin: 0.34, yMax: 0.66 },   // V1
   { x: 0.52, yMin: 0.34, yMax: 0.66 },   // V2
   { x: 0.76, yMin: 0.34, yMax: 0.66 },   // V3
