@@ -21,8 +21,8 @@ import {
 } from '../constants/map-animation-tuning'
 
 export { MAP_VIEWPORT_PADDING, MAP_LAYOUT_BLUR_PX } from '../constants/map-animation-tuning'
-import mapArtDay from '../map/basic-day.png'
-import mapArtNight from '../map/basic-night.png'
+import mapArtDay from '../map/day-1.png'
+import mapArtNight from '../map/night-1.png'
 
 // ── Town layout ─────────────────────────────────────────────────────────────
 // Three horizontal bands that read like a real settlement from above:
