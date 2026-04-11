@@ -1092,11 +1092,22 @@ function renderStatic(npc: NPC, state: WorldState): string {
     </div>
 
     <!-- Status flags -->
-    ${(npc.sick || npc.criminal_record) ? `
+    ${(npc.sick || npc.criminal_record || (npc.enmity_ids?.length ?? 0) > 0) ? `
     <div class="sp-section">
       <div class="sp-section-title">${t('sp.flags')}</div>
       ${npc.sick ? `<div class="sp-row"><span class="sp-label" style="color:#ef9f27">🤒 ${t('sp.sick')}</span><span class="sp-value">${Math.ceil(npc.sick_ticks / 24)} ${t('sp.days_remaining')}</span></div>` : ''}
       ${npc.criminal_record ? `<div class="sp-row"><span class="sp-label" style="color:#e24b4b">⚠ ${t('sp.criminal_record')}</span></div>` : ''}
+      ${(npc.enmity_ids?.length ?? 0) > 0 ? `<div class="sp-row"><span class="sp-label" style="color:#c04040">💢 ${t('sp.has_enemies')}</span><span class="sp-value">${npc.enmity_ids?.length}</span></div>` : ''}
+    </div>` : ''}
+
+    <!-- Personality traits -->
+    ${npc.personality ? `
+    <div class="sp-section">
+      <div class="sp-section-title">${t('sp.personality')}</div>
+      <div class="sp-row"><span class="sp-label">${t('sp.personality_greed')}</span><span class="sp-value">${Math.round(npc.personality.greed * 100)}%</span></div>
+      <div class="sp-row"><span class="sp-label">${t('sp.personality_aggression')}</span><span class="sp-value">${Math.round(npc.personality.aggression * 100)}%</span></div>
+      <div class="sp-row"><span class="sp-label">${t('sp.personality_loyalty')}</span><span class="sp-value">${Math.round(npc.personality.loyalty * 100)}%</span></div>
+      <div class="sp-row"><span class="sp-label">${t('sp.personality_ambition')}</span><span class="sp-value">${Math.round(npc.personality.ambition * 100)}%</span></div>
     </div>` : ''}
 
     ${romanceSection}
