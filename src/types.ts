@@ -222,13 +222,15 @@ export interface NPC {
 
   // ── Personality (fixed at birth) ─────────────────────────────────────────
   // Character traits that bias (but do not override) need- and worldview-driven behaviour.
-  personality: NPCPersonality
+  // Optional for backward-compat with any serialised state that predates this field.
+  personality?: NPCPersonality
 
   // ── Enmity (persistent grudges) ──────────────────────────────────────────
   // NPC ids toward whom this NPC holds active hostile feelings (crimes suffered,
   // betrayals, violent conflicts).  Maximum 5 entries — oldest grudge is dropped
   // when the list overflows.  Enemies in the same zone escalate to confront.
-  enmity_ids: number[]
+  // Optional for backward-compat with any serialised state that predates this field.
+  enmity_ids?: number[]
 }
 
 // ── Constitution ───────────────────────────────────────────────────────────

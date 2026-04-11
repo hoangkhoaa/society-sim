@@ -3715,7 +3715,7 @@ function checkWealthMobility(state: WorldState): void {
       npc.role !== 'gang' &&
       state.tick % WEALTH_INVEST_INTERVAL === npc.id % WEALTH_INVEST_INTERVAL
     ) {
-      const investAmt = npc.wealth * 0.08   // donate 8% of surplus wealth
+      const investAmt = npc.wealth * 0.08   // invest 8% of surplus wealth
       npc.wealth = clamp(npc.wealth - investAmt, 0, 50000)
 
       const roll = Math.random()
@@ -3801,10 +3801,9 @@ function checkGuardPatrol(state: WorldState): void {
 
     // ── 2. Enmity suppression: enemies in same patrolled zone are deterred ─
     if ((npc.enmity_ids?.length ?? 0) > 0) {
-      // Guards in the zone deter enemies from escalating; enmity slowly fades
+      // Guards in the zone deter enemies from escalating; oldest grudge fades first
       if (Math.random() < guardPower * 0.08) {
-        const dropIdx = Math.floor(Math.random() * npc.enmity_ids.length)
-        npc.enmity_ids.splice(dropIdx, 1)
+        npc.enmity_ids?.shift()
       }
     }
 
