@@ -1,5 +1,5 @@
 import type { WorldState, Constitution, NPC, SimEvent, NarrativeEntry, NPCIntervention, ActiveStrike, WorldDelta, InstitutionDelta, Syndicate } from '../types'
-import { createNPC, tickNPC, computeProductivity, RESIDENTIAL_ZONES, permanentRoleChange } from './npc'
+import { createNPC, tickNPC, computeProductivity, RESIDENTIAL_ZONES, permanentRoleChange, addEnmity } from './npc'
 import type { IndividualEvent, TickEventFlags } from './npc'
 import { checkEmergencyRoleReassignment, autoSurvivalRoleShift } from './roles'
 import { buildNetwork, MAX_STRONG_TIES, MAX_WEAK_TIES, MAX_INFO_TIES } from './network'
@@ -272,6 +272,8 @@ export function tick(state: WorldState): void {
     checkRumors(state)
     checkMilestones(state)
     checkImmigration(state)
+    checkWealthMobility(state)
+    checkGuardPatrol(state)
 
     // Network maintenance: prune dead links daily, organic tie formation daily
     maintainNetworkLinks(state)
@@ -3686,6 +3688,157 @@ export function runElection(state: WorldState): NPC | null {
   state.stats.elections_held++
 
   return winner
+}
+
+// ── Wealth Mobility & Role Changes ───────────────────────────────────────────
+// Very wealthy NPCs invest surplus capital in research, infrastructure, or
+// (when aggressive) transition to organised crime as gang bosses.
+// Very poor, high-grievance NPCs face increased pressure to turn to crime.
+
+const WEALTH_INVEST_THRESHOLD   = 6000   // minimum wealth to trigger investment behaviour
+const WEALTH_GANG_THRESHOLD     = 4000   // minimum wealth to risk becoming a gang boss
+const WEALTH_INVEST_INTERVAL    = 24 * 7 // once per week per eligible NPC (staggered by id)
+
+let lastWealthMobilityDay = -1
+
+function checkWealthMobility(state: WorldState): void {
+  if (state.day === lastWealthMobilityDay) return
+  lastWealthMobilityDay = state.day
+
+  const living = state.npcs.filter(n => n.lifecycle.is_alive && n.role !== 'child')
+
+  for (const npc of living) {
+    // ── Rich NPC: invest in research or infrastructure ─────────────────────
+    if (
+      npc.wealth >= WEALTH_INVEST_THRESHOLD &&
+      (npc.personality?.ambition ?? 0.3) > 0.5 &&
+      npc.role !== 'gang' &&
+      state.tick % WEALTH_INVEST_INTERVAL === npc.id % WEALTH_INVEST_INTERVAL
+    ) {
+      const investAmt = npc.wealth * 0.08   // donate 8% of surplus wealth
+      npc.wealth = clamp(npc.wealth - investAmt, 0, 50000)
+
+      const roll = Math.random()
+      if (roll < 0.50) {
+        // Fund research: boost research points
+        const boost = investAmt * 0.5
+        state.research_points = (state.research_points ?? 0) + boost
+        const text = tf('engine.wealth_invest_research', { name: npc.name, amount: Math.round(investAmt) }) as string
+        addFeedRaw(text, 'info', state.year, state.day)
+      } else {
+        // Fund infrastructure: reduce resource_scarcity slightly
+        const reduction = clamp(investAmt / 100000, 0, 0.01)
+        state.constitution.resource_scarcity = clamp(state.constitution.resource_scarcity - reduction, 0, 1)
+        // Boost food stock modestly as improved infrastructure aids distribution
+        const foodCap = Math.max(600, living.length * 60)
+        state.food_stock = clamp(state.food_stock + investAmt * 0.2, 0, foodCap)
+        const text = tf('engine.wealth_invest_infra', { name: npc.name, amount: Math.round(investAmt) }) as string
+        addFeedRaw(text, 'info', state.year, state.day)
+      }
+    }
+
+    // ── Rich & aggressive NPC: transition to gang boss ──────────────────────
+    if (
+      npc.wealth >= WEALTH_GANG_THRESHOLD &&
+      (npc.personality?.aggression ?? 0) > 0.68 &&
+      npc.role !== 'gang' &&
+      npc.role !== 'guard' &&
+      npc.role !== 'leader' &&
+      !npc.criminal_record &&
+      state.tick % (WEALTH_INVEST_INTERVAL * 2) === npc.id % (WEALTH_INVEST_INTERVAL * 2) &&
+      Math.random() < 0.08
+    ) {
+      const oldRole = npc.role
+      permanentRoleChange(npc, 'gang', state)
+      npc.criminal_record = true
+      const text = tf('engine.wealthy_turned_gang', { name: npc.name, old_role: oldRole }) as string
+      addFeedRaw(text, 'warning', state.year, state.day)
+      addChronicle(text, state.year, state.day, 'major')
+    }
+  }
+}
+
+// ── Guard Patrol: active order maintenance ────────────────────────────────────
+// Guards present in zones actively deter and de-escalate conflict.
+// High guard power means faster resolution of confrontations and faster crime
+// detection.  Guards also break up enmity-driven encounters between enemies.
+
+let lastGuardPatrolDay = -1
+
+function checkGuardPatrol(state: WorldState): void {
+  if (state.day === lastGuardPatrolDay) return
+  lastGuardPatrolDay = state.day
+
+  const guardInst  = state.institutions.find(i => i.id === 'guard')
+  const guardPower = guardInst?.power ?? 0.3
+  if (guardPower < 0.20) return   // too weak to patrol
+
+  const living = state.npcs.filter(n => n.lifecycle.is_alive)
+  const guards  = living.filter(n => n.role === 'guard')
+  if (guards.length === 0) return
+
+  // Build a set of zones that have at least one on-duty guard
+  const patrolledZones = new Set<string>()
+  for (const g of guards) {
+    if (g.action_state === 'working') patrolledZones.add(g.zone)
+  }
+  if (patrolledZones.size === 0) return
+
+  const rights = state.constitution.individual_rights_floor
+
+  for (const npc of living) {
+    if (!patrolledZones.has(npc.zone)) continue
+
+    // ── 1. De-escalate confront / organizing → complying ─────────────────
+    if (npc.action_state === 'confront' || npc.action_state === 'organizing') {
+      // Probability of de-escalation scales with guard power and inversely with rights
+      const deescalateP = guardPower * 0.25 * (1 + (1 - rights) * 0.5)
+      if (Math.random() < deescalateP) {
+        npc.action_state = 'complying'
+        npc.fear = clamp(npc.fear + 10, 0, 100)
+      }
+    }
+
+    // ── 2. Enmity suppression: enemies in same patrolled zone are deterred ─
+    if ((npc.enmity_ids?.length ?? 0) > 0) {
+      // Guards in the zone deter enemies from escalating; enmity slowly fades
+      if (Math.random() < guardPower * 0.08) {
+        const dropIdx = Math.floor(Math.random() * npc.enmity_ids.length)
+        npc.enmity_ids.splice(dropIdx, 1)
+      }
+    }
+
+    // ── 3. Faster crime detection in patrolled zones ────────────────────────
+    if (npc.criminal_record && state.tick % 48 === npc.id % 48) {
+      const bonusDetection = guardPower * 0.06 * (1 - rights * 0.40)
+      if (Math.random() < bonusDetection) {
+        const fineFrac = 0.10 + (1 - rights) * 0.15
+        const seized   = npc.wealth * fineFrac
+        npc.wealth    = clamp(npc.wealth - seized, 0, 50000)
+        npc.fear      = clamp(npc.fear + 15, 0, 100)
+        npc.isolation = clamp(npc.isolation + 10, 0, 100)
+        // Successful patrol improves guard institution legitimacy slightly
+        if (guardInst) guardInst.legitimacy = clamp(guardInst.legitimacy + 0.003, 0, 1)
+      }
+    }
+  }
+
+  // ── 4. Guard presence reduces overall crime in zone ──────────────────────
+  // Zones with strong patrols see reduced crime probability in checkLifecycle.
+  // This is handled via guard power scaling in npc.ts — no extra flag needed.
+
+  // Chronicle: report patrol activity (low frequency to avoid spam)
+  if (guards.filter(g => g.action_state === 'working').length > 0 && Math.random() < 0.04) {
+    const confrontCount = living.filter(n =>
+      n.action_state === 'confront' && patrolledZones.has(n.zone)
+    ).length
+    if (confrontCount > Math.ceil(living.length * 0.05)) {
+      const text = tf('engine.guard_patrol_deescalate', {
+        n: guards.filter(g => g.action_state === 'working').length,
+      }) as string
+      addFeedRaw(text, 'warning', state.year, state.day)
+    }
+  }
 }
 
 // ── Run statistics updater (called daily) ──────────────────────────────────

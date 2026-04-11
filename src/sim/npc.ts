@@ -1,4 +1,4 @@
-import type { NPC, Constitution, WorldState, Role, TrustMap, ActionState, WorkMotivationType, WorkSchedule } from '../types'
+import type { NPC, Constitution, WorldState, Role, TrustMap, ActionState, WorkMotivationType, WorkSchedule, NPCPersonality } from '../types'
 import { faker } from '@faker-js/faker'
 import { clamp, gaussian, rand, randInt, weightedRandom, getSeason, ZONE_ADJACENCY } from './constitution'
 import { t, tf, tOccVariant } from '../i18n'
@@ -289,7 +289,62 @@ export function inferMotivationType(role: Role, c: Constitution, npcId: number):
   return 'mandatory'
 }
 
-// ── Initial capital distribution ──────────────────────────────────────────
+// ── Personality generation ─────────────────────────────────────────────────
+// Stable character traits fixed at birth.  Uses a deterministic hash of the
+// NPC id so traits are reproducible.  Role biases are applied on top.
+
+function frac(n: number): number { return n - Math.floor(n) }
+
+function hashFrac(seed: number): number {
+  const s = Math.sin(seed * 127.1 + 311.7) * 43758.5453
+  return frac(Math.abs(s))
+}
+
+export function generatePersonality(npcId: number, role: Role): NPCPersonality {
+  const base = {
+    greed:      clamp(hashFrac(npcId * 3 + 1) * 1.2 - 0.1, 0, 1),
+    aggression: clamp(hashFrac(npcId * 5 + 2) * 1.2 - 0.1, 0, 1),
+    loyalty:    clamp(hashFrac(npcId * 7 + 3) * 1.2 - 0.1, 0, 1),
+    ambition:   clamp(hashFrac(npcId * 11 + 4) * 1.2 - 0.1, 0, 1),
+  }
+
+  // Role biases (additive, then re-clamped)
+  if (role === 'merchant') { base.greed += 0.15; base.ambition += 0.10 }
+  if (role === 'gang')     { base.aggression += 0.20; base.greed += 0.10 }
+  if (role === 'guard')    { base.aggression += 0.10; base.loyalty += 0.15 }
+  if (role === 'leader')   { base.ambition += 0.20; base.loyalty += 0.10 }
+  if (role === 'farmer')   { base.loyalty += 0.10; base.greed -= 0.05 }
+  if (role === 'scholar')  { base.ambition += 0.10; base.greed -= 0.10 }
+  if (role === 'healthcare') { base.loyalty += 0.15; base.aggression -= 0.10 }
+
+  return {
+    greed:      clamp(base.greed,      0, 1),
+    aggression: clamp(base.aggression, 0, 1),
+    loyalty:    clamp(base.loyalty,    0, 1),
+    ambition:   clamp(base.ambition,   0, 1),
+  }
+}
+
+
+// ── Enmity helpers ─────────────────────────────────────────────────────────
+// An NPC can hold grudges against up to 5 others.  When the list is full the
+// oldest entry is evicted (shift).
+
+const MAX_ENMITY = 5
+
+export function addEnmity(npc: NPC, targetId: number): void {
+  if (npc.id === targetId) return
+  if (!npc.enmity_ids) npc.enmity_ids = []
+  if (npc.enmity_ids.includes(targetId)) return
+  if (npc.enmity_ids.length >= MAX_ENMITY) npc.enmity_ids.shift()
+  npc.enmity_ids.push(targetId)
+}
+
+export function removeEnmity(npc: NPC, targetId: number): void {
+  if (!npc.enmity_ids) return
+  npc.enmity_ids = npc.enmity_ids.filter(id => id !== targetId)
+}
+
 // Means of production distributed at society start according to regime type.
 
 function initialCapital(role: Role, constitution: Constitution): number {
@@ -532,6 +587,10 @@ export function createNPC(idx: number, total: number, constitution: Constitution
     capital: initialCapital(role, constitution),
     capital_rents_from: null,
     capital_rent_paid: 0,
+
+    // Personality and enmity (new depth features)
+    personality: generatePersonality(idx, role),
+    enmity_ids: [],
   }
 
   return {
@@ -1108,6 +1167,25 @@ function selectAction(npc: NPC, state: WorldState): ActionState {
     if (groupOrganizing) {
       weights.organizing = (weights.organizing ?? 0) * 1.8
       weights.confront   = (weights.confront   ?? 0) * 1.4
+    }
+  }
+
+  // Personality: aggression amplifies confront/crime tendency; loyalty reduces fleeing
+  if (npc.personality) {
+    weights.confront   = (weights.confront ?? 0) * (1 + npc.personality.aggression * 0.5)
+    weights.fleeing    = (weights.fleeing  ?? 0) * (1 - npc.personality.loyalty * 0.3)
+  }
+
+  // Enmity escalation: if an enemy is in the same zone and socializing/working,
+  // highly aggressive NPCs have a chance to escalate directly to confront.
+  if ((npc.enmity_ids?.length ?? 0) > 0 && npc.personality && npc.personality.aggression > 0.55) {
+    const enemyNearby = (npc.enmity_ids ?? []).some(eid => {
+      const enemy = state.npcs[eid]
+      return enemy?.lifecycle.is_alive && enemy.zone === npc.zone
+        && (enemy.action_state === 'socializing' || enemy.action_state === 'working')
+    })
+    if (enemyNearby) {
+      weights.confront = (weights.confront ?? 0) + npc.personality.aggression * 0.4
     }
   }
 
@@ -1712,12 +1790,15 @@ function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[])
   }
 
   // ★ Crime: first offense — grievance + poverty + low trust in government
+  // Aggression personality amplifies crime probability; guards deter more.
   if (!npc.criminal_record && state.tick % 6 === npc.id % 6) {
     const govTrust = (npc.trust_in.government.competence + npc.trust_in.government.intention) / 2
+    const aggressionBoost = 1 + (npc.personality?.aggression ?? 0) * 1.5
     const crimeP = 0.00004
       * Math.max(0, npc.grievance - 50) / 50
       * (1 - govTrust)
       * (npc.wealth < 30 ? 2 : 1)
+      * aggressionBoost
     if (Math.random() < crimeP) {
       npc.criminal_record = true
       npc.wealth = clamp(npc.wealth + 15 + Math.random() * 20, 0, 5000)
@@ -1731,6 +1812,8 @@ function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[])
         if (witness?.lifecycle.is_alive) {
           witness.trust_in.community.intention = clamp(witness.trust_in.community.intention - 0.04, 0, 1)
           witness.grievance = clamp(witness.grievance + 5, 0, 100)
+          // Witnesses develop enmity toward the criminal perpetrator
+          addEnmity(witness, npc.id)
         }
       }
       events?.push({ type: 'crime', npc })
@@ -1740,20 +1823,23 @@ function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[])
   // ★ Recidivism: repeat offenders reoffend at higher rate, lower threshold
   if (npc.criminal_record && state.tick % 6 === npc.id % 6) {
     const govTrust = (npc.trust_in.government.competence + npc.trust_in.government.intention) / 2
+    const aggressionBoost = 1 + (npc.personality?.aggression ?? 0) * 1.0
     const recidivismP = 0.00008
       * Math.max(0, npc.grievance - 30) / 70
       * (1 - govTrust)
       * (npc.wealth < 50 ? 2 : 1)
+      * aggressionBoost
     if (Math.random() < recidivismP) {
       npc.wealth = clamp(npc.wealth + 25 + Math.random() * 35, 0, 5000)
       npc.grievance = clamp(npc.grievance - 10, 0, 100)
-      // Witnesses react more strongly to known repeat offenders
+      // Witnesses react more strongly to known repeat offenders and develop enmity
       for (const tid of npc.strong_ties.slice(0, 3)) {
         const witness = state.npcs[tid]
         if (witness?.lifecycle.is_alive) {
           witness.trust_in.community.intention = clamp(witness.trust_in.community.intention - 0.06, 0, 1)
           witness.fear     = clamp(witness.fear     + 5, 0, 100)
           witness.grievance = clamp(witness.grievance + 8, 0, 100)
+          addEnmity(witness, npc.id)
         }
       }
       events?.push({ type: 'crime', npc })

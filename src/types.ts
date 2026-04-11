@@ -88,6 +88,17 @@ export interface Worldview {
   time_preference: number       // 0=short-term, 1=long-term
 }
 
+// ── Personality ────────────────────────────────────────────────────────────
+// Fixed character traits assigned at birth.  They bias (but do not override)
+// behaviour driven by needs and worldview.
+
+export interface NPCPersonality {
+  greed:      number  // 0–1: drives wealth hoarding, investment hunger, exploitation
+  aggression: number  // 0–1: raises crime probability, conflict escalation, confrontation
+  loyalty:    number  // 0–1: commitment to family, faction, and syndicate
+  ambition:   number  // 0–1: drives career advancement, risk-taking, and investment
+}
+
 // ── NPC ────────────────────────────────────────────────────────────────────
 
 export interface NPC {
@@ -208,6 +219,16 @@ export interface NPC {
   // chat panel closes after 3+ turns. Persisted via WorldState / localStorage.
   // Max ~300 chars. Passed to the NPC agent system prompt for continuity.
   chat_summary?: string
+
+  // ── Personality (fixed at birth) ─────────────────────────────────────────
+  // Character traits that bias (but do not override) need- and worldview-driven behaviour.
+  personality: NPCPersonality
+
+  // ── Enmity (persistent grudges) ──────────────────────────────────────────
+  // NPC ids toward whom this NPC holds active hostile feelings (crimes suffered,
+  // betrayals, violent conflicts).  Maximum 5 entries — oldest grudge is dropped
+  // when the list overflows.  Enemies in the same zone escalate to confront.
+  enmity_ids: number[]
 }
 
 // ── Constitution ───────────────────────────────────────────────────────────
