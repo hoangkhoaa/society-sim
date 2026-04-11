@@ -31,7 +31,7 @@ const DEFAULTS: GameSettings = {
   enable_npc_thoughts:           true,
   enable_press_ai:               true,
   enable_consequence_prediction: true,
-  map_background_mode:           'layout_only',
+  map_background_mode:           'background_only',
 }
 
 const MAP_BG_MODES = new Set<MapBackgroundMode>([

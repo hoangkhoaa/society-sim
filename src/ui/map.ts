@@ -443,7 +443,7 @@ export function computeMapViewportRect(canvasW: number, canvasH: number): MapVie
 }
 
 function currentMapBackgroundMode(): MapBackgroundMode {
-  return getGameSettings?.().map_background_mode ?? 'layout_only'
+  return getGameSettings?.().map_background_mode ?? 'background_only'
 }
 
 /** Convert canvas pixel coords to inner-map coords; null if settings/viewport unavailable. */
