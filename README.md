@@ -9,7 +9,7 @@
 
 **A living world. You set the rules — then watch 500 citizens adapt or collapse.**
 
-[![Game Screenshot](https://github.com/user-attachments/assets/d0998ef1-aaeb-43b6-a6e3-7137fc5ca34d)](https://hoangkhoaa.github.io/society-sim/)
+[![Game Screenshot](https://github.com/user-attachments/assets/32b8ef95-260f-4d62-90af-abc1c29b50e5)](https://hoangkhoaa.github.io/society-sim/)
 
 </div>
 
