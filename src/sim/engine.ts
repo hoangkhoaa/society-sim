@@ -304,10 +304,11 @@ export function tick(state: WorldState): void {
 
 // ── Events ──────────────────────────────────────────────────────────────────
 
-// All 9 zones for epidemic full-spread reference
+// All zones for epidemic full-spread reference
 const ALL_ZONES = [
   'north_farm', 'south_farm', 'workshop_district', 'market_square',
   'scholar_quarter', 'residential_east', 'residential_west', 'guard_post', 'plaza',
+  'clinic_district', 'underworld_quarter',
 ]
 // ZONE_ADJACENCY is imported from constitution.ts
 
@@ -1726,7 +1727,7 @@ function checkLaborStrikes(state: WorldState): void {
   })
 
   // ── Detect new strikes ──────────────────────────────────────────────────
-  const strikeable = ['farmer', 'craftsman', 'merchant', 'scholar'] as const
+  const strikeable = ['farmer', 'craftsman', 'merchant', 'scholar', 'healthcare'] as const
   for (const role of strikeable) {
     if ((state.active_strikes ?? []).some(s => s.role === role)) continue
     const cooldownEnd = strikeCooldown[role] ?? 0
@@ -3050,7 +3051,8 @@ function checkShadowEconomy(state: WorldState): void {
   if (state.constitution.market_freedom >= 0.25) return
 
   const living    = state.npcs.filter(n => n.lifecycle.is_alive)
-  const criminals = living.filter(n => n.criminal_record)
+  // Gang-role NPCs are always part of the criminal underground; criminal_record others also participate
+  const criminals = living.filter(n => n.criminal_record || n.role === 'gang')
   if (criminals.length / Math.max(living.length, 1) < 0.03) return
 
   // Guard raid: once per 5 days minimum
@@ -3529,11 +3531,14 @@ function checkEpidemicIntelligence(state: WorldState): void {
     cureProgress.epidemicId = epidemic.id
   }
 
-  // Scholars in scholar_quarter accumulate cure progress each day
-  const scholars = state.npcs.filter(n =>
-    n.lifecycle.is_alive && n.role === 'scholar' && n.zone === 'scholar_quarter',
+  // Scholars in scholar_quarter and healthcare workers in clinic_district accumulate cure progress each day
+  const researchers = state.npcs.filter(n =>
+    n.lifecycle.is_alive && (
+      (n.role === 'scholar' && n.zone === 'scholar_quarter') ||
+      (n.role === 'healthcare' && n.zone === 'clinic_district')
+    ),
   )
-  let dailyCureGain = scholars.reduce((s, n) => s + computeProductivity(n, state), 0) * 0.8
+  let dailyCureGain = researchers.reduce((s, n) => s + computeProductivity(n, state), 0) * 0.8
   // Public health: sanitation > 60 accelerates cure progress by 20%
   if ((state.public_health?.sanitation ?? 0) > 60) {
     dailyCureGain *= 1.20
@@ -3553,7 +3558,7 @@ function checkEpidemicIntelligence(state: WorldState): void {
     }
   }
 
-  // Cure breakthrough: when scholars have researched enough
+  // Cure breakthrough: when researchers have accumulated enough progress
   const cureThreshold = 200 + epidemic.intensity * 300  // 200–500 research units
   if (cureProgress.value >= cureThreshold) {
     epidemic.intensity = clamp(epidemic.intensity * 0.50, 0.01, 1)
@@ -3561,13 +3566,13 @@ function checkEpidemicIntelligence(state: WorldState): void {
     epidemic.effects_per_tick.displacement_chance *= 0.50
     cureProgress.value = 0
 
-    const topScholar = scholars.sort((a, b) => b.influence_score - a.influence_score)[0]
-    const heroName   = topScholar?.name ?? (t('engine.scholars_collective') as string)
+    const topResearcher = researchers.sort((a, b) => b.influence_score - a.influence_score)[0]
+    const heroName   = topResearcher?.name ?? (t('engine.scholars_collective') as string)
     const text = tf('engine.cure_breakthrough', { name: heroName }) as string
     addChronicle(text, state.year, state.day, 'critical')
     addFeedRaw(text, 'info', state.year, state.day)
 
-    if (topScholar) topScholar.legendary = true
+    if (topResearcher) topResearcher.legendary = true
 
     // Lift quarantines after cure
     state.quarantine_zones = []
@@ -3586,11 +3591,14 @@ export function updatePublicHealth(state: WorldState): void {
   // Sanitation decays 0.1 per day (0–100 scale)
   ph.sanitation = clamp(ph.sanitation - 0.1, 0, 100)
 
-  // Scholar output boosts sanitation: each productive scholar in scholar_quarter contributes
-  const scholars = state.npcs.filter(n =>
-    n.lifecycle.is_alive && n.role === 'scholar' && n.zone === 'scholar_quarter',
+  // Scholar and healthcare output boosts sanitation: productive workers in their zones contribute
+  const sanitationWorkers = state.npcs.filter(n =>
+    n.lifecycle.is_alive && (
+      (n.role === 'scholar' && n.zone === 'scholar_quarter') ||
+      (n.role === 'healthcare' && n.zone === 'clinic_district')
+    ),
   )
-  const scholarBoost = scholars.reduce((s, n) => s + computeProductivity(n, state), 0) * 0.02
+  const scholarBoost = sanitationWorkers.reduce((s, n) => s + computeProductivity(n, state), 0) * 0.02
   ph.sanitation = clamp(ph.sanitation + scholarBoost, 0, 100)
 
   // Hospital capacity expires after 30 sim-days (720 ticks) since last funding

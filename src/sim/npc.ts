@@ -127,6 +127,28 @@ const ROLE_CONFIG: Record<Role, RoleConfig> = {
     can_strike:         false,
     can_protest:        false,  // children don't participate in adult political action
   },
+  healthcare: {
+    worldview_bonus:    { collectivism: +0.10, authority_trust: +0.05 },
+    wealth_expectation: 750,
+    exhaustion_rate:    0.45,   // demanding physical and mental work; shift-based
+    schedule_offset:    { start: -1, end: +2 },  // early start, extended end — long clinical shifts
+    income_rate:        0.12,   // medical services; partially subsidized
+    govt_paid:          false,
+    zones:              ['clinic_district'],
+    can_strike:         true,
+    can_protest:        true,
+  },
+  gang: {
+    worldview_bonus:    { authority_trust: -0.25, risk_tolerance: +0.20, collectivism: -0.10 },
+    wealth_expectation: 500,
+    exhaustion_rate:    0.35,   // irregular bursts of activity; mostly night operations
+    schedule_offset:    { start: +6, end: +6 },  // overridden by isNightShiftWorker; active dusk–dawn
+    income_rate:        0.08,   // illicit earnings from shadow economy
+    govt_paid:          false,
+    zones:              ['underworld_quarter'],
+    can_strike:         false,  // gang members don't engage in formal labor action
+    can_protest:        false,  // operate outside legitimate political channels
+  },
 }
 
 // ── Derived maps (export for backward-compat with engine / UI consumers) ───
@@ -246,9 +268,11 @@ export function inferMotivationType(role: Role, c: Constitution, npcId: number):
   // Role overrides
   if (role === 'leader') { weights.achievement += 0.6; weights.duty += 0.3 }
   if (role === 'guard')  { weights.duty += 0.5; weights.coerced = Math.max(0, weights.coerced - 0.4) }
-  if (role === 'merchant')  { weights.achievement += 0.4 }
-  if (role === 'scholar')   { weights.happiness += 0.4 }
-  if (role === 'farmer')    { weights.survival += 0.2; weights.duty += 0.1 }
+  if (role === 'merchant')    { weights.achievement += 0.4 }
+  if (role === 'scholar')     { weights.happiness += 0.4 }
+  if (role === 'farmer')      { weights.survival += 0.2; weights.duty += 0.1 }
+  if (role === 'healthcare')  { weights.happiness += 0.5; weights.duty += 0.3 }  // vocation-driven
+  if (role === 'gang')        { weights.survival += 0.6; weights.coerced += 0.3 } // desperation/threat
 
   // Clamp negatives
   for (const k of ALL_TYPES) weights[k] = Math.max(0, weights[k])
@@ -292,13 +316,15 @@ function initialCapital(role: Role, constitution: Constitution): number {
 
   // Pareto (default, capitalist): gini-based spread
   const BASE_RANGE: Record<Role, [number, number]> = {
-    leader:    [35, 80],
-    merchant:  [20, 65],
-    craftsman: [10, 40],
-    farmer:    [5, 30],
-    scholar:   [0, 15],
-    guard:     [0, 0],
-    child:     [0, 0],
+    leader:     [35, 80],
+    merchant:   [20, 65],
+    craftsman:  [10, 40],
+    farmer:     [5, 30],
+    scholar:    [0, 15],
+    guard:      [0, 0],
+    child:      [0, 0],
+    healthcare: [5, 25],
+    gang:       [0, 20],
   }
   const [lo, hi] = BASE_RANGE[role]
   const landlessChance = clamp(0.10 + constitution.gini_start * 0.35, 0, 0.55)
@@ -321,7 +347,7 @@ function paretoSample(gini: number): number {
 
 function assignRole(idx: number, total: number, ratios: Constitution['role_ratios']): Role {
   // 'child' is excluded from initial population assignment — only newborns get it
-  const roles: Array<keyof typeof ratios> = ['farmer', 'craftsman', 'merchant', 'scholar', 'guard', 'leader']
+  const roles: Array<keyof typeof ratios> = ['farmer', 'craftsman', 'merchant', 'scholar', 'guard', 'leader', 'healthcare', 'gang']
   let cumulative = 0
   const frac = idx / total
   for (const role of roles) {
@@ -662,6 +688,9 @@ function residentialBed(npc: NPC): string {
 }
 
 function isNightShiftWorker(npc: NPC): boolean {
+  if (npc.role === 'gang') return true
+  // ~20% of healthcare workers cover overnight shifts
+  if (npc.role === 'healthcare') return scheduleUnit(npc.id, 11) < 0.20
   if (npc.role !== 'merchant' && npc.role !== 'craftsman') return false
   return scheduleUnit(npc.id, 11) < 0.11
 }
@@ -1601,8 +1630,8 @@ function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[])
 
   // ★ Illness tick-down & death
   if (npc.sick) {
-    // Public health: hospital_capacity > 0 → sick NPCs in scholar_quarter recover 2× faster
-    const inHospitalZone = npc.zone === 'scholar_quarter' && (state.public_health?.hospital_capacity ?? 0) > 0
+    // Public health: hospital_capacity > 0 → sick NPCs in clinic_district or scholar_quarter recover 2× faster
+    const inHospitalZone = (npc.zone === 'clinic_district' || npc.zone === 'scholar_quarter') && (state.public_health?.hospital_capacity ?? 0) > 0
     const recoveryRate = inHospitalZone ? 2 : 1
     npc.sick_ticks -= recoveryRate
     if (npc.sick_ticks <= 0) {

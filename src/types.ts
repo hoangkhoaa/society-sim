@@ -1,6 +1,6 @@
 // ── Enums & Literals ───────────────────────────────────────────────────────
 
-export type Role = 'farmer' | 'craftsman' | 'scholar' | 'merchant' | 'guard' | 'leader' | 'child'
+export type Role = 'farmer' | 'craftsman' | 'scholar' | 'merchant' | 'guard' | 'leader' | 'child' | 'healthcare' | 'gang'
 
 // ── Work Motivation ────────────────────────────────────────────────────────
 // survival   – works to meet basic needs (poverty-driven; productivity spikes when hungry)
@@ -219,6 +219,8 @@ export interface RoleRatios {
   merchant: number
   guard: number
   leader: number
+  healthcare: number
+  gang: number
 }
 
 export interface Constitution {
@@ -680,13 +682,15 @@ export const INSTITUTION_NAMES: Record<InstitutionId, string> = {
 }
 
 export const ROLE_OCCUPATIONS: Record<Role, string[]> = {
-  farmer:    ['Rice Farmer', 'Vegetable Grower', 'Livestock Keeper', 'Gardener'],
-  craftsman: ['Blacksmith', 'Carpenter', 'Weaver', 'Potter', 'Mason'],
-  merchant:  ['Trader', 'Innkeeper', 'Money Changer', 'Peddler'],
-  scholar:   ['Teacher', 'Physician', 'Scholar', 'Philosopher', 'Scribe'],
-  guard:     ['Sentry', 'Militia', 'Patrol Officer', 'Squad Leader'],
-  leader:    ['Council Member', 'District Chief', 'Elder', 'Official'],
-  child:     ['Child'],
+  farmer:     ['Rice Farmer', 'Vegetable Grower', 'Livestock Keeper', 'Gardener'],
+  craftsman:  ['Blacksmith', 'Carpenter', 'Weaver', 'Potter', 'Mason'],
+  merchant:   ['Trader', 'Innkeeper', 'Money Changer', 'Peddler'],
+  scholar:    ['Teacher', 'Physician', 'Scholar', 'Philosopher', 'Scribe'],
+  guard:      ['Sentry', 'Militia', 'Patrol Officer', 'Squad Leader'],
+  leader:     ['Council Member', 'District Chief', 'Elder', 'Official'],
+  child:      ['Child'],
+  healthcare: ['Doctor', 'Nurse', 'Medic', 'Surgeon', 'Pharmacist', 'Midwife'],
+  gang:       ['Enforcer', 'Fence', 'Lookout', 'Smuggler', 'Racketeer', 'Thug'],
 }
 
 export const ZONES = [
@@ -697,6 +701,8 @@ export const ZONES = [
   'residential_east', 'residential_west',
   'guard_post',
   'plaza',
+  'clinic_district',
+  'underworld_quarter',
 ] as const
 
 export type Zone = typeof ZONES[number]

@@ -1012,7 +1012,7 @@ function updateDemographics(): number {
 
 // ── Labor tension: per-role solidarity + grievance ─────────────────────────
 
-const STRIKEABLE_ROLES = ['farmer', 'craftsman', 'merchant', 'scholar'] as const
+const STRIKEABLE_ROLES = ['farmer', 'craftsman', 'merchant', 'scholar', 'healthcare'] as const
 // Strike thresholds (mirrors engine.ts checkLaborStrikes)
 const STRIKE_SOL_THRESH = 72
 const STRIKE_GRIEV_THRESH = 58
@@ -2297,7 +2297,7 @@ async function scheduleConsequences(eventType: string, narrative: string) {
       intervention: {
         target: c.intervention.target as 'all' | 'zone' | 'role',
         zones: c.intervention.zones,
-        roles: c.intervention.roles as Array<'farmer' | 'craftsman' | 'merchant' | 'scholar' | 'guard' | 'leader'> | undefined,
+        roles: c.intervention.roles as Array<'farmer' | 'craftsman' | 'merchant' | 'scholar' | 'guard' | 'leader' | 'healthcare' | 'gang'> | undefined,
         count: c.intervention.count,
         action_state: c.intervention.action_state as never,
         stress_delta: c.intervention.stress_delta,
