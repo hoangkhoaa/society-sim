@@ -129,17 +129,21 @@ function applyDiscoveryEffects(state: WorldState, discovery: ScienceDiscovery): 
 
   // NPC stat effects
   if (discovery.npc_happiness_delta != null) {
-    for (const npc of living) npc.happiness = clamp(npc.happiness + discovery.npc_happiness_delta!, 0, 100)
+    const delta = discovery.npc_happiness_delta
+    for (const npc of living) npc.happiness = clamp(npc.happiness + delta, 0, 100)
   }
   if (discovery.npc_stress_delta != null) {
-    for (const npc of living) npc.stress = clamp(npc.stress + discovery.npc_stress_delta!, 0, 100)
+    const delta = discovery.npc_stress_delta
+    for (const npc of living) npc.stress = clamp(npc.stress + delta, 0, 100)
   }
   if (discovery.npc_grievance_delta != null) {
-    for (const npc of living) npc.grievance = clamp(npc.grievance + discovery.npc_grievance_delta!, 0, 100)
+    const delta = discovery.npc_grievance_delta
+    for (const npc of living) npc.grievance = clamp(npc.grievance + delta, 0, 100)
   }
   if (discovery.scholar_happiness_delta != null) {
+    const delta = discovery.scholar_happiness_delta
     for (const npc of living.filter(npc => npc.role === 'scholar')) {
-      npc.happiness = clamp(npc.happiness + discovery.scholar_happiness_delta!, 0, 100)
+      npc.happiness = clamp(npc.happiness + delta, 0, 100)
     }
   }
 
@@ -210,9 +214,8 @@ export function checkScienceTrigger(state: WorldState, config: AIConfig | null):
   if (state.day < 30) return false
 
   // Only run the probability check once per sim-day (not every tick)
-  const checkPeriod = Math.floor(state.day / 1)  // 1-day resolution
-  if (checkPeriod === _lastCheckedPeriod) return false
-  _lastCheckedPeriod = checkPeriod
+  if (state.day === _lastCheckedPeriod) return false
+  _lastCheckedPeriod = state.day
 
   const scan = scanSocietyForScience(state)
   if (!shouldFireDiscovery(state, scan)) return false
