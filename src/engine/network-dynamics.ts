@@ -4,6 +4,10 @@ import { MAX_STRONG_TIES, MAX_WEAK_TIES, MAX_INFO_TIES } from '../sim/network'
 import { getRegimeProfile } from '../sim/regime-config'
 import { addFeedRaw, addChronicle } from '../ui/feed'
 import { t, tf } from '../i18n'
+import {
+  WEAK_TIE_REPLENISHMENT_THRESHOLD,
+  WEAK_TIE_REPLENISHMENT_SAMPLE_RATE,
+} from '../constants/network-weak-ties'
 
 // ── Network dynamics cooldowns ───────────────────────────────────────────
 let lastSchismTick = -9999
@@ -136,11 +140,6 @@ export function formOrganicStrongTies(state: WorldState): void {
  * is low — recovering societies naturally re-knit social fabric.
  * Processes ~10% of eligible NPCs per call to spread the load.
  */
-// NPC is eligible for replenishment when weak ties fall below this fraction of target.
-const WEAK_TIE_REPLENISHMENT_THRESHOLD = 0.70
-// Fraction of eligible NPCs processed per weekly call (load-spreading).
-const WEAK_TIE_REPLENISHMENT_SAMPLE_RATE = 0.10
-
 export function replenishWeakTies(state: WorldState): void {
   const cohesion = clamp(state.constitution.network_cohesion, 0.1, 1)
   const weakTarget = Math.round(50 + cohesion * 100)

@@ -1,3 +1,5 @@
+import { LANG_STORAGE_KEY } from './constants/storage-keys'
+
 const translations = {
   en: {
     // Onboarding
@@ -1498,8 +1500,6 @@ export const LANGUAGE_CATALOG: ReadonlyArray<{ code: Lang; nativeName: string }>
   { code: 'en', nativeName: 'English' },
   { code: 'vi', nativeName: 'Tiếng Việt' },
 ]
-
-const LANG_STORAGE_KEY = 'society_sim_lang'
 
 const _validLangs = new Set<string>(LANGUAGE_CATALOG.map(e => e.code))
 

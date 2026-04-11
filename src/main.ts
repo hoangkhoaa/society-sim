@@ -29,6 +29,33 @@ import { runElection } from './engine'
 import { getRegimeProfile } from './sim/regime-config'
 import { setActiveSimRestrictions } from './sim/npc'
 import { isMarxistPresetEnabled } from './build-features'
+import {
+  THEME_STORAGE_KEY,
+  UI_DEMOGRAPHICS_VISIBLE_KEY,
+  UI_RUMORS_VISIBLE_KEY,
+  UI_LEGEND_VISIBLE_KEY,
+  UI_NETWORK_VISIBLE_KEY,
+  UI_ECON_VISIBLE_KEY,
+  UI_NPC_CONTACTS_VISIBLE_KEY,
+} from './constants/storage-keys'
+import { ACHIEVEMENT_DEFINITIONS, type AchievementDef } from './constants/achievements'
+import { DEMOGRAPHICS_AGE_GROUPS } from './constants/demographics-age-groups'
+import {
+  STRIKEABLE_ROLES,
+  STRIKE_SOLIDARITY_THRESHOLD,
+  STRIKE_WARN_SOLIDARITY,
+  STRIKE_WARN_GRIEVANCE,
+  STRIKE_READINESS_GINI_FLOOR,
+} from './constants/labor-strikes'
+import {
+  TOPBAR_STAT_DELTA_DEFINITIONS,
+  TOPBAR_STAT_DELTA_BADGE_MIN,
+  TOPBAR_CRISIS_STAT_COUNT,
+  TOPBAR_CRITICAL_THRESHOLD_PCT,
+} from './constants/topbar-stat-deltas'
+import { RUMOR_EFFECT_ICONS } from './constants/rumor-ui-icons'
+import { SIM_BASE_TICK_MS, GOVERNMENT_POLICY_PERIOD_DAYS } from './constants/sim-loop-timing'
+import { SPOTLIGHT_NPC_CONTACTS_CHANGED_EVENT } from './constants/spotlight-events'
 
 // ── App state ──────────────────────────────────────────────────────────────
 
@@ -37,7 +64,6 @@ let world: WorldState | null = null
 let noApiKeyMode = false
 
 type ThemeMode = 'dark' | 'light'
-const THEME_KEY = 'sim_theme'
 
 function applyTheme(theme: ThemeMode) {
   document.body.dataset.theme = theme
@@ -49,7 +75,7 @@ function applyTheme(theme: ThemeMode) {
 }
 
 function initTheme() {
-  const saved = localStorage.getItem(THEME_KEY)
+  const saved = localStorage.getItem(THEME_STORAGE_KEY)
   const theme: ThemeMode = saved === 'light' ? 'light' : 'dark'
   applyTheme(theme)
 }
@@ -58,7 +84,7 @@ function toggleTheme() {
   const current: ThemeMode = document.body.dataset.theme === 'light' ? 'light' : 'dark'
   const next: ThemeMode = current === 'light' ? 'dark' : 'light'
   applyTheme(next)
-  localStorage.setItem(THEME_KEY, next)
+  localStorage.setItem(THEME_STORAGE_KEY, next)
 }
 
 initTheme()
@@ -773,14 +799,6 @@ function setStat(valueId: string, value: number, statId: string, warnAt: number,
 
 // ── Daily stat delta badges + crisis banner ─────────────────────────────────
 
-const STAT_DELTA_DEFS = [
-  { valueId: 'v-stability', statId: 'stat-stability', key: 'stability' as const,        i18nKey: 'topbar.stat_stability' },
-  { valueId: 'v-food',      statId: 'stat-food',      key: 'food' as const,             i18nKey: 'topbar.stat_food' },
-  { valueId: 'v-resources', statId: 'stat-resources', key: 'natural_resources' as const, i18nKey: 'topbar.stat_resources' },
-  { valueId: 'v-energy',    statId: 'stat-energy',    key: 'energy' as const,           i18nKey: 'topbar.stat_energy' },
-  { valueId: 'v-trust',     statId: 'stat-trust',     key: 'trust' as const,            i18nKey: 'topbar.stat_trust' },
-]
-
 function checkStatDeltas(macro: WorldState['macro']) {
   const prev = _prevDailyMacro
   _prevDailyMacro = {
@@ -795,18 +813,18 @@ function checkStatDeltas(macro: WorldState['macro']) {
   let criticalCount = 0
   const criticalNames: string[] = []
 
-  for (const { valueId, statId, key, i18nKey } of STAT_DELTA_DEFS) {
+  for (const { valueId, statId, key, i18nKey } of TOPBAR_STAT_DELTA_DEFINITIONS) {
     const curr = macro[key]
     const delta = curr - prev[key]
 
     // Pulse animation for critical stats
-    if (curr <= 20) {
+    if (curr <= TOPBAR_CRITICAL_THRESHOLD_PCT) {
       criticalCount++
       criticalNames.push(`${t(i18nKey) as string} ${Math.round(curr)}%`)
     }
 
     // Delta badge for significant daily changes
-    if (Math.abs(delta) >= 3) {
+    if (Math.abs(delta) >= TOPBAR_STAT_DELTA_BADGE_MIN) {
       const valueEl = document.getElementById(valueId)!
       // Remove stale badge if any
       valueEl.parentElement?.querySelector('.stat-delta')?.remove()
@@ -818,14 +836,14 @@ function checkStatDeltas(macro: WorldState['macro']) {
     }
 
     // Remove stale badges for stats without notable change
-    if (Math.abs(delta) < 3) {
+    if (Math.abs(delta) < TOPBAR_STAT_DELTA_BADGE_MIN) {
       document.getElementById(statId)?.querySelector('.stat-delta')?.remove()
     }
   }
 
   // Crisis banner
   const banner = document.getElementById('crisis-banner')!
-  if (criticalCount >= 3) {
+  if (criticalCount >= TOPBAR_CRISIS_STAT_COUNT) {
     banner.textContent = `${t('crisis.banner') as string} — ${criticalNames.join(' · ')}`
     banner.classList.remove('hidden')
   } else {
@@ -862,7 +880,7 @@ function checkStrikeReadiness() {
     const avgSol   = solSum / count
     const avgGriev = grievSum / count
 
-    if (avgSol >= WARN_SOL && avgGriev >= WARN_GRIEV && world.macro.gini > 0.42) {
+    if (avgSol >= STRIKE_WARN_SOLIDARITY && avgGriev >= STRIKE_WARN_GRIEVANCE && world.macro.gini > STRIKE_READINESS_GINI_FLOOR) {
       const solPct   = Math.round(avgSol)
       const grievPct = Math.round(avgGriev)
       const label    = t(`role.${role}`) as string || role
@@ -877,21 +895,6 @@ function checkStrikeReadiness() {
 
 
 // ── Achievements ───────────────────────────────────────────────────────────
-
-interface AchievementDef {
-  id: string       // e.g. 'day100'
-  dayThreshold: number
-  titleKey: string
-  descKey: string
-}
-
-const ACHIEVEMENT_DEFS: AchievementDef[] = [
-  { id: 'day100', dayThreshold: 100,       titleKey: 'achievement.day100.title', descKey: 'achievement.day100.desc' },
-  { id: 'year1',  dayThreshold: 360,       titleKey: 'achievement.year1.title',  descKey: 'achievement.year1.desc'  },
-  { id: 'year3',  dayThreshold: 360 * 3,   titleKey: 'achievement.year3.title',  descKey: 'achievement.year3.desc'  },
-  { id: 'year5',  dayThreshold: 360 * 5,   titleKey: 'achievement.year5.title',  descKey: 'achievement.year5.desc'  },
-  { id: 'year10', dayThreshold: 360 * 10,  titleKey: 'achievement.year10.title', descKey: 'achievement.year10.desc' },
-]
 
 function showAchievementToast(def: AchievementDef) {
   const container = document.getElementById('achievement-toast-container')
@@ -924,7 +927,7 @@ function showAchievementToast(def: AchievementDef) {
 
 function checkAchievements(w: WorldState) {
   const totalDays = (w.year - 1) * 360 + w.day
-  for (const def of ACHIEVEMENT_DEFS) {
+  for (const def of ACHIEVEMENT_DEFINITIONS) {
     if (totalDays >= def.dayThreshold && !w.stats.achieved_days.includes(def.dayThreshold)) {
       w.stats.achieved_days.push(def.dayThreshold)
       showAchievementToast(def)
@@ -937,14 +940,6 @@ function checkAchievements(w: WorldState) {
 }
 
 // ── Demographics panel ─────────────────────────────────────────────────────
-
-const AGE_GROUPS = [
-  { key: 'demo.age_0', min: 0,  max: 17 },
-  { key: 'demo.age_1', min: 18, max: 34 },
-  { key: 'demo.age_2', min: 35, max: 49 },
-  { key: 'demo.age_3', min: 50, max: 69 },
-  { key: 'demo.age_4', min: 70, max: 999 },
-]
 
 function updateDemographics(): number {
   if (!world) return 0
@@ -962,8 +957,8 @@ function updateDemographics(): number {
       if (n.gender === 'male') males++
       if (n.action_state === 'fleeing') leavingNow++
       const a = n.age
-      for (let i = 0; i < AGE_GROUPS.length; i++) {
-        const g = AGE_GROUPS[i]
+      for (let i = 0; i < DEMOGRAPHICS_AGE_GROUPS.length; i++) {
+        const g = DEMOGRAPHICS_AGE_GROUPS[i]
         if (a >= g.min && a <= g.max) { ageCounts[i]++; break }
       }
     } else {
@@ -982,26 +977,26 @@ function updateDemographics(): number {
 
   const container = document.getElementById('d-ages')!
   if (container.children.length === 0) {
-    for (const g of AGE_GROUPS) {
-      const label = t(g.key) as string
+    for (const g of DEMOGRAPHICS_AGE_GROUPS) {
+      const label = t(g.i18nKey) as string
       const row = document.createElement('div')
       row.className = 'age-bar-row'
       row.innerHTML = `
         <span class="age-label">${label}</span>
-        <div class="age-track"><div class="age-fill" data-age="${g.key}"></div></div>
-        <span class="age-pct" data-age-pct="${g.key}"></span>
+        <div class="age-track"><div class="age-fill" data-age="${g.i18nKey}"></div></div>
+        <span class="age-pct" data-age-pct="${g.i18nKey}"></span>
       `
       container.appendChild(row)
     }
   }
 
   const total = pop || 1
-  for (let i = 0; i < AGE_GROUPS.length; i++) {
-    const g = AGE_GROUPS[i]
+  for (let i = 0; i < DEMOGRAPHICS_AGE_GROUPS.length; i++) {
+    const g = DEMOGRAPHICS_AGE_GROUPS[i]
     const count = ageCounts[i]
     const pct = Math.round(count / total * 100)
-    const fill = container.querySelector<HTMLElement>(`.age-fill[data-age="${g.key}"]`)
-    const pctEl = container.querySelector<HTMLElement>(`.age-pct[data-age-pct="${g.key}"]`)
+    const fill = container.querySelector<HTMLElement>(`.age-fill[data-age="${g.i18nKey}"]`)
+    const pctEl = container.querySelector<HTMLElement>(`.age-pct[data-age-pct="${g.i18nKey}"]`)
     if (fill) fill.style.width = `${pct}%`
     if (pctEl) pctEl.textContent = `${pct}%`
   }
@@ -1011,14 +1006,6 @@ function updateDemographics(): number {
 }
 
 // ── Labor tension: per-role solidarity + grievance ─────────────────────────
-
-const STRIKEABLE_ROLES = ['farmer', 'craftsman', 'merchant', 'scholar', 'healthcare'] as const
-// Strike thresholds (mirrors engine checkLaborStrikes)
-const STRIKE_SOL_THRESH = 72
-const STRIKE_GRIEV_THRESH = 58
-// Warn when within 80% of threshold
-const WARN_SOL  = STRIKE_SOL_THRESH  * 0.80   // 57.6
-const WARN_GRIEV = STRIKE_GRIEV_THRESH * 0.80   // 46.4
 
 function updateLaborTension() {
   if (!world) return
@@ -1044,11 +1031,11 @@ function updateLaborTension() {
     const avgSol   = Math.round(s.sol / s.count)
     const avgGriev = Math.round(s.griev / s.count)
     const onStrike = world!.active_strikes.some(st => st.role === role)
-    const atRisk   = avgSol >= WARN_SOL && avgGriev >= WARN_GRIEV
-    const danger   = avgSol >= STRIKE_SOL_THRESH || onStrike
+    const atRisk   = avgSol >= STRIKE_WARN_SOLIDARITY && avgGriev >= STRIKE_WARN_GRIEVANCE
+    const danger   = avgSol >= STRIKE_SOLIDARITY_THRESHOLD || onStrike
 
     const solColor   = danger ? '#e24b4b' : atRisk ? '#ef9f27' : '#2a6'
-    const grievColor = avgGriev >= WARN_GRIEV ? '#ef9f27' : '#378add'
+    const grievColor = avgGriev >= STRIKE_WARN_GRIEVANCE ? '#ef9f27' : '#378add'
     const roleClass  = danger ? 'labor-role danger' : atRisk ? 'labor-role warn' : 'labor-role'
     const icon       = onStrike ? '⚒ ' : atRisk ? '⚠ ' : ''
     const label      = t(`role.${role}`) as string || role
@@ -1070,13 +1057,6 @@ function updateLaborTension() {
 }
 
 // ── Active rumors display ──────────────────────────────────────────────────
-
-const RUMOR_EFFECT_ICONS: Record<string, string> = {
-  trust_down:    '💔',
-  trust_up:      '💚',
-  fear_up:       '😨',
-  grievance_up:  '😡',
-}
 
 function escapeHtml(text: string): string {
   return text
@@ -1284,19 +1264,13 @@ const rumorsPanel = document.getElementById('rumors-panel') as HTMLElement
 const econPanel = document.getElementById('econ-panel') as HTMLElement
 const npcContactsPanel = document.getElementById('npc-contacts-panel') as HTMLElement
 
-const DEMO_VISIBLE_KEY = 'ui_demographics_visible'
-const RUMORS_VISIBLE_KEY = 'ui_rumors_visible'
-const LEGEND_VISIBLE_KEY = 'ui_legend_visible'
-const NETWORK_VISIBLE_KEY = 'ui_network_visible'
-const ECON_VISIBLE_KEY = 'ui_econ_visible'
-const NPC_CONTACTS_VISIBLE_KEY = 'ui_npc_contacts_visible'
-let demographicsVisible = localStorage.getItem(DEMO_VISIBLE_KEY) !== '0'
-let rumorsVisible = localStorage.getItem(RUMORS_VISIBLE_KEY) !== '0'
+let demographicsVisible = localStorage.getItem(UI_DEMOGRAPHICS_VISIBLE_KEY) !== '0'
+let rumorsVisible = localStorage.getItem(UI_RUMORS_VISIBLE_KEY) !== '0'
 /** Map legend off by default; set localStorage to '1' to opt in. */
-let legendVisible = localStorage.getItem(LEGEND_VISIBLE_KEY) === '1'
-let networkVisible = localStorage.getItem(NETWORK_VISIBLE_KEY) !== '0'
-let econVisible = localStorage.getItem(ECON_VISIBLE_KEY) === '1'
-let npcContactsVisible = localStorage.getItem(NPC_CONTACTS_VISIBLE_KEY) === '1'
+let legendVisible = localStorage.getItem(UI_LEGEND_VISIBLE_KEY) === '1'
+let networkVisible = localStorage.getItem(UI_NETWORK_VISIBLE_KEY) !== '0'
+let econVisible = localStorage.getItem(UI_ECON_VISIBLE_KEY) === '1'
+let npcContactsVisible = localStorage.getItem(UI_NPC_CONTACTS_VISIBLE_KEY) === '1'
 
 function applyOverlayVisibility() {
   demographicsPanel.classList.toggle('hidden', !demographicsVisible)
@@ -1316,43 +1290,43 @@ function applyOverlayVisibility() {
 
 btnToggleDemo.addEventListener('click', () => {
   demographicsVisible = !demographicsVisible
-  localStorage.setItem(DEMO_VISIBLE_KEY, demographicsVisible ? '1' : '0')
+  localStorage.setItem(UI_DEMOGRAPHICS_VISIBLE_KEY, demographicsVisible ? '1' : '0')
   applyOverlayVisibility()
 })
 
 btnToggleRumors.addEventListener('click', () => {
   rumorsVisible = !rumorsVisible
-  localStorage.setItem(RUMORS_VISIBLE_KEY, rumorsVisible ? '1' : '0')
+  localStorage.setItem(UI_RUMORS_VISIBLE_KEY, rumorsVisible ? '1' : '0')
   applyOverlayVisibility()
 })
 
 btnToggleNetwork.addEventListener('click', () => {
   networkVisible = !networkVisible
-  localStorage.setItem(NETWORK_VISIBLE_KEY, networkVisible ? '1' : '0')
+  localStorage.setItem(UI_NETWORK_VISIBLE_KEY, networkVisible ? '1' : '0')
   applyOverlayVisibility()
 })
 
 btnToggleLegend.addEventListener('click', () => {
   legendVisible = !legendVisible
-  localStorage.setItem(LEGEND_VISIBLE_KEY, legendVisible ? '1' : '0')
+  localStorage.setItem(UI_LEGEND_VISIBLE_KEY, legendVisible ? '1' : '0')
   applyOverlayVisibility()
 })
 
 btnToggleEcon.addEventListener('click', () => {
   econVisible = !econVisible
-  localStorage.setItem(ECON_VISIBLE_KEY, econVisible ? '1' : '0')
+  localStorage.setItem(UI_ECON_VISIBLE_KEY, econVisible ? '1' : '0')
   applyOverlayVisibility()
   if (econVisible) updateEconomicsPanel()
 })
 
 btnToggleNpcContacts.addEventListener('click', () => {
   npcContactsVisible = !npcContactsVisible
-  localStorage.setItem(NPC_CONTACTS_VISIBLE_KEY, npcContactsVisible ? '1' : '0')
+  localStorage.setItem(UI_NPC_CONTACTS_VISIBLE_KEY, npcContactsVisible ? '1' : '0')
   applyOverlayVisibility()
   if (npcContactsVisible) updateNpcContactsPanel()
 })
 
-document.addEventListener('npc-contacts-changed', () => {
+document.addEventListener(SPOTLIGHT_NPC_CONTACTS_CHANGED_EVENT, () => {
   if (npcContactsVisible) updateNpcContactsPanel()
 })
 
@@ -1447,7 +1421,6 @@ function updateEconomicsPanel() {
 // Tracks which 15-day period has already been processed to avoid double-firing at high speeds.
 let lastGovernmentPeriod = -1
 let govBusy = false
-const GOV_PERIOD_DAYS = 15
 
 const govCdEl = document.getElementById('gov-cd')!
 const btnGov  = document.getElementById('btn-gov')!
@@ -1459,7 +1432,7 @@ function updateGovCooldown() {
     govCdEl.className = 'waiting'
     return
   }
-  const nextGovDay = (lastGovernmentPeriod + 1) * GOV_PERIOD_DAYS
+  const nextGovDay = (lastGovernmentPeriod + 1) * GOVERNMENT_POLICY_PERIOD_DAYS
   const remaining = Math.max(0, nextGovDay - world.day)
   if (remaining === 0) {
     govCdEl.textContent = '✓'
@@ -1513,7 +1486,7 @@ async function triggerGovernment() {
   const leaderNpc = (settings.enable_human_elections && world.leader_id != null)
     ? world.npcs[world.leader_id] ?? undefined
     : undefined
-  lastGovernmentPeriod = Math.floor(world.day / GOV_PERIOD_DAYS)
+  lastGovernmentPeriod = Math.floor(world.day / GOVERNMENT_POLICY_PERIOD_DAYS)
   try {
     await runGovernmentCycle(world, govConfig, govPolicyCallback, leaderNpc)
   } finally {
@@ -1526,7 +1499,6 @@ btnGov.addEventListener('click', () => { void triggerGovernment() })
 document.getElementById('btn-ref-details')!.addEventListener('click', openReferendumDetails)
 
 // 1 tick = 1 sim-hour; 1000ms interval = 1 tick/second at 1× → 1 real second = 1 sim-hour
-const BASE_TICK_MS = 1000
 
 function setPaused(value: boolean) {
   paused = value
@@ -1584,9 +1556,9 @@ function startSimLoop() {
         runElection(world)
       }
     }
-    // Government cycle: every GOV_PERIOD_DAYS sim-days
-    const govPeriod = Math.floor(world.day / GOV_PERIOD_DAYS)
-    if (govPeriod !== lastGovernmentPeriod && world.day >= GOV_PERIOD_DAYS && !govBusy) {
+    // Government cycle: every GOVERNMENT_POLICY_PERIOD_DAYS sim-days
+    const govPeriod = Math.floor(world.day / GOVERNMENT_POLICY_PERIOD_DAYS)
+    if (govPeriod !== lastGovernmentPeriod && world.day >= GOVERNMENT_POLICY_PERIOD_DAYS && !govBusy) {
       const govConfig = (settings.enable_government_ai && aiConfig) ? aiConfig : null
       govBusy = true
       lastGovernmentPeriod = govPeriod
@@ -1599,7 +1571,7 @@ function startSimLoop() {
     updateGovCooldown()
     if (living === 0) triggerGameOver('extinction')
     else if (world.collapse_phase === 'collapse') triggerGameOver('collapse')
-  }, BASE_TICK_MS)
+  }, SIM_BASE_TICK_MS)
 }
 
 // ── Game over ──────────────────────────────────────────────────────────────
@@ -1648,7 +1620,7 @@ function triggerGameOver(reason: 'extinction' | 'collapse' = 'extinction') {
   // ── Achievement medals panel ──────────────────────────────────────────────
   const medalsEl = document.getElementById('gameover-medals')
   if (medalsEl) {
-    const earned = ACHIEVEMENT_DEFS.filter(d => world!.stats.achieved_days.includes(d.dayThreshold))
+    const earned = ACHIEVEMENT_DEFINITIONS.filter(d => world!.stats.achieved_days.includes(d.dayThreshold))
     if (earned.length > 0) {
       medalsEl.innerHTML = earned.map(d => {
         const titleText = t(d.titleKey) as string
@@ -1819,7 +1791,7 @@ function downloadAchievementBadge() {
   const popGrowth = world.initial_population > 0
     ? Math.round(((peakPopulation - world.initial_population) / world.initial_population) * 100)
     : 0
-  const earned = ACHIEVEMENT_DEFS.filter(d => s.achieved_days.includes(d.dayThreshold))
+  const earned = ACHIEVEMENT_DEFINITIONS.filter(d => s.achieved_days.includes(d.dayThreshold))
   const descRaw = world.constitution.description
   const desc = (descRaw.startsWith('preset.') ? (t(descRaw) as string) : descRaw)
   const PAD = 28

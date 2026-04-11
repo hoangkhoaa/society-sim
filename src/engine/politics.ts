@@ -2,14 +2,13 @@ import type { WorldState } from '../types'
 import { clamp } from '../sim/constitution'
 import { addFeedRaw, addChronicle } from '../ui/feed'
 import { t, tf } from '../i18n'
+import { POLITICS_MAX_LEGENDARY_PER_DAY } from '../constants/engine-politics'
 
 let lastCapitalistCrashTick = -9999
 let lastPeasantRevoltTick   = -9999
 let lastRationingCrisisTick = -9999
 let lastHeresyCrisisTick    = -9999
 
-// Maximum legendary recognitions per sim-day (prevents spam when many NPCs hit thresholds together)
-const MAX_LEGENDARY_PER_DAY = 1
 let legendaryRecognizedToday = 0
 let legendaryLastDay = -1
 
@@ -313,7 +312,7 @@ export function checkLegendaryNPCs(state: WorldState): void {
     if (npc.legendary) continue  // already marked
 
     // Cap recognitions per day to avoid spam when many NPCs cross thresholds simultaneously
-    if (legendaryRecognizedToday >= MAX_LEGENDARY_PER_DAY) continue
+    if (legendaryRecognizedToday >= POLITICS_MAX_LEGENDARY_PER_DAY) continue
 
     // Minimum: NPC must have been alive for at least 60 sim-days (lived through hardship, not just arrived)
     const ticksAlive = npc.lifecycle.death_tick == null ? state.tick - (npc.id * 3) : 0  // rough proxy

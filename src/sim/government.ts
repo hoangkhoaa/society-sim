@@ -13,21 +13,26 @@ import { getLatestHeadlines } from './press'
 import { describeAlert, noAlertsSummaryLine, pickRoutineMessage, getFallbackPolicy, getNPCPolicyReactionThought, softerFallbackPolicyText, OPTION_LABELS, factionReactionMessage } from '../local/government'
 import type { PolicyStance, PolicyType } from '../local/government'
 import { showStoryCard } from '../ui/story-card'
-
-// ── Alert thresholds ──────────────────────────────────────────────────────────
-
-const ALERT_THRESHOLDS = {
-  food_critical:      25,
-  food_warning:       38,
-  stability_critical: 28,
-  stability_warning:  40,
-  trust_critical:     22,
-  trust_warning:      32,
-  pressure_critical:  72,
-  pressure_warning:   58,
-  resources_critical: 15,
-  resources_warning:  28,
-} as const
+import { GOVERNMENT_ALERT_THRESHOLDS, GOVERNMENT_LABOR_UNREST_CRITICAL, GOVERNMENT_LABOR_UNREST_WARNING } from '../constants/government-alert-thresholds'
+import { GOVERNMENT_REGIME_STYLE_PROMPTS, type GovernmentRegimeArchetype } from '../constants/government-regime-style'
+import {
+  POLICY_LOYALIST_AUTHORITY_FLOOR,
+  POLICY_LOYALIST_GOV_TRUST_FLOOR,
+  POLICY_DISSIDENT_AUTHORITY_CEIL,
+  POLICY_DISSIDENT_GOV_TRUST_CEIL,
+  POLICY_SKEPTIC_AUTHORITY_CEIL,
+  POLICY_SKEPTIC_GOV_TRUST_CEIL,
+  POLICY_MAX_INFLUENCE_TIES,
+  POLICY_POLARIZATION_RESISTANCE_THRESHOLD,
+  POLICY_LOYALIST_AUTHORITY_INFLUENCE,
+  POLICY_DISSIDENT_AUTHORITY_INFLUENCE,
+  POLICY_DISSIDENT_GRIEVANCE_INFLUENCE,
+  POLICY_SKEPTIC_GRIEVANCE_INFLUENCE,
+  POLICY_THOUGHT_SAMPLE_RATE,
+  POLICY_MIN_THOUGHT_SAMPLE,
+  POLICY_MAX_THOUGHT_SAMPLE,
+  POLICY_DISSIDENT_ORGANIZING_PROBABILITY,
+} from '../constants/government-npc-policy-tuning'
 
 // ── Internal types ────────────────────────────────────────────────────────────
 
@@ -65,16 +70,7 @@ export interface GovernmentPolicyAI {
 
 // ── Regime detection ──────────────────────────────────────────────────────────
 
-type RegimeType =
-  | 'authoritarian'
-  | 'libertarian'
-  | 'welfare'
-  | 'feudal'
-  | 'theocratic'
-  | 'technocratic'
-  | 'moderate'
-
-export function detectRegime(c: Constitution): RegimeType {
+export function detectRegime(c: Constitution): GovernmentRegimeArchetype {
   // Theocratic: high state power, high trust, high cohesion
   if (c.state_power >= 0.70 && c.base_trust >= 0.65 && c.network_cohesion >= 0.70) return 'theocratic'
   // Technocratic: growth-first with strong individual rights
@@ -96,39 +92,39 @@ function detectAlerts(state: WorldState): Alert[] {
   const m = state.macro
   const alerts: Alert[] = []
 
-  if (m.food <= ALERT_THRESHOLDS.food_critical) {
+  if (m.food <= GOVERNMENT_ALERT_THRESHOLDS.food_critical) {
     alerts.push({ stat: 'food', value: m.food, level: 'critical', description: describeAlert(getLang(), 'food', 'critical', m.food) })
-  } else if (m.food <= ALERT_THRESHOLDS.food_warning) {
+  } else if (m.food <= GOVERNMENT_ALERT_THRESHOLDS.food_warning) {
     alerts.push({ stat: 'food', value: m.food, level: 'warning', description: describeAlert(getLang(), 'food', 'warning', m.food) })
   }
 
-  if (m.stability <= ALERT_THRESHOLDS.stability_critical) {
+  if (m.stability <= GOVERNMENT_ALERT_THRESHOLDS.stability_critical) {
     alerts.push({ stat: 'stability', value: m.stability, level: 'critical', description: describeAlert(getLang(), 'stability', 'critical', m.stability) })
-  } else if (m.stability <= ALERT_THRESHOLDS.stability_warning) {
+  } else if (m.stability <= GOVERNMENT_ALERT_THRESHOLDS.stability_warning) {
     alerts.push({ stat: 'stability', value: m.stability, level: 'warning', description: describeAlert(getLang(), 'stability', 'warning', m.stability) })
   }
 
-  if (m.trust <= ALERT_THRESHOLDS.trust_critical) {
+  if (m.trust <= GOVERNMENT_ALERT_THRESHOLDS.trust_critical) {
     alerts.push({ stat: 'trust', value: m.trust, level: 'critical', description: describeAlert(getLang(), 'trust', 'critical', m.trust) })
-  } else if (m.trust <= ALERT_THRESHOLDS.trust_warning) {
+  } else if (m.trust <= GOVERNMENT_ALERT_THRESHOLDS.trust_warning) {
     alerts.push({ stat: 'trust', value: m.trust, level: 'warning', description: describeAlert(getLang(), 'trust', 'warning', m.trust) })
   }
 
-  if (m.political_pressure >= ALERT_THRESHOLDS.pressure_critical) {
+  if (m.political_pressure >= GOVERNMENT_ALERT_THRESHOLDS.pressure_critical) {
     alerts.push({ stat: 'political_pressure', value: m.political_pressure, level: 'critical', description: describeAlert(getLang(), 'pressure', 'critical', m.political_pressure) })
-  } else if (m.political_pressure >= ALERT_THRESHOLDS.pressure_warning) {
+  } else if (m.political_pressure >= GOVERNMENT_ALERT_THRESHOLDS.pressure_warning) {
     alerts.push({ stat: 'political_pressure', value: m.political_pressure, level: 'warning', description: describeAlert(getLang(), 'pressure', 'warning', m.political_pressure) })
   }
 
-  if (m.natural_resources <= ALERT_THRESHOLDS.resources_critical) {
+  if (m.natural_resources <= GOVERNMENT_ALERT_THRESHOLDS.resources_critical) {
     alerts.push({ stat: 'natural_resources', value: m.natural_resources, level: 'critical', description: describeAlert(getLang(), 'resources', 'critical', m.natural_resources) })
-  } else if (m.natural_resources <= ALERT_THRESHOLDS.resources_warning) {
+  } else if (m.natural_resources <= GOVERNMENT_ALERT_THRESHOLDS.resources_warning) {
     alerts.push({ stat: 'natural_resources', value: m.natural_resources, level: 'warning', description: describeAlert(getLang(), 'resources', 'warning', m.natural_resources) })
   }
 
-  if ((m.labor_unrest ?? 0) >= 82) {
+  if ((m.labor_unrest ?? 0) >= GOVERNMENT_LABOR_UNREST_CRITICAL) {
     alerts.push({ stat: 'labor_unrest', value: m.labor_unrest, level: 'critical', description: describeAlert(getLang(), 'labor_unrest', 'critical', m.labor_unrest) })
-  } else if ((m.labor_unrest ?? 0) >= 65) {
+  } else if ((m.labor_unrest ?? 0) >= GOVERNMENT_LABOR_UNREST_WARNING) {
     alerts.push({ stat: 'labor_unrest', value: m.labor_unrest, level: 'warning', description: describeAlert(getLang(), 'labor_unrest', 'warning', m.labor_unrest) })
   }
 
@@ -136,18 +132,6 @@ function detectAlerts(state: WorldState): Alert[] {
 }
 
 // ── Routine messages (localized) live in `src/local/government.ts` ────────────
-
-// ── Regime personality for AI system prompt ───────────────────────────────────
-
-const REGIME_STYLE: Record<RegimeType, string> = {
-  authoritarian: 'Decisive and centralized. You issue direct mandates and enforce compliance. Stability through order. Citizens who resist are a problem to be managed.',
-  libertarian: 'Minimal intervention. You trust market forces and incentives over mandates. Citizens are responsible for their own welfare. Freedom above all else.',
-  welfare: 'Compassionate and redistributive. You prioritize citizen wellbeing through public programs and collective action. No one is left behind — at acceptable cost.',
-  feudal: 'Hierarchical and extractive. The elite must be protected first. Commoners bear the cost of crises. Maintain the social order.',
-  theocratic: 'Divinely guided. Policies are moral duties and sacred obligations. Social cohesion through shared belief and deference to higher authority.',
-  technocratic: 'Data-driven and efficiency-first. You trust the model over intuition. Emotion is inefficiency. Optimize outputs.',
-  moderate: 'Pragmatic and compromise-seeking. You balance competing interests. Everyone ends up moderately unhappy — which is everyone moderately satisfied.',
-}
 
 // ── AI system prompt ──────────────────────────────────────────────────────────
 
@@ -171,7 +155,7 @@ Your decisions MUST reflect this leader's personal background, interests, and re
   return `You are the Governing Council of a society simulation.
 You observe social statistics and issue policy decisions every 15 days.
 ${leaderBlock}
-YOUR GOVERNING STYLE: ${REGIME_STYLE[regime]}
+YOUR GOVERNING STYLE: ${GOVERNMENT_REGIME_STYLE_PROMPTS[regime]}
 YOUR VALUE PRIORITIES: ${c.value_priority.join(' > ')}
 State power: ${Math.round(c.state_power * 100)}% | Market freedom: ${Math.round(c.market_freedom * 100)}% | Safety net: ${Math.round(c.safety_net * 100)}%
 
@@ -501,7 +485,7 @@ function generateFallbackPolicy(state: WorldState, alerts: Alert[]): GovernmentP
 // ── Soft alternative policy (always deterministic) ───────────────────────────
 // Used as option B when the AI isn't available or as a contrast to a strong option A.
 
-function generateSofterFallback(primary: GovernmentPolicyAI, _regime: RegimeType, lang: Lang): GovernmentPolicyAI {
+function generateSofterFallback(primary: GovernmentPolicyAI, _regime: GovernmentRegimeArchetype, lang: Lang): GovernmentPolicyAI {
   const text = softerFallbackPolicyText(lang)
   return {
     ...text,
@@ -552,42 +536,15 @@ function emitFactionReactions(state: WorldState, policy: GovernmentPolicyAI): vo
 
 // ── NPC Policy Reaction System ────────────────────────────────────────────────
 
-// Named constants for stance-classification thresholds
-const LOYALIST_AUTHORITY_FLOOR = 0.65     // worldview.authority_trust minimum for loyalist
-const LOYALIST_GOV_TRUST_FLOOR = 0.55     // combined government trust minimum for loyalist
-const DISSIDENT_AUTHORITY_CEIL  = 0.30    // below this authority → dissident
-const DISSIDENT_GOV_TRUST_CEIL  = 0.28    // below this gov trust → dissident
-const SKEPTIC_AUTHORITY_CEIL    = 0.44    // below this authority (but above dissident) → skeptic
-const SKEPTIC_GOV_TRUST_CEIL    = 0.42    // below this gov trust → skeptic
-
-// Network spread constants
-// Influence is capped at this many info_ties to keep computation proportional
-// and model diminishing social influence beyond immediate ideological circles.
-const MAX_INFLUENCE_TIES = 10
-// NPCs with worldview difference exceeding this value resist network influence (echo chamber cap)
-const POLARIZATION_RESISTANCE_THRESHOLD = 0.45
-const LOYALIST_AUTHORITY_INFLUENCE   =  0.003
-const DISSIDENT_AUTHORITY_INFLUENCE  = -0.003
-const DISSIDENT_GRIEVANCE_INFLUENCE  =  1.5
-const SKEPTIC_GRIEVANCE_INFLUENCE    = -0.5
-
-// Reaction thought sampling parameters
-const THOUGHT_SAMPLE_RATE = 0.10          // fraction of live NPCs to receive a thought
-const MIN_THOUGHT_SAMPLE  = 5             // always set at least this many thoughts
-const MAX_THOUGHT_SAMPLE  = 50            // cap to avoid O(n) feed spam
-
-// Probability that a high-grievance dissident NPC switches to 'organizing' on policy announcement
-const DISSIDENT_ORGANIZING_PROBABILITY = 0.08
-
 // Classify an NPC's stance toward government policy.
 // Based on worldview.authority_trust and trust_in.government composite score.
 function classifyNPCPolicyStance(npc: NPC): PolicyStance {
   const govTrust = (npc.trust_in.government.competence + npc.trust_in.government.intention) / 2
   const authority = npc.worldview.authority_trust
 
-  if (authority > LOYALIST_AUTHORITY_FLOOR && govTrust > LOYALIST_GOV_TRUST_FLOOR) return 'loyalist'
-  if (authority < DISSIDENT_AUTHORITY_CEIL  || govTrust < DISSIDENT_GOV_TRUST_CEIL) return 'dissident'
-  if (authority < SKEPTIC_AUTHORITY_CEIL    || govTrust < SKEPTIC_GOV_TRUST_CEIL)   return 'skeptic'
+  if (authority > POLICY_LOYALIST_AUTHORITY_FLOOR && govTrust > POLICY_LOYALIST_GOV_TRUST_FLOOR) return 'loyalist'
+  if (authority < POLICY_DISSIDENT_AUTHORITY_CEIL  || govTrust < POLICY_DISSIDENT_GOV_TRUST_CEIL) return 'dissident'
+  if (authority < POLICY_SKEPTIC_AUTHORITY_CEIL    || govTrust < POLICY_SKEPTIC_GOV_TRUST_CEIL)   return 'skeptic'
   return 'pragmatist'
 }
 
@@ -651,7 +608,7 @@ function applyStanceBehavioralEffect(npc: NPC, stance: PolicyStance): void {
   }
   // Dissidents may switch to organizing if they are already at high grievance
   if (stance === 'dissident' && npc.grievance > 60 && npc.action_state === 'working') {
-    if (Math.random() < DISSIDENT_ORGANIZING_PROBABILITY) npc.action_state = 'organizing'
+    if (Math.random() < POLICY_DISSIDENT_ORGANIZING_PROBABILITY) npc.action_state = 'organizing'
   }
 }
 
@@ -667,20 +624,20 @@ function spreadPolicyAttitudeThroughNetwork(
     const stance = classifyNPCPolicyStance(npc)
     if (stance === 'pragmatist') continue  // neutral NPCs don't propagate
 
-    const authorityDelta = stance === 'loyalist' ? LOYALIST_AUTHORITY_INFLUENCE : DISSIDENT_AUTHORITY_INFLUENCE
-    const grievanceDelta = stance === 'dissident' ? DISSIDENT_GRIEVANCE_INFLUENCE : SKEPTIC_GRIEVANCE_INFLUENCE
+    const authorityDelta = stance === 'loyalist' ? POLICY_LOYALIST_AUTHORITY_INFLUENCE : POLICY_DISSIDENT_AUTHORITY_INFLUENCE
+    const grievanceDelta = stance === 'dissident' ? POLICY_DISSIDENT_GRIEVANCE_INFLUENCE : POLICY_SKEPTIC_GRIEVANCE_INFLUENCE
 
     // Propagate only through the closest info_ties (ideological network)
-    const tiesToCheck = npc.info_ties.slice(0, MAX_INFLUENCE_TIES)
+    const tiesToCheck = npc.info_ties.slice(0, POLICY_MAX_INFLUENCE_TIES)
     for (const neighborId of tiesToCheck) {
       const neighbor = npcById.get(neighborId)
       if (!neighbor) continue
 
       // Influence is stronger when worldviews are already similar; cap at threshold
       const authorityDiff = Math.abs(npc.worldview.authority_trust - neighbor.worldview.authority_trust)
-      if (authorityDiff > POLARIZATION_RESISTANCE_THRESHOLD) continue
+      if (authorityDiff > POLICY_POLARIZATION_RESISTANCE_THRESHOLD) continue
 
-      const weight = 1 - authorityDiff / POLARIZATION_RESISTANCE_THRESHOLD   // 0→1 as similarity grows
+      const weight = 1 - authorityDiff / POLICY_POLARIZATION_RESISTANCE_THRESHOLD   // 0→1 as similarity grows
       neighbor.worldview.authority_trust = clamp(
         neighbor.worldview.authority_trust + authorityDelta * weight,
         0, 1,
@@ -715,7 +672,7 @@ function generateNPCPolicyReactions(state: WorldState, policy: GovernmentPolicyA
   }
 
   // 2. Generate reaction thoughts for a stratified sample
-  const sampleSize = Math.min(MAX_THOUGHT_SAMPLE, Math.max(MIN_THOUGHT_SAMPLE, Math.ceil(living.length * THOUGHT_SAMPLE_RATE)))
+  const sampleSize = Math.min(POLICY_MAX_THOUGHT_SAMPLE, Math.max(POLICY_MIN_THOUGHT_SAMPLE, Math.ceil(living.length * POLICY_THOUGHT_SAMPLE_RATE)))
   const sampled    = shuffleArray(living).slice(0, sampleSize)
 
   const feedCandidates: Array<{ npc: NPC; stance: PolicyStance; thought: string }> = []

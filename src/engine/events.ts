@@ -1,5 +1,6 @@
 import type { WorldState, SimEvent } from '../types'
 import { clamp, ZONE_ADJACENCY } from '../sim/constitution'
+import { EVENT_ALL_ZONES, NON_LETHAL_EVENT_TYPES } from '../constants/events-world'
 
 // ── Event death accumulator ────────────────────────────────────────────────
 let eventDeathsThisDay = 0
@@ -7,20 +8,12 @@ let eventDeathsThisDay = 0
 export function getEventDeathsThisDay(): number { return eventDeathsThisDay }
 export function resetEventDeaths(): void { eventDeathsThisDay = 0 }
 
-// All zones for epidemic full-spread reference
-const ALL_ZONES = [
-  'north_farm', 'south_farm', 'workshop_district', 'market_square',
-  'scholar_quarter', 'residential_east', 'residential_west', 'guard_post', 'plaza',
-  'clinic_district', 'underworld_quarter',
-]
-// ZONE_ADJACENCY is imported from constitution.ts
-
 export function tickEvents(state: WorldState): void {
   for (const ev of state.active_events) {
     ev.elapsed_ticks++
 
     // Epidemic zone spread: every 48 ticks (2 sim-days), spread to adjacent zone
-    if (ev.type === 'epidemic' && ev.elapsed_ticks % 48 === 0 && ev.zones.length < ALL_ZONES.length) {
+    if (ev.type === 'epidemic' && ev.elapsed_ticks % 48 === 0 && ev.zones.length < EVENT_ALL_ZONES.length) {
       const spreadChance = ev.intensity * 0.6
       if (Math.random() < spreadChance) {
         const neighbours = new Set<string>()
@@ -104,12 +97,6 @@ export function spawnEvent(state: WorldState, partial: Partial<SimEvent>): SimEv
  * Apply immediate zone-targeted deaths when a catastrophic event spawns.
  * Uses the event's `instant_kill_rate` field. Returns the number of NPCs killed.
  */
-// Positive event types that should NEVER kill NPCs regardless of what AI returns
-const NON_LETHAL_EVENT_TYPES = new Set([
-  'resource_boom', 'trade_offer', 'tech_shift', 'charismatic_npc', 'ideology_import',
-  'festival', 'golden_harvest', 'cultural_renaissance',
-])
-
 export function applyInstantEventDeaths(state: WorldState, ev: SimEvent): number {
   if (NON_LETHAL_EVENT_TYPES.has(ev.type)) return 0
   const rate = ev.effects_per_tick.instant_kill_rate ?? 0

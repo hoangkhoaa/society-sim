@@ -2,6 +2,17 @@ import type { WorldState, NPC, Syndicate } from '../types'
 import { clamp } from '../sim/constitution'
 import { addFeedRaw, addChronicle } from '../ui/feed'
 import { tf } from '../i18n'
+import {
+  SYNDICATE_FORMATION_PROBABILITY,
+  MIN_SYNDICATE_SIZE,
+  SYNDICATE_ACTION_INTERVAL_TICKS,
+  SYNDICATE_DUES_RATE,
+  SYNDICATE_BUST_PROBABILITY,
+  SYNDICATE_MEMBER_BUST_RATE,
+  SYNDICATE_RACKET_EXTRACTION_RATE,
+  SYNDICATE_RAID_CHANCE_MULTIPLIER,
+  SYNDICATE_NAME_POOL,
+} from '../constants/engine-crime-syndicate'
 
 let lastShadowRaidTick = -9999
 let nextSyndicateId = 1
@@ -36,7 +47,7 @@ export function checkShadowEconomy(state: WorldState): void {
     let raidCount = 0
     for (const npc of criminals) {
       const isSyndMember = syndicateMemberIds.has(npc.id)
-      const effectiveChance = isSyndMember ? raidChance * SYNDICATE_RAID_MULTIPLIER : raidChance
+      const effectiveChance = isSyndMember ? raidChance * SYNDICATE_RAID_CHANCE_MULTIPLIER : raidChance
       if (Math.random() < effectiveChance) {
         // Syndicate members lose 50% wealth; regular criminals lose 40%
         const seizureRate = isSyndMember ? 0.50 : 0.40
@@ -68,22 +79,6 @@ export function checkShadowEconomy(state: WorldState): void {
 // Criminal NPCs form syndicates when inequality is high and criminal population
 // exceeds 4%. Syndicates collect dues, run protection rackets, bribe guards,
 // and recruit. Guard crackdowns can partially bust them.
-
-const SYNDICATE_FORMATION_PROBABILITY = 0.05   // daily formation check chance
-const MIN_SYNDICATE_SIZE               = 4      // minimum members to form/keep a syndicate
-const SYNDICATE_ACTION_INTERVAL        = 240    // ticks between special actions (10 days)
-const SYNDICATE_DUES_RATE              = 0.08   // fraction of member wealth collected daily
-const SYNDICATE_BUST_PROBABILITY       = 0.05   // daily bust chance when guard power > 0.55
-const MEMBER_BUST_RATE                 = 0.30   // fraction of members removed on a bust
-const RACKET_EXTRACTION_RATE           = 0.05   // fraction of merchant wealth extracted per racket
-const SYNDICATE_RAID_MULTIPLIER        = 1.5    // shadow-economy raid chance multiplier for syndicate members
-
-
-const SYNDICATE_NAMES = [
-  'Iron Veil Brotherhood', 'Shadow Compact', 'Red Hand Society', 'Crimson Tide Outfit',
-  'Black Market League', 'Night Crown Syndicate', 'Hollow Sun Cartel', 'Grey Wolf Ring',
-  'Ember Court Gang', 'Silent Scale Consortium',
-]
 
 export function checkSyndicates(state: WorldState): void {
   const living    = state.npcs.filter(n => n.lifecycle.is_alive)
@@ -126,7 +121,7 @@ export function checkSyndicates(state: WorldState): void {
         if (recruits.length >= MIN_SYNDICATE_SIZE) {
           const territory = [...new Set(recruits.map(n => n.zone))]
           const usedNames = new Set(state.syndicates.map(s => s.name))
-          const name = SYNDICATE_NAMES.find(n => !usedNames.has(n))
+          const name = SYNDICATE_NAME_POOL.find(n => !usedNames.has(n))
             ?? `Crime Syndicate ${nextSyndicateId}`
 
           const syndicate: Syndicate = {
@@ -162,7 +157,7 @@ export function checkSyndicates(state: WorldState): void {
         syn.member_ids = syn.member_ids.filter(id => {
           const npc = state.npcs[id]
           if (!npc?.lifecycle.is_alive) return false
-          if (Math.random() < MEMBER_BUST_RATE) {
+          if (Math.random() < SYNDICATE_MEMBER_BUST_RATE) {
             // Busted member gets extra fear/isolation
             npc.fear      = clamp(npc.fear      + 35, 0, 100)
             npc.isolation = clamp(npc.isolation + 20, 0, 100)
@@ -198,7 +193,7 @@ export function checkSyndicates(state: WorldState): void {
     syn.resources = Math.min(syn.resources + Math.floor(dues), 999999)
 
     // Every 10 days, perform one special action
-    if (state.tick - syn.last_action_tick < SYNDICATE_ACTION_INTERVAL) continue
+    if (state.tick - syn.last_action_tick < SYNDICATE_ACTION_INTERVAL_TICKS) continue
     syn.last_action_tick = state.tick
 
     const roll = Math.random()
@@ -222,7 +217,7 @@ export function checkSyndicates(state: WorldState): void {
       let extorted = 0
       for (const npc of living) {
         if (npc.role === 'merchant' && syn.territory.includes(npc.zone) && !syn.member_ids.includes(npc.id)) {
-          const take = npc.wealth * RACKET_EXTRACTION_RATE
+          const take = npc.wealth * SYNDICATE_RACKET_EXTRACTION_RATE
           npc.wealth = clamp(npc.wealth - take, 0, 50000)
           npc.fear   = clamp(npc.fear + 10, 0, 100)
           syn.resources += Math.floor(take)

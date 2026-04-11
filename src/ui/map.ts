@@ -3,6 +3,24 @@ import { openSpotlight, close as closeSpotlight } from './spotlight'
 import type { AIConfig } from '../types'
 import { t } from '../i18n'
 import { ZONE_ADJACENCY } from '../sim/constitution'
+import {
+  MAP_VIEWPORT_PADDING,
+  MAP_LAYOUT_BLUR_PX,
+  MAP_BLUR_LAYER_DOWNSAMPLE,
+  MAP_BLUR_UNDERLAY_SCRIM_LIGHT,
+  MAP_BLUR_UNDERLAY_SCRIM_DARK,
+  MAP_NPC_ACTION_SPEED,
+  MAP_DIRECT_TIE_MAX_DRAW_PX,
+  MAP_INFO_TIE_MAX_DRAW_PX,
+  MAP_INFO_TIE_BASE_ALPHA,
+  MAP_INFO_TIE_PULSE_ALPHA,
+  MAP_MAX_RAIN_DROPS,
+  MAP_MAX_SNOW_FLAKES,
+  MAP_MAX_SMOKE_PLUMES,
+  MAP_PAUSED_FRAME_SKIP,
+} from '../constants/map-animation-tuning'
+
+export { MAP_VIEWPORT_PADDING, MAP_LAYOUT_BLUR_PX } from '../constants/map-animation-tuning'
 import mapArtDay from '../map/basic-day.png'
 import mapArtNight from '../map/basic-night.png'
 
@@ -290,19 +308,6 @@ let _legendVisible = true
 /** When false, hide social tie lines (info/strong/family + selection overlay). */
 let _mapNetworkVisible = true
 
-/** Inset for town layout (zones, NPCs, roads). Background art is drawn full-bleed on the canvas outside this rect. */
-export const MAP_VIEWPORT_PADDING = 0.1
-
-/** Target blur radius in **output** (inner map) pixels for `background_blurred_layout`. */
-export const MAP_LAYOUT_BLUR_PX = 4
-
-/** Roads + zones are blurred at this scale then scaled up — much cheaper than full-res `filter: blur`. */
-const MAP_BLUR_LAYER_DOWNSAMPLE = 0.5
-
-/** Light scrim over underlay before blurred layout (reduces background show-through). 0–1 */
-const MAP_BLUR_UNDERLAY_SCRIM_LIGHT = 0.07
-const MAP_BLUR_UNDERLAY_SCRIM_DARK = 0.11
-
 let _blurScratch: HTMLCanvasElement | null = null
 let _blurScratchCtx: CanvasRenderingContext2D | null = null
 
@@ -543,17 +548,6 @@ function randomPosInZone(zone: string): { x: number; y: number } {
   return { x, y }
 }
 
-const ACTION_SPEED: Record<string, number> = {
-  working:    0.0006,
-  resting:    0,       // sleeping: no movement at all
-  family:     0.0004,  // at home: very gentle drift within the room
-  socializing:0.0010,
-  organizing: 0.0014,
-  fleeing:    0.003,
-  confront:   0.002,
-  complying:  0.0005,
-}
-
 function easeInOutCubic(t: number): number {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
 }
@@ -689,7 +683,7 @@ function stepVisual(v: NPCVisual, action: string, workZone: string, family: Fami
     }
     v.moveIn = (freqMap[action] ?? 130) + (Math.random() * 40 | 0)
   }
-  const speed = ACTION_SPEED[action] ?? 0.001
+  const speed = MAP_NPC_ACTION_SPEED[action] ?? 0.001
   v.x += (v.tx - v.x) * speed * 60
   v.y += (v.ty - v.y) * speed * 60
 }
@@ -751,23 +745,6 @@ function resizeCanvas() {
   _needsMapRedraw = true
 }
 
-// ── Drawing constants ────────────────────────────────────────────────────────
-// Max pixel distance to draw direct-tie lines (strong_ties are geographic, so kept short)
-const DIRECT_TIE_MAX_DRAW_PX = 120
-// Max pixel distance to draw info-tie lines (info_ties can span across zones)
-const INFO_TIE_MAX_DRAW_PX = 280
-// Info-tie alpha: base + pulse amplitude (creates a gentle breathing effect)
-const INFO_TIE_BASE_ALPHA = 0.12
-const INFO_TIE_PULSE_ALPHA = 0.10
-
-// Cap weather particles so canvas stays cheap at high intensity / large viewports
-const MAX_RAIN_DROPS = 220
-const MAX_SNOW_FLAKES = 160
-const MAX_SMOKE_PLUMES = 28
-
-// When paused, redraw ~5fps unless _needsMapRedraw (hover, resize, visibility)
-const PAUSED_FRAME_SKIP = 12
-
 // ── Draw loop ──────────────────────────────────────────────────────────────
 
 function drawLoop() {
@@ -778,7 +755,7 @@ function drawLoop() {
     return
   }
 
-  if (_mapPaused && !_needsMapRedraw && frameCount % PAUSED_FRAME_SKIP !== 0) {
+  if (_mapPaused && !_needsMapRedraw && frameCount % MAP_PAUSED_FRAME_SKIP !== 0) {
     animFrame = requestAnimationFrame(drawLoop)
     return
   }
@@ -919,7 +896,7 @@ function computeWeather(world: WorldState): { rain: number; snow: number; dryFog
 
 function drawRain(W: number, H: number, intensity: number) {
   if (!ctx) return
-  const drops = Math.min(MAX_RAIN_DROPS, Math.floor(120 + intensity * 260))
+  const drops = Math.min(MAP_MAX_RAIN_DROPS, Math.floor(120 + intensity * 260))
   ctx.save()
   ctx.strokeStyle = `rgba(130,180,255,${0.12 + intensity * 0.2})`
   ctx.lineWidth = 1
@@ -937,7 +914,7 @@ function drawRain(W: number, H: number, intensity: number) {
 
 function drawSnow(W: number, H: number, intensity: number) {
   if (!ctx) return
-  const flakes = Math.min(MAX_SNOW_FLAKES, Math.floor(70 + intensity * 150))
+  const flakes = Math.min(MAP_MAX_SNOW_FLAKES, Math.floor(70 + intensity * 150))
   ctx.save()
   ctx.fillStyle = `rgba(240,245,255,${0.2 + intensity * 0.3})`
   for (let i = 0; i < flakes; i++) {
@@ -964,7 +941,7 @@ function drawDryFog(W: number, H: number, intensity: number) {
 
 function drawSmoke(W: number, H: number, intensity: number) {
   if (!ctx) return
-  const plumes = Math.min(MAX_SMOKE_PLUMES, Math.floor(10 + intensity * 20))
+  const plumes = Math.min(MAP_MAX_SMOKE_PLUMES, Math.floor(10 + intensity * 20))
   ctx.save()
   ctx.fillStyle = `rgba(80,80,85,${0.05 + intensity * 0.08})`
   for (let i = 0; i < plumes; i++) {
@@ -1586,12 +1563,12 @@ function drawNPCs(world: WorldState, W: number, H: number) {
 
           // Info ties can span across zones — use a longer draw distance than direct ties
           const dist = Math.hypot(aPos.px - bPos.px, aPos.py - bPos.py)
-          if (dist > INFO_TIE_MAX_DRAW_PX) continue
+          if (dist > MAP_INFO_TIE_MAX_DRAW_PX) continue
 
           const bIsActive = bNpc.action_state === 'socializing' || bNpc.action_state === 'organizing'
           if (!bIsActive) continue
 
-          const infoAlpha = INFO_TIE_BASE_ALPHA + pulse * INFO_TIE_PULSE_ALPHA
+          const infoAlpha = MAP_INFO_TIE_BASE_ALPHA + pulse * MAP_INFO_TIE_PULSE_ALPHA
           ctx.beginPath()
           ctx.moveTo(aPos.px, aPos.py)
           ctx.lineTo(bPos.px, bPos.py)
@@ -1618,7 +1595,7 @@ function drawNPCs(world: WorldState, W: number, H: number) {
 
         // Canvas-space distance
         const dist = Math.hypot(aPos.px - bPos.px, aPos.py - bPos.py)
-        if (dist > DIRECT_TIE_MAX_DRAW_PX) continue  // direct ties are geographic — draw only nearby
+        if (dist > MAP_DIRECT_TIE_MAX_DRAW_PX) continue  // direct ties are geographic — draw only nearby
 
         const isSocializing = npc.action_state === 'socializing' || bNpc.action_state === 'socializing'
         const isOrganizing  = npc.action_state === 'organizing'  || bNpc.action_state === 'organizing'

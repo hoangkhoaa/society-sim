@@ -15,23 +15,15 @@ import { clamp } from './constitution'
 import { switchNPCRole, revertNPCRole } from './npc'
 import { addFeedRaw, addChronicle } from '../ui/feed'
 import { tf } from '../i18n'
-
-// ── Constants ──────────────────────────────────────────────────────────────
-
-/** food% below this for CRISIS_PERSIST_DAYS → emergency farming reassignment */
-const FOOD_CRISIS_THRESHOLD    = 15
-/** food% above this for RECOVERY_PERSIST_DAYS → allow role reversion */
-const FOOD_RECOVERY_THRESHOLD  = 35
-/** guards below this fraction of living population → security crisis */
-const GUARD_SHORTAGE_THRESHOLD = 0.05
-/** days crisis must persist before triggering reassignment (hysteresis) */
-const CRISIS_PERSIST_DAYS      = 3
-/** days food must stay above threshold before reverting roles */
-const RECOVERY_PERSIST_DAYS    = 2
-/** after this many sim-days in an emergency role, the new role becomes permanent */
-const EMERGENCY_PERMANENT_DAYS = 90
-/** max fraction of eligible candidates reassigned per day */
-const MAX_SHIFT_FRACTION       = 0.30
+import {
+  ROLE_CRISIS_FOOD_THRESHOLD,
+  ROLE_RECOVERY_FOOD_THRESHOLD,
+  ROLE_GUARD_SHORTAGE_FRACTION,
+  ROLE_CRISIS_PERSIST_DAYS,
+  ROLE_RECOVERY_PERSIST_DAYS,
+  ROLE_EMERGENCY_PERMANENT_DAYS,
+  ROLE_MAX_SHIFT_FRACTION,
+} from '../constants/role-crisis-thresholds'
 
 // ── Module-level state (hysteresis / throttling) ───────────────────────────
 // These are deliberately module-scoped rather than WorldState fields:
@@ -66,7 +58,7 @@ function reassignToFarming(state: WorldState): void {
 
   if (candidates.length === 0) return
 
-  const maxShift = Math.ceil(candidates.length * MAX_SHIFT_FRACTION)
+  const maxShift = Math.ceil(candidates.length * ROLE_MAX_SHIFT_FRACTION)
   let shifted    = 0
 
   for (const npc of candidates) {
@@ -105,7 +97,7 @@ function reassignToFarming(state: WorldState): void {
 function conscriptToGuard(state: WorldState): void {
   const living = state.npcs.filter(n => n.lifecycle.is_alive && n.role !== 'child')
   const guards = living.filter(n => n.role === 'guard')
-  if (guards.length / Math.max(living.length, 1) >= GUARD_SHORTAGE_THRESHOLD) return
+  if (guards.length / Math.max(living.length, 1) >= ROLE_GUARD_SHORTAGE_FRACTION) return
 
   const isMandatory = state.constitution.state_power > 0.60
 
@@ -122,8 +114,8 @@ function conscriptToGuard(state: WorldState): void {
 
   if (candidates.length === 0) return
 
-  const needed   = Math.ceil(living.length * GUARD_SHORTAGE_THRESHOLD) - guards.length
-  const maxShift = Math.min(needed + 2, Math.ceil(candidates.length * MAX_SHIFT_FRACTION))
+  const needed   = Math.ceil(living.length * ROLE_GUARD_SHORTAGE_FRACTION) - guards.length
+  const maxShift = Math.min(needed + 2, Math.ceil(candidates.length * ROLE_MAX_SHIFT_FRACTION))
   let conscripted = 0
 
   for (const npc of candidates) {
@@ -162,8 +154,8 @@ function revertEmergencyRoles(state: WorldState): void {
   for (const npc of inEmergency) {
     const daysInEmergencyRole = (state.tick - (npc.emergency_role_tick ?? state.tick)) / 24
 
-    // After EMERGENCY_PERMANENT_DAYS: the NPC has rebuilt their life in the new role
-    if (daysInEmergencyRole >= EMERGENCY_PERMANENT_DAYS) {
+    // After ROLE_EMERGENCY_PERMANENT_DAYS: the NPC has rebuilt their life in the new role
+    if (daysInEmergencyRole >= ROLE_EMERGENCY_PERMANENT_DAYS) {
       npc.original_role        = undefined
       npc.emergency_role_tick  = undefined
       madePermanent++
@@ -173,7 +165,7 @@ function revertEmergencyRoles(state: WorldState): void {
     const orig = npc.original_role!
     // Determine if the specific crisis that triggered this NPC's switch has resolved
     const crisisResolved =
-      ((orig === 'merchant' || orig === 'scholar') && foodRecoveryDays >= RECOVERY_PERSIST_DAYS)
+      ((orig === 'merchant' || orig === 'scholar') && foodRecoveryDays >= ROLE_RECOVERY_PERSIST_DAYS)
       || ((orig === 'craftsman' || orig === 'farmer') && !hasExternalThreat)
 
     if (!crisisResolved) continue
@@ -207,10 +199,10 @@ export function checkEmergencyRoleReassignment(state: WorldState): void {
   const guardRatio       = living.filter(n => n.role === 'guard').length / living.length
 
   // ── Update hysteresis counters ──────────────────────────────────────────
-  if (food < FOOD_CRISIS_THRESHOLD) {
+  if (food < ROLE_CRISIS_FOOD_THRESHOLD) {
     foodCrisisDays++
     foodRecoveryDays = 0
-  } else if (food >= FOOD_RECOVERY_THRESHOLD) {
+  } else if (food >= ROLE_RECOVERY_FOOD_THRESHOLD) {
     foodRecoveryDays++
     foodCrisisDays = 0
   } else {
@@ -218,7 +210,7 @@ export function checkEmergencyRoleReassignment(state: WorldState): void {
     foodRecoveryDays = 0
   }
 
-  if (hasExternalThreat && guardRatio < GUARD_SHORTAGE_THRESHOLD) {
+  if (hasExternalThreat && guardRatio < ROLE_GUARD_SHORTAGE_FRACTION) {
     securityCrisisDays++
   } else {
     securityCrisisDays = 0
@@ -226,11 +218,11 @@ export function checkEmergencyRoleReassignment(state: WorldState): void {
 
   // ── Crisis response (once per day, after hysteresis period) ────────────
   if (state.day !== lastEmergencyDay) {
-    if (foodCrisisDays >= CRISIS_PERSIST_DAYS) {
+    if (foodCrisisDays >= ROLE_CRISIS_PERSIST_DAYS) {
       reassignToFarming(state)
       lastEmergencyDay = state.day
     }
-    if (securityCrisisDays >= CRISIS_PERSIST_DAYS) {
+    if (securityCrisisDays >= ROLE_CRISIS_PERSIST_DAYS) {
       conscriptToGuard(state)
       lastEmergencyDay = state.day
     }
@@ -238,7 +230,7 @@ export function checkEmergencyRoleReassignment(state: WorldState): void {
 
   // ── Crisis resolution (once per day) ────────────────────────────────────
   if (state.day !== lastReversionDay) {
-    const foodOk    = foodRecoveryDays >= RECOVERY_PERSIST_DAYS
+    const foodOk    = foodRecoveryDays >= ROLE_RECOVERY_PERSIST_DAYS
     const threatOver = !hasExternalThreat
     if (foodOk || threatOver) {
       revertEmergencyRoles(state)

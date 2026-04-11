@@ -29,6 +29,12 @@ import {
   spNoneLabel,
 } from '../local/ui'
 import { isNpcVisualCommuting } from './map'
+import {
+  SPOTLIGHT_NPC_CONTACTS_CHANGED_EVENT,
+  SPOTLIGHT_CHAT_SUMMARY_MAX_LENGTH,
+  SPOTLIGHT_CHAT_SUMMARY_MIN_TURNS,
+} from '../constants/spotlight-events'
+import { SPOTLIGHT_MEMORY_TYPE_META } from '../constants/spotlight-memory-meta'
 
 /** Map commute animation vs sim `action_state` (mid-commute “resting” is not asleep yet). */
 function spotlightActivityPresentation(npc: NPC): { emoji: string; label: string } {
@@ -102,7 +108,7 @@ function closeSubPanel(): void {
     _chatPanelOpen = false
     const npc = _chatNpc
     const turns = npcChatHistories.get(npc.id) ?? []
-    if (turns.length >= MIN_TURNS_FOR_SUMMARY) {
+    if (turns.length >= SPOTLIGHT_CHAT_SUMMARY_MIN_TURNS) {
       buildChatSummary(npc, turns, _chatConfig, _useAI).then(summary => {
         if (summary) npc.chat_summary = summary
       }).catch(err => { console.warn('Chat summary generation failed:', err) })
@@ -122,14 +128,11 @@ let _useAI = true   // player-controlled AI toggle (persists across NPCs)
 let _chatPersona: PlayerChatPersona = 'stranger'
 let _chatPanelOpen = false  // true while the chat sub-panel is visible
 
-/** Fired when the player spotlights or opens chat with an NPC (main listens to refresh the contacts panel). */
-const NPC_CONTACTS_CHANGED = 'npc-contacts-changed'
-
 type NpcContactFlags = { spotlight: boolean; chatted: boolean }
 const _npcContactFlags = new Map<number, NpcContactFlags>()
 
 function emitNpcContactsChanged(): void {
-  document.dispatchEvent(new CustomEvent(NPC_CONTACTS_CHANGED))
+  document.dispatchEvent(new CustomEvent(SPOTLIGHT_NPC_CONTACTS_CHANGED_EVENT))
 }
 
 function noteNpcSpotlight(id: number): void {
@@ -175,9 +178,6 @@ export function resetNPCChatHistories(): void {
 
 // ── Chat summary generation ────────────────────────────────────────────────
 
-const MAX_SUMMARY_LENGTH  = 300
-const MIN_TURNS_FOR_SUMMARY = 3
-
 /** Build a compact summary of the conversation to persist in npc.chat_summary. */
 async function buildChatSummary(
   npc: NPC,
@@ -190,9 +190,9 @@ async function buildChatSummary(
       const dialog = turns.map(turn =>
         turn.speaker === 'player' ? `Stranger: "${turn.text}"` : `${npc.name}: "${turn.text}"`
       ).join('\n')
-      const prompt = `Summarize this conversation in 1–2 sentences (max ${MAX_SUMMARY_LENGTH} chars), third-person, capturing key topics and emotional tone:\n${dialog}`
+      const prompt = `Summarize this conversation in 1–2 sentences (max ${SPOTLIGHT_CHAT_SUMMARY_MAX_LENGTH} chars), third-person, capturing key topics and emotional tone:\n${dialog}`
       const raw = await callAI(config, 'You are a concise summarizer. Return plain text only, no JSON.', prompt, 80)
-      return raw.trim().slice(0, MAX_SUMMARY_LENGTH)
+      return raw.trim().slice(0, SPOTLIGHT_CHAT_SUMMARY_MAX_LENGTH)
     } catch (err) {
       console.warn('Chat summary AI failed, using fallback:', err)
     }
@@ -200,7 +200,7 @@ async function buildChatSummary(
 
   // No-AI fallback: join the last 2 NPC turns
   const npcTurns = turns.filter(t => t.speaker === 'npc').slice(-2)
-  return npcTurns.map(t => t.text).join(' ').slice(0, MAX_SUMMARY_LENGTH)
+  return npcTurns.map(t => t.text).join(' ').slice(0, SPOTLIGHT_CHAT_SUMMARY_MAX_LENGTH)
 }
 
 function escapeHtml(text: string): string {
@@ -1250,24 +1250,11 @@ function worldviewBar(label: string, value: number, color: string): string {
 
 // ── Full memory buffer (up to 10 entries) ─────────────────────────────────────
 
-// Memory type key → i18n key suffix mapping
-const MEMORY_META: Record<string, { icon: string; key: string; sign: 1 | -1 }> = {
-  trust_broken: { icon: '🔪', key: 'betrayal',  sign: -1 },
-  helped:       { icon: '🫱🏻‍🫲🏼', key: 'helped',    sign:  1 },
-  harmed:       { icon: '💣', key: 'harmed',    sign: -1 },
-  crisis:       { icon: '🚨', key: 'crisis',    sign: -1 },
-  windfall:     { icon: '🏆', key: 'windfall',  sign:  1 },
-  loss:         { icon: '🕳️', key: 'loss',      sign: -1 },
-  illness:      { icon: '🦠', key: 'illness',   sign: -1 },
-  crime:        { icon: '🕵️‍♂️', key: 'crime',     sign: -1 },
-  accident:     { icon: '🚑', key: 'accident',  sign: -1 },
-}
-
 function memorySection(npc: NPC, currentTick: number): string {
   if (!npc.memory || npc.memory.length === 0) return ''
 
   const rows = npc.memory.map(mem => {
-    const meta = MEMORY_META[mem.type] ?? { icon: '◆', key: mem.type, sign: 1 as const }
+    const meta = SPOTLIGHT_MEMORY_TYPE_META[mem.type] ?? { icon: '◆', key: mem.type, sign: 1 as const }
     const w     = mem.emotional_weight          // -100 to +100
     const isPos = w >= 0
     const pct   = Math.min(100, Math.abs(w))

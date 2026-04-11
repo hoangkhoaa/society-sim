@@ -14,6 +14,7 @@ import {
 } from '../local/ai'
 import { getRegimeProfile } from '../sim/regime-config'
 import { isMarxistPresetEnabled } from '../build-features'
+import { GOD_CONSEQUENCE_PREDICTION_SYSTEM_PROMPT } from '../constants/god-consequence-prompt'
 
 // ── Conversation history (persists for the session) ────────────────────────
 
@@ -654,18 +655,6 @@ export interface ConsequencePrediction {
   consequences: ConsequenceAction[]
 }
 
-const CONSEQUENCE_SYSTEM = `You are a social dynamics engine. Given a world event and current conditions, predict 2–4 concrete social consequences.
-
-Return ONLY JSON:
-{"summary":"1-2 sentences","consequences":[{
-  "label":"vivid short label","delay_days":1-30,
-  "intervention":{"target":"all"|"zone"|"role","zones":[...],"count":<n>,
-    "roles":["farmer"|"craftsman"|"scholar"|"merchant"|"guard"|"leader"],
-    "action_state":"working"|"resting"|"socializing"|"organizing"|"fleeing"|"complying"|"confront",
-    "stress_delta":<-50..50>,"fear_delta":<-50..50>,"hunger_delta":<-50..50>,
-    "grievance_delta":<-50..50>,"happiness_delta":<-50..50>,
-    "solidarity_delta":<-50..50>}}]}`
-
 export async function predictConsequences(
   eventType: string,
   eventNarrative: string,
@@ -687,7 +676,7 @@ ${langDirective(getLang())}
 Predict the social consequences.`
 
   try {
-    const raw = await callAI(config, CONSEQUENCE_SYSTEM, prompt, 512)
+    const raw = await callAI(config, GOD_CONSEQUENCE_PREDICTION_SYSTEM_PROMPT, prompt, 512)
     const parsed = JSON.parse(extractJSON(raw)) as ConsequencePrediction
     // Validate shape
     if (!Array.isArray(parsed.consequences) || !parsed.summary) return null

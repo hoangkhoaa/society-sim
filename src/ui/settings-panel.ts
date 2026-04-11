@@ -20,55 +20,38 @@ import {
   settingsRegimeMarketBanned,
   settingsToggleCopy,
 } from '../local/ui'
-
-
-const SETTINGS_KEY = 'game_settings_v1'
-
-const DEFAULTS: GameSettings = {
-  enable_human_elections:        false,
-  election_cycle_days:           90,
-  enable_government_ai:          true,
-  enable_npc_thoughts:           true,
-  enable_press_ai:               true,
-  enable_consequence_prediction: true,
-  map_background_mode:           'background_only',
-}
-
-const MAP_BG_MODES = new Set<MapBackgroundMode>([
-  'background_only',
-  'background_blurred_layout',
-  'layout_only',
-])
+import { GAME_SETTINGS_DEFAULTS, MAP_BACKGROUND_MODE_WHITELIST } from '../constants/game-settings-defaults'
+import { GAME_SETTINGS_STORAGE_KEY } from '../constants/storage-keys'
 
 function normalizeMapBackgroundMode(v: unknown): MapBackgroundMode {
   if (v === 'off') return 'background_only'
   if (v === 'with_layout') return 'background_blurred_layout'
-  if (typeof v === 'string' && MAP_BG_MODES.has(v as MapBackgroundMode)) {
+  if (typeof v === 'string' && MAP_BACKGROUND_MODE_WHITELIST.has(v as MapBackgroundMode)) {
     return v as MapBackgroundMode
   }
-  return DEFAULTS.map_background_mode
+  return GAME_SETTINGS_DEFAULTS.map_background_mode
 }
 
 // ── State ──────────────────────────────────────────────────────────────────────
 
-let _settings: GameSettings = { ...DEFAULTS }
+let _settings: GameSettings = { ...GAME_SETTINGS_DEFAULTS }
 let _lockedFeatures: Set<keyof GameSettings> = new Set()
 let _regimeVariant: string = 'default'
 let _simRestrictions: SimRestrictions | null = null
 
 function loadSettings(): void {
   try {
-    const raw = localStorage.getItem(SETTINGS_KEY)
+    const raw = localStorage.getItem(GAME_SETTINGS_STORAGE_KEY)
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<GameSettings>
       _settings = {
-        ...DEFAULTS,
+        ...GAME_SETTINGS_DEFAULTS,
         ...parsed,
         map_background_mode: normalizeMapBackgroundMode(parsed.map_background_mode),
       }
     }
   } catch {
-    _settings = { ...DEFAULTS }
+    _settings = { ...GAME_SETTINGS_DEFAULTS }
   }
 }
 
@@ -96,7 +79,7 @@ export function applyRegimeDefaults(profile: RegimeProfile): void {
 }
 
 function saveSettings(): void {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(_settings))
+  localStorage.setItem(GAME_SETTINGS_STORAGE_KEY, JSON.stringify(_settings))
 }
 
 export function getSettings(): Readonly<GameSettings> { return _settings }
@@ -283,7 +266,7 @@ function renderPanel(): void {
   panelBody.querySelectorAll<HTMLSelectElement>('select[data-map-bg]').forEach(sel => {
     sel.addEventListener('change', () => {
       const v = sel.value as MapBackgroundMode
-      if (!MAP_BG_MODES.has(v)) return
+      if (!MAP_BACKGROUND_MODE_WHITELIST.has(v)) return
       s.map_background_mode = v
       saveSettings()
       requestMapRedraw()

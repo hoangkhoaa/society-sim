@@ -3,6 +3,9 @@ import { faker } from '@faker-js/faker'
 import { clamp, gaussian, rand, randInt, weightedRandom, getSeason, ZONE_ADJACENCY } from './constitution'
 import { t, tf, tOccVariant } from '../i18n'
 import { getRegimeProfile, type SimRestrictions } from './regime-config'
+import { NPC_MAX_ENMITY_IDS, NPC_SOCIAL_HUB_ZONES } from '../constants/npc-social-limits'
+import { NPC_TRADE_EFFICIENCY, NPC_MERCHANT_MARKUP, NPC_SURVIVAL_COST_PER_TICK } from '../constants/npc-wealth-trade'
+import { NPC_TRUST_DELTAS, type NpcTrustEvent } from '../constants/npc-trust-deltas'
 
 // ── Active sim restrictions (set once per game from regime profile) ───────────
 // Cached here to avoid calling getRegimeProfile() in the per-NPC hot path.
@@ -337,13 +340,11 @@ export function generatePersonality(npcId: number, role: Role): NPCPersonality {
 // An NPC can hold grudges against up to 5 others.  When the list is full the
 // oldest entry is evicted (shift).
 
-const MAX_ENMITY = 5
-
 export function addEnmity(npc: NPC, targetId: number): void {
   if (npc.id === targetId) return
   if (!npc.enmity_ids) npc.enmity_ids = []
   if (npc.enmity_ids.includes(targetId)) return
-  if (npc.enmity_ids.length >= MAX_ENMITY) npc.enmity_ids.shift()
+  if (npc.enmity_ids.length >= NPC_MAX_ENMITY_IDS) npc.enmity_ids.shift()
   npc.enmity_ids.push(targetId)
 }
 
@@ -741,8 +742,6 @@ function applyResistanceBehavior(npc: NPC, state: WorldState, flags: TickEventFl
 // Location follows action_state, which uses per-NPC daily rhythms (staggered
 // commute, night-shift workers, children’s shorter days).
 
-const SOCIAL_HUBS = ['market_square', 'plaza'] as const
-
 /** Stable 0–1 from id — same every session. */
 function scheduleUnit(id: number, salt: number): number {
   const x = Math.sin((id + 1) * 12.9898 + salt * 78.233) * 43758.5453
@@ -799,7 +798,7 @@ function updateZone(npc: NPC, state: WorldState): void {
   // Evening social: occasional drift to a hub (still staggered by tick % 12)
   if (npc.action_state === 'socializing' && state.tick % 12 === npc.id % 12) {
     if (Math.random() < 0.28) {
-      npc.zone = SOCIAL_HUBS[npc.id % SOCIAL_HUBS.length]
+      npc.zone = NPC_SOCIAL_HUB_ZONES[npc.id % NPC_SOCIAL_HUB_ZONES.length]
       return
     }
   }
@@ -1396,15 +1395,8 @@ export function computeProductivity(npc: NPC, state: WorldState): number {
 //   Non-merchant P2P:   wealth flows from richer to poorer (barter/gifts)
 //   Merchant lending:   offers loans to poor neighbors at 30% interest
 
-const TRADE_EFFICIENCY = 0.80   // non-merchant P2P friction
-const MERCHANT_MARKUP  = 0.22   // merchant profit margin per transaction
-
 // ── Role-based income sources (derived from ROLE_CONFIG) ─────────────────
 // Government-paid roles (guard, leader) earn via the tax pool, not market labor.
-
-// Cost of living per tick (survival spending — food, shelter, basic needs).
-// At this rate an NPC at productivity=0 loses ~1.68 wealth/day (0.07 × 24).
-const SURVIVAL_COST_PER_TICK = 0.07
 
 function wealthTick(npc: NPC, state: WorldState): void {
   if (npc.role === 'child') return
@@ -1468,8 +1460,8 @@ function wealthTick(npc: NPC, state: WorldState): void {
   // Net wealth change: gross earnings minus cost of living.
   // Government-paid roles still pay survival cost (deducted, compensated by wages).
   const laborIncome = ROLE_CONFIG[npc.role].govt_paid
-    ? -SURVIVAL_COST_PER_TICK                  // only cost of living; wages come from tax pool
-    : grossIncome - SURVIVAL_COST_PER_TICK     // net market income
+    ? -NPC_SURVIVAL_COST_PER_TICK                  // only cost of living; wages come from tax pool
+    : grossIncome - NPC_SURVIVAL_COST_PER_TICK     // net market income
 
   npc.wealth = clamp(npc.wealth + laborIncome, 0, 50000)
 
@@ -1478,7 +1470,7 @@ function wealthTick(npc: NPC, state: WorldState): void {
   // A fraction flows to a nearby merchant, simulating real market circulation.
   // Only when market freedom allows trade and NPC has enough wealth.
   if (npc.wealth > 1 && state.constitution.market_freedom >= 0.15 && state.tick % 6 === npc.id % 6) {
-    const spendAmount = SURVIVAL_COST_PER_TICK * 6 * 0.5  // half of 6-tick spending
+    const spendAmount = NPC_SURVIVAL_COST_PER_TICK * 6 * 0.5  // half of 6-tick spending
     const merchant = (() => {
       for (const tid of npc.weak_ties) {
         const t = state.npcs[tid]
@@ -1588,7 +1580,7 @@ function wealthTick(npc: NPC, state: WorldState): void {
       if (!partner?.lifecycle.is_alive) continue
 
       // Commerce discovery boosts merchant trade efficiency
-      const effectiveMarkup = MERCHANT_MARKUP + ((state.discoveries ?? []).some(d => d.id === 'commerce') ? 0.05 : 0)
+      const effectiveMarkup = NPC_MERCHANT_MARKUP + ((state.discoveries ?? []).some(d => d.id === 'commerce') ? 0.05 : 0)
       if (npc.role === 'merchant') {
         // Planned economies suppress private trade — merchants can't earn markup
         if (mf < 0.15) continue
@@ -1609,7 +1601,7 @@ function wealthTick(npc: NPC, state: WorldState): void {
         if (npc.wealth > partner.wealth + 10) {
           const transfer = 0.2 * mf * Math.min(1, (npc.wealth - partner.wealth) / 500)
           npc.wealth     = clamp(npc.wealth     - transfer, 0, 50000)
-          partner.wealth = clamp(partner.wealth + transfer * TRADE_EFFICIENCY, 0, 50000)
+          partner.wealth = clamp(partner.wealth + transfer * NPC_TRADE_EFFICIENCY, 0, 50000)
         }
       }
     }
@@ -1986,20 +1978,6 @@ function transitionToAdultCareer(npc: NPC, state: WorldState): void {
 
 // ── Trust update ───────────────────────────────────────────────────────────
 
-type TrustEvent =
-  | 'promise_kept' | 'crisis_handled' | 'promise_broken'
-  | 'corruption'   | 'helped_me'      | 'harmed_me' | 'silent_in_crisis'
-
-const TRUST_DELTAS: Record<TrustEvent, { competence: number; intention: number }> = {
-  promise_kept:     { competence: +0.03, intention: +0.02 },
-  crisis_handled:   { competence: +0.05, intention: +0.03 },
-  promise_broken:   { competence: -0.06, intention: -0.08 },
-  corruption:       { competence: -0.05, intention: -0.20 },
-  helped_me:        { competence: +0.02, intention: +0.04 },
-  harmed_me:        { competence: -0.08, intention: -0.12 },
-  silent_in_crisis: { competence: -0.04, intention: -0.06 },
-}
-
 // ── Role switching helpers ─────────────────────────────────────────────────
 // Used by roles.ts for emergency reassignments and crisis reversions.
 // Encapsulated here because they need access to private helpers
@@ -2060,11 +2038,11 @@ export function revertNPCRole(npc: NPC, state: WorldState): void {
 export function updateTrust(
   npc: NPC,
   institutionId: keyof TrustMap,
-  eventType: TrustEvent,
+  eventType: NpcTrustEvent,
   magnitude = 1.0,
 ): void {
   const t = npc.trust_in[institutionId]
-  const d = TRUST_DELTAS[eventType]
+  const d = NPC_TRUST_DELTAS[eventType]
   t.competence = clamp(t.competence + d.competence * magnitude, 0, 1)
   t.intention  = clamp(t.intention  + d.intention  * magnitude, 0, 1)
 

@@ -3,6 +3,13 @@ import { clamp } from '../sim/constitution'
 import { permanentRoleChange } from '../sim/npc'
 import { addFeedRaw, addChronicle } from '../ui/feed'
 import { tf } from '../i18n'
+import {
+  GOVT_WAGE_GUARD_COINS,
+  GOVT_WAGE_LEADER_COINS,
+  WEALTH_INVEST_THRESHOLD,
+  WEALTH_GANG_THRESHOLD,
+  WEALTH_INVEST_INTERVAL_TICKS,
+} from '../constants/economy-tuning'
 
 let lastTaxSpendingDay = -1
 let lastWealthMobilityDay = -1
@@ -193,12 +200,6 @@ export function applyIncomeTax(state: WorldState): void {
 // If the pool is insufficient, wages are prorated (government insolvency).
 // Running out of money triggers guard morale collapse (fear spike).
 
-// Wages calibrated to match market income (~daily_income of a farmer/craftsman at avg productivity).
-// farmer: 0.12 * 0.7 * 24 ≈ 2.0/day, craftsman: 0.14 * 0.7 * 24 ≈ 2.4/day
-// Guard earns above farmer (dangerous work); leader earns significantly more (administrative burden + authority).
-const GOVT_WAGE_GUARD  = 3.5
-const GOVT_WAGE_LEADER = 6.0
-
 export function applyGovernmentWages(state: WorldState): void {
   // No wages when government has dissolved due to population collapse
   if (state.collapse_phase !== 'normal') return
@@ -206,7 +207,7 @@ export function applyGovernmentWages(state: WorldState): void {
 
   const guards  = state.npcs.filter(n => n.lifecycle.is_alive && n.role === 'guard')
   const leaders = state.npcs.filter(n => n.lifecycle.is_alive && n.role === 'leader')
-  const totalWageBill = guards.length * GOVT_WAGE_GUARD + leaders.length * GOVT_WAGE_LEADER
+  const totalWageBill = guards.length * GOVT_WAGE_GUARD_COINS + leaders.length * GOVT_WAGE_LEADER_COINS
 
   if (totalWageBill <= 0) return
 
@@ -216,7 +217,7 @@ export function applyGovernmentWages(state: WorldState): void {
   state.tax_pool = clamp(pool - poolSpent, 0, 9_999_999)
 
   for (const npc of guards) {
-    const wage = GOVT_WAGE_GUARD * payRatio
+    const wage = GOVT_WAGE_GUARD_COINS * payRatio
     npc.wealth = clamp(npc.wealth + wage, 0, 50000)
     // daily_income for govt roles: EMA toward actual daily wage.
     // wage is already in coins/day; no ×24 needed (this is a per-day update, not per-tick).
@@ -227,7 +228,7 @@ export function applyGovernmentWages(state: WorldState): void {
     }
   }
   for (const npc of leaders) {
-    const wage = GOVT_WAGE_LEADER * payRatio
+    const wage = GOVT_WAGE_LEADER_COINS * payRatio
     npc.wealth = clamp(npc.wealth + wage, 0, 50000)
     npc.daily_income = npc.daily_income * 0.99 + wage * 0.01
     if (payRatio < 0.5) {
@@ -468,11 +469,6 @@ export function processInheritance(state: WorldState): void {
 // (when aggressive) transition to organised crime as gang bosses.
 // Very poor, high-grievance NPCs face increased pressure to turn to crime.
 
-const WEALTH_INVEST_THRESHOLD   = 6000   // minimum wealth to trigger investment behavior
-const WEALTH_GANG_THRESHOLD     = 4000   // minimum wealth to risk becoming a gang boss
-const WEALTH_INVEST_INTERVAL    = 24 * 7 // once per week per eligible NPC (staggered by id)
-
-
 export function checkWealthMobility(state: WorldState): void {
   if (state.day === lastWealthMobilityDay) return
   lastWealthMobilityDay = state.day
@@ -485,7 +481,7 @@ export function checkWealthMobility(state: WorldState): void {
       npc.wealth >= WEALTH_INVEST_THRESHOLD &&
       (npc.personality?.ambition ?? 0.3) > 0.5 &&
       npc.role !== 'gang' &&
-      state.tick % WEALTH_INVEST_INTERVAL === npc.id % WEALTH_INVEST_INTERVAL
+      state.tick % WEALTH_INVEST_INTERVAL_TICKS === npc.id % WEALTH_INVEST_INTERVAL_TICKS
     ) {
       const investAmt = npc.wealth * 0.08   // invest 8% of surplus wealth
       npc.wealth = clamp(npc.wealth - investAmt, 0, 50000)
@@ -521,7 +517,7 @@ export function checkWealthMobility(state: WorldState): void {
       npc.role !== 'guard' &&
       npc.role !== 'leader' &&
       !npc.criminal_record &&
-      state.tick % (WEALTH_INVEST_INTERVAL * 2) === npc.id % (WEALTH_INVEST_INTERVAL * 2) &&
+      state.tick % (WEALTH_INVEST_INTERVAL_TICKS * 2) === npc.id % (WEALTH_INVEST_INTERVAL_TICKS * 2) &&
       Math.random() < 0.08
     ) {
       const oldRole = npc.role

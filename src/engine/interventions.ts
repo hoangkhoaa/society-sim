@@ -1,8 +1,7 @@
 import type { WorldState, Constitution, NPC, NPCIntervention, WorldDelta, InstitutionDelta } from '../types'
 import { clamp } from '../sim/constitution'
 import { permanentRoleChange } from '../sim/npc'
-
-const MAX_NPC_MEMORIES = 10     // Circular memory buffer size per NPC
+import { MAX_NPC_MEMORIES } from '../constants/engine-interventions'
 
 // ── Direct NPC Interventions ─────────────────────────────────────────────────
 

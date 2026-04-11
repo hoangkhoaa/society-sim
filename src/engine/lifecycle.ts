@@ -4,12 +4,13 @@ import { createNPC, RESIDENTIAL_ZONES } from '../sim/npc'
 import { MAX_STRONG_TIES, MAX_WEAK_TIES, MAX_INFO_TIES } from '../sim/network'
 import { addFeedRaw, addChronicle } from '../ui/feed'
 import { tf } from '../i18n'
+import {
+  LIFECYCLE_MIN_BIRTH_SPACING_TICKS,
+  LIFECYCLE_HEARTBREAK_COOLDOWN_TICKS,
+  LIFECYCLE_ROMANCE_THRESHOLD,
+} from '../constants/engine-lifecycle'
 
 // ── Lifecycle Events (birth / marriage) ─────────────────────────────────────
-
-// Minimum sim-ticks between births for the same couple.
-// 720 sim-days × 24 ticks/day = 17 280 ticks ≈ 2 sim-years inter-birth interval.
-const MIN_BIRTH_SPACING_TICKS = 720 * 24
 
 // Maximum children per couple (varies with constitution safety net — wealthier / safer → fewer)
 function maxChildrenPerCouple(state: WorldState): number {
@@ -24,7 +25,7 @@ function computeBirthChancePerDay(a: NPC, b: NPC, state: WorldState): number {
   const lastA = a.lifecycle.last_birth_tick ?? -Infinity
   const lastB = b.lifecycle.last_birth_tick ?? -Infinity
   const lastBirth = Math.max(lastA, lastB)
-  if (state.tick - lastBirth < MIN_BIRTH_SPACING_TICKS) return 0
+  if (state.tick - lastBirth < LIFECYCLE_MIN_BIRTH_SPACING_TICKS) return 0
 
   // Enforce maximum children per couple
   const totalChildren = new Set([...a.lifecycle.children_ids, ...b.lifecycle.children_ids]).size
@@ -67,12 +68,6 @@ function computeBirthChancePerDay(a: NPC, b: NPC, state: WorldState): number {
 
 // ── Romance / Marriage helpers ──────────────────────────────────────────────
 
-// Heartbreak cooldown length: 30 sim-days (30 days × 24 ticks/day = 720 ticks)
-const HEARTBREAK_COOLDOWN_TICKS = 30 * 24
-
-// Minimum romance score required before either partner can propose
-const ROMANCE_THRESHOLD = 45
-
 // Returns true if a and b are direct blood relations (parent-child).
 function isBloodRelation(a: NPC, b: NPC): boolean {
   return a.lifecycle.children_ids.includes(b.id) || b.lifecycle.children_ids.includes(a.id)
@@ -101,7 +96,7 @@ function coupleCompatibility(a: NPC, b: NPC): number {
 function applyHeartbreak(npc: NPC, state: WorldState): void {
   npc.lifecycle.romance_target_id = null
   npc.lifecycle.romance_score     = 0
-  npc.lifecycle.heartbreak_cooldown = HEARTBREAK_COOLDOWN_TICKS
+  npc.lifecycle.heartbreak_cooldown = LIFECYCLE_HEARTBREAK_COOLDOWN_TICKS
   npc.grievance  = clamp(npc.grievance  + 25, 0, 100)
   npc.isolation  = clamp(npc.isolation  + 20, 0, 100)
   // Memory entry for the heartbreak
@@ -224,14 +219,14 @@ export function checkLifecycleEvents(state: WorldState): void {
   for (const npc of romanceCandidates) {
     if (npc.lifecycle.spouse_id !== null) continue
     if (npc.lifecycle.romance_target_id === null) continue
-    if (npc.lifecycle.romance_score < ROMANCE_THRESHOLD) continue
+    if (npc.lifecycle.romance_score < LIFECYCLE_ROMANCE_THRESHOLD) continue
 
     const target = state.npcs[npc.lifecycle.romance_target_id]
     if (!target?.lifecycle.is_alive) continue
     if (target.lifecycle.spouse_id !== null) continue
     // Mutual love: both must have the other as their romance target
     if (target.lifecycle.romance_target_id !== npc.id) continue
-    if (target.lifecycle.romance_score < ROMANCE_THRESHOLD) continue
+    if (target.lifecycle.romance_score < LIFECYCLE_ROMANCE_THRESHOLD) continue
     if (npc.id > target.id) continue  // canonical — lower id processes
 
     // Compatibility determines marriage probability: 0.2%–1.5% per day
