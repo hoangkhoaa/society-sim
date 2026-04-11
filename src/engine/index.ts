@@ -1,7 +1,7 @@
 import type { WorldState } from '../types'
 import type { IndividualEvent, TickEventFlags } from '../sim/npc'
 import { tickNPC } from '../sim/npc'
-import { checkEmergencyRoleReassignment } from '../sim/roles'
+import { checkEmergencyRoleReassignment, checkAdaptiveRoleSwitching } from '../sim/roles'
 import { checkFactions } from '../sim/factions'
 import { accumulateResearch, checkDiscoveries } from '../sim/tech'
 import { checkNarrativeEvents, checkRumors, checkMilestones } from '../sim/narratives'
@@ -133,6 +133,7 @@ export function tick(state: WorldState): void {
     processInheritance(state)
     checkRegimeEvents(state)
     checkEmergencyRoleReassignment(state)
+    checkAdaptiveRoleSwitching(state)
     applyTheocracyEffect(state)
     applyCommuneEffect(state)
     checkLegendaryNPCs(state)

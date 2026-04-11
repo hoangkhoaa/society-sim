@@ -214,6 +214,11 @@ export interface NPC {
   original_role?:       Role    // role held before emergency reassignment
   emergency_role_tick?: number  // sim tick when the emergency switch happened
 
+  // ── Voluntary role adaptation tracking ───────────────────────────────────
+  // Used by the adaptive labor rebalancing pass (non-emergency market-like switching).
+  last_role_switch_tick?: number       // sim tick of last voluntary permanent role switch
+  role_retraining_until_tick?: number  // while active, productivity has a temporary retraining penalty
+
   // ── Persistent chat memory ────────────────────────────────────────────────
   // Compact summary of past player ↔ NPC conversations. Generated when the
   // chat panel closes after 3+ turns. Persisted via WorldState / localStorage.

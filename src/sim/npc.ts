@@ -1365,6 +1365,8 @@ export function computeProductivity(npc: NPC, state: WorldState): number {
     : 0
   // Burnout penalty: chronic overwork severely reduces output
   const burnoutPenalty = (npc.burnout_ticks ?? 0) >= 480 ? 0.50 : 0
+  // Short retraining phase after voluntary career change: output is temporarily lower.
+  const retrainingPenalty = (npc.role_retraining_until_tick ?? -1) > state.tick ? 0.18 : 0
   // Strike: participating workers produce nothing
   if (npc.on_strike) return 0
   // Capital multiplier: owning means of production amplifies output efficiency.
@@ -1385,7 +1387,8 @@ export function computeProductivity(npc: NPC, state: WorldState): number {
     * (1 - sickPenalty)
     * (1 - resourcePenalty)
     * (1 - fatiguePenalty)
-    * (1 - burnoutPenalty),
+    * (1 - burnoutPenalty)
+    * (1 - retrainingPenalty)
   )
 }
 

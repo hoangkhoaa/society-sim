@@ -12,9 +12,9 @@
 
 import type { WorldState, Role } from '../types'
 import { clamp } from './constitution'
-import { switchNPCRole, revertNPCRole } from './npc'
+import { switchNPCRole, revertNPCRole, permanentRoleChange } from './npc'
 import { addFeedRaw, addChronicle } from '../ui/feed'
-import { tf } from '../i18n'
+import { tf, t } from '../i18n'
 import {
   ROLE_CRISIS_FOOD_THRESHOLD,
   ROLE_RECOVERY_FOOD_THRESHOLD,
@@ -24,6 +24,14 @@ import {
   ROLE_EMERGENCY_PERMANENT_DAYS,
   ROLE_MAX_SHIFT_FRACTION,
 } from '../constants/role-crisis-thresholds'
+import {
+  ROLE_ADAPTIVE_MAX_SHIFT_FRACTION,
+  ROLE_ADAPTIVE_MIN_DAILY_GAIN,
+  ROLE_ADAPTIVE_SWITCH_THRESHOLD,
+  ROLE_ADAPTIVE_COOLDOWN_DAYS,
+  ROLE_ADAPTIVE_RETRAIN_DAYS,
+  ROLE_ADAPTIVE_SWITCH_INCOME_FACTOR,
+} from '../constants/role-adaptive-switch'
 
 // ── Module-level state (hysteresis / throttling) ───────────────────────────
 // These are deliberately module-scoped rather than WorldState fields:
@@ -35,6 +43,211 @@ let securityCrisisDays = 0
 let lastEmergencyDay   = -1
 let lastReversionDay   = -1
 let lastSurvivalDay    = -1   // throttle for autoSurvivalRoleShift
+
+const ADAPTIVE_SWITCH_ROLES = ['farmer', 'craftsman', 'merchant', 'scholar', 'healthcare'] as const
+type AdaptiveSwitchRole = (typeof ADAPTIVE_SWITCH_ROLES)[number]
+
+const ADAPTIVE_ROLE_MIN_FRACTION: Record<AdaptiveSwitchRole, number> = {
+  farmer: 0.12,
+  craftsman: 0.08,
+  merchant: 0.06,
+  scholar: 0.05,
+  healthcare: 0.04,
+}
+
+function isAdaptiveRole(role: Role): role is AdaptiveSwitchRole {
+  return (ADAPTIVE_SWITCH_ROLES as readonly string[]).includes(role)
+}
+
+function roleFit(npc: WorldState['npcs'][number], role: AdaptiveSwitchRole): number {
+  const wv = npc.worldview
+  switch (role) {
+    case 'farmer':
+      return clamp(wv.collectivism * 0.60 + wv.time_preference * 0.20 + (1 - wv.risk_tolerance) * 0.20, 0, 1)
+    case 'craftsman':
+      return clamp(wv.time_preference * 0.45 + (1 - wv.risk_tolerance) * 0.30 + wv.collectivism * 0.25, 0, 1)
+    case 'merchant':
+      return clamp(wv.risk_tolerance * 0.60 + (1 - wv.collectivism) * 0.40, 0, 1)
+    case 'scholar':
+      return clamp(wv.time_preference * 0.60 + (1 - wv.risk_tolerance) * 0.30 + wv.collectivism * 0.10, 0, 1)
+    case 'healthcare':
+      return clamp(wv.collectivism * 0.55 + (1 - wv.risk_tolerance) * 0.25 + wv.authority_trust * 0.20, 0, 1)
+  }
+}
+
+function computeRoleOpportunity(state: WorldState, roleAvgIncome: Record<AdaptiveSwitchRole, number>): Record<AdaptiveSwitchRole, number> {
+  const foodScarcity = clamp((45 - state.macro.food) / 45, 0, 1)
+  const foodSurplus = clamp((state.macro.food - 55) / 45, 0, 1)
+  const resourceAbundance = clamp((state.macro.natural_resources - 30) / 70, 0, 1)
+  const resourceStress = clamp((35 - state.macro.natural_resources) / 35, 0, 1)
+  const literacyGap = clamp((60 - state.macro.literacy) / 60, 0, 1)
+  const stabilityStress = clamp((45 - state.macro.stability) / 45, 0, 1)
+  const marketOpen = clamp(state.constitution.market_freedom, 0, 1)
+  const epidemic = state.active_events.some(e => e.type === 'epidemic') ? 1 : 0
+
+  const maxIncome = Math.max(
+    roleAvgIncome.farmer,
+    roleAvgIncome.craftsman,
+    roleAvgIncome.merchant,
+    roleAvgIncome.scholar,
+    roleAvgIncome.healthcare,
+    0.1,
+  )
+
+  const incomeNorm = (r: AdaptiveSwitchRole) => clamp(roleAvgIncome[r] / maxIncome, 0, 1)
+
+  return {
+    farmer: 0.30 + foodScarcity * 1.35 + resourceAbundance * 0.15 + incomeNorm('farmer') * 0.35,
+    craftsman: 0.25 + resourceAbundance * 0.55 + marketOpen * 0.30 + incomeNorm('craftsman') * 0.40 - resourceStress * 0.25,
+    merchant: 0.22 + marketOpen * 0.95 + foodSurplus * 0.18 + incomeNorm('merchant') * 0.45,
+    scholar: 0.20 + literacyGap * 0.65 + clamp(state.macro.stability / 100, 0, 1) * 0.15 + incomeNorm('scholar') * 0.30,
+    healthcare: 0.24 + epidemic * 0.80 + stabilityStress * 0.25 + incomeNorm('healthcare') * 0.25,
+  }
+}
+
+/**
+ * Daily adaptive labor pass:
+ * workers may voluntarily move toward higher-opportunity sectors before hard emergency drafts kick in.
+ */
+export function checkAdaptiveRoleSwitching(state: WorldState): void {
+  const living = state.npcs.filter(
+    (n): n is (WorldState['npcs'][number] & { role: AdaptiveSwitchRole }) => n.lifecycle.is_alive && isAdaptiveRole(n.role),
+  )
+  if (living.length < 20) return
+
+  const roleBuckets: Record<AdaptiveSwitchRole, WorldState['npcs']> = {
+    farmer: [],
+    craftsman: [],
+    merchant: [],
+    scholar: [],
+    healthcare: [],
+  }
+  for (const npc of living) roleBuckets[npc.role].push(npc)
+
+  const roleCounts: Record<AdaptiveSwitchRole, number> = {
+    farmer: roleBuckets.farmer.length,
+    craftsman: roleBuckets.craftsman.length,
+    merchant: roleBuckets.merchant.length,
+    scholar: roleBuckets.scholar.length,
+    healthcare: roleBuckets.healthcare.length,
+  }
+
+  const roleAvgIncome: Record<AdaptiveSwitchRole, number> = {
+    farmer: roleBuckets.farmer.reduce((s, n) => s + n.daily_income, 0) / Math.max(roleBuckets.farmer.length, 1),
+    craftsman: roleBuckets.craftsman.reduce((s, n) => s + n.daily_income, 0) / Math.max(roleBuckets.craftsman.length, 1),
+    merchant: roleBuckets.merchant.reduce((s, n) => s + n.daily_income, 0) / Math.max(roleBuckets.merchant.length, 1),
+    scholar: roleBuckets.scholar.reduce((s, n) => s + n.daily_income, 0) / Math.max(roleBuckets.scholar.length, 1),
+    healthcare: roleBuckets.healthcare.reduce((s, n) => s + n.daily_income, 0) / Math.max(roleBuckets.healthcare.length, 1),
+  }
+
+  const roleOpportunity = computeRoleOpportunity(state, roleAvgIncome)
+  const cooldownTicks = ROLE_ADAPTIVE_COOLDOWN_DAYS * 24
+  const severeFoodStress = state.macro.food < 30
+
+  const candidates: Array<{
+    npc: WorldState['npcs'][number]
+    from: AdaptiveSwitchRole
+    to: AdaptiveSwitchRole
+    pressure: number
+    expectedGain: number
+  }> = []
+
+  for (const npc of living) {
+    if (!isAdaptiveRole(npc.role)) continue
+    if (npc.on_strike) continue
+    if (npc.original_role !== undefined) continue  // don't compete with emergency reassignment
+
+    const sinceLast = state.tick - (npc.last_role_switch_tick ?? -999999)
+    if (sinceLast < cooldownTicks) continue
+
+    const currentRole = npc.role
+    const minCurrentFloor = Math.ceil(living.length * ADAPTIVE_ROLE_MIN_FRACTION[currentRole])
+    if (roleCounts[currentRole] <= minCurrentFloor) continue
+
+    const currentIncome = Math.max(roleAvgIncome[currentRole], 0.1)
+    const personalIncomeStress = clamp((currentIncome - npc.daily_income) / currentIncome, 0, 1)
+    const scarcityPush = currentRole !== 'farmer' ? clamp((35 - state.macro.food) / 35, 0, 1) : 0
+
+    let bestTarget: AdaptiveSwitchRole | null = null
+    let bestPressure = -Infinity
+    let bestGain = 0
+
+    for (const target of ADAPTIVE_SWITCH_ROLES) {
+      if (target === currentRole) continue
+      if (roleCounts[target] / living.length > 0.55) continue
+
+      const expectedGain = roleAvgIncome[target] - roleAvgIncome[currentRole]
+      const gainRatio = clamp(expectedGain / currentIncome, -1, 1)
+      const opportunityDelta = roleOpportunity[target] - roleOpportunity[currentRole]
+      const fitDelta = roleFit(npc, target) - roleFit(npc, currentRole)
+
+      const pressure =
+        opportunityDelta * 0.55
+        + gainRatio * 0.25
+        + personalIncomeStress * 0.20
+        + scarcityPush * 0.18
+        + fitDelta * 0.12
+        - 0.25
+
+      if (pressure > bestPressure) {
+        bestPressure = pressure
+        bestTarget = target
+        bestGain = expectedGain
+      }
+    }
+
+    if (!bestTarget) continue
+
+    const canSwitchForGain = bestGain >= ROLE_ADAPTIVE_MIN_DAILY_GAIN
+    const famineException = severeFoodStress && bestTarget === 'farmer' && bestPressure >= ROLE_ADAPTIVE_SWITCH_THRESHOLD - 0.08
+    if ((bestPressure >= ROLE_ADAPTIVE_SWITCH_THRESHOLD && canSwitchForGain) || famineException) {
+      candidates.push({
+        npc,
+        from: currentRole,
+        to: bestTarget,
+        pressure: bestPressure,
+        expectedGain: bestGain,
+      })
+    }
+  }
+
+  if (candidates.length === 0) return
+
+  candidates.sort((a, b) => b.pressure - a.pressure || b.expectedGain - a.expectedGain)
+
+  const maxShift = Math.max(1, Math.ceil(living.length * ROLE_ADAPTIVE_MAX_SHIFT_FRACTION))
+  const switchedByRole: Partial<Record<AdaptiveSwitchRole, number>> = {}
+  let switched = 0
+
+  for (const c of candidates) {
+    if (switched >= maxShift) break
+
+    const minFromFloor = Math.ceil(living.length * ADAPTIVE_ROLE_MIN_FRACTION[c.from])
+    if (roleCounts[c.from] <= minFromFloor) continue
+
+    permanentRoleChange(c.npc, c.to, state)
+    c.npc.last_role_switch_tick = state.tick
+    c.npc.role_retraining_until_tick = state.tick + ROLE_ADAPTIVE_RETRAIN_DAYS * 24
+    c.npc.daily_income *= ROLE_ADAPTIVE_SWITCH_INCOME_FACTOR
+    c.npc.grievance = clamp(c.npc.grievance - 3, 0, 100)
+
+    roleCounts[c.from]--
+    roleCounts[c.to]++
+    switchedByRole[c.to] = (switchedByRole[c.to] ?? 0) + 1
+    switched++
+  }
+
+  if (switched > 0) {
+    const summary = (Object.entries(switchedByRole) as Array<[AdaptiveSwitchRole, number]>)
+      .sort((a, b) => b[1] - a[1])
+      .map(([role, count]) => `${count} ${t(`role.${role}`) as string}`)
+      .join(', ')
+
+    const text = tf('engine.adaptive_role_shift', { n: switched, summary }) as string
+    addFeedRaw(text, 'info', state.year, state.day)
+    addChronicle(text, state.year, state.day, 'minor')
+  }
+}
 
 // ── Food crisis: reassign non-farmers to farming ───────────────────────────
 
