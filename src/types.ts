@@ -226,9 +226,10 @@ export interface NPC {
   personality?: NPCPersonality
 
   // ── Enmity (persistent grudges) ──────────────────────────────────────────
-  // NPC ids toward whom this NPC holds active hostile feelings (crimes suffered,
-  // betrayals, violent conflicts).  Maximum 5 entries — oldest grudge is dropped
-  // when the list overflows.  Enemies in the same zone escalate to confront.
+  // NPC ids toward whom this NPC holds active hostile feelings.  Enmity is
+  // acquired when a NPC witnesses crimes committed by another NPC (direct
+  // observation via strong_ties).  Maximum 5 entries — oldest grudge is
+  // dropped when the list overflows.  Enemies in the same zone escalate to confront.
   // Optional for backward-compat with any serialised state that predates this field.
   enmity_ids?: number[]
 }

@@ -3695,7 +3695,7 @@ export function runElection(state: WorldState): NPC | null {
 // (when aggressive) transition to organised crime as gang bosses.
 // Very poor, high-grievance NPCs face increased pressure to turn to crime.
 
-const WEALTH_INVEST_THRESHOLD   = 6000   // minimum wealth to trigger investment behaviour
+const WEALTH_INVEST_THRESHOLD   = 6000   // minimum wealth to trigger investment behavior
 const WEALTH_GANG_THRESHOLD     = 4000   // minimum wealth to risk becoming a gang boss
 const WEALTH_INVEST_INTERVAL    = 24 * 7 // once per week per eligible NPC (staggered by id)
 
@@ -3738,6 +3738,10 @@ function checkWealthMobility(state: WorldState): void {
     }
 
     // ── Rich & aggressive NPC: transition to gang boss ──────────────────────
+    // Only targets NPCs who do not yet have a criminal record — the transition
+    // itself marks the first step into organised crime (criminal_record = true).
+    // This represents a previously law-abiding but ruthlessly ambitious individual
+    // deciding to use their wealth to build a criminal network from scratch.
     if (
       npc.wealth >= WEALTH_GANG_THRESHOLD &&
       (npc.personality?.aggression ?? 0) > 0.68 &&
@@ -3750,7 +3754,7 @@ function checkWealthMobility(state: WorldState): void {
     ) {
       const oldRole = npc.role
       permanentRoleChange(npc, 'gang', state)
-      npc.criminal_record = true
+      npc.criminal_record = true   // transitioning to gang marks their first criminal act
       const text = tf('engine.wealthy_turned_gang', { name: npc.name, old_role: oldRole }) as string
       addFeedRaw(text, 'warning', state.year, state.day)
       addChronicle(text, state.year, state.day, 'major')

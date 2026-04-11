@@ -293,11 +293,18 @@ export function inferMotivationType(role: Role, c: Constitution, npcId: number):
 // Stable character traits fixed at birth.  Uses a deterministic hash of the
 // NPC id so traits are reproducible.  Role biases are applied on top.
 
-function frac(n: number): number { return n - Math.floor(n) }
+/** Returns the fractional (post-decimal) part of a number. */
+function fractional(n: number): number { return n - Math.floor(n) }
 
+/**
+ * Deterministic pseudo-random value in [0, 1) for the given seed.
+ * Uses the standard "sin hash" pattern: multiply by a large prime-like
+ * constant (43758.5453) after a sin transform to scatter the output uniformly.
+ * The offset constants 127.1 and 311.7 break up regular low-frequency patterns.
+ */
 function hashFrac(seed: number): number {
   const s = Math.sin(seed * 127.1 + 311.7) * 43758.5453
-  return frac(Math.abs(s))
+  return fractional(Math.abs(s))
 }
 
 export function generatePersonality(npcId: number, role: Role): NPCPersonality {
