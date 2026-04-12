@@ -230,7 +230,7 @@ export function recordFormulaBreakthrough(
       applied.push({ key: p.key, prev_expr: prevExpr, new_expr: p.expr })
     } catch (err) {
       // Skip invalid expressions without crashing the sim, but track which ones failed
-      console.warn(`[formula-patch] invalid expr for "${p.key}":`, err)
+      console.warn(`[formula-patch] invalid expr for "${p.key}" (expr: ${p.expr}):`, err)
       skipped.push(p.key)
     }
   }

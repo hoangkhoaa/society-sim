@@ -2391,9 +2391,9 @@ document.getElementById('chronicle-filters')!.addEventListener('click', e => {
 })
 
 // ── Chronicle tab switching (Events / Breakthroughs) ──────────────────────
-const _chronicleLogEl     = document.getElementById('chronicle-log')
-const _breakthroughLogEl  = document.getElementById('breakthrough-log')
-const _chronicleFiltersEl = document.getElementById('chronicle-filters')
+const chronicleLogEl     = document.getElementById('chronicle-log')
+const breakthroughLogEl  = document.getElementById('breakthrough-log')
+const chronicleFiltersEl = document.getElementById('chronicle-filters')
 
 document.getElementById('chronicle-tabs')?.addEventListener('click', e => {
   const btn = (e.target as HTMLElement).closest('.chronicle-tab') as HTMLElement | null
@@ -2402,13 +2402,13 @@ document.getElementById('chronicle-tabs')?.addEventListener('click', e => {
   document.querySelectorAll('.chronicle-tab').forEach(b => b.classList.remove('active'))
   btn.classList.add('active')
   if (tab === 'chronicle') {
-    if (_chronicleLogEl)     _chronicleLogEl.style.display = ''
-    if (_breakthroughLogEl)  _breakthroughLogEl.style.display = 'none'
-    if (_chronicleFiltersEl) _chronicleFiltersEl.style.display = ''
+    if (chronicleLogEl)     chronicleLogEl.style.display = ''
+    if (breakthroughLogEl)  breakthroughLogEl.style.display = 'none'
+    if (chronicleFiltersEl) chronicleFiltersEl.style.display = ''
   } else {
-    if (_chronicleLogEl)     _chronicleLogEl.style.display = 'none'
-    if (_breakthroughLogEl)  _breakthroughLogEl.style.display = ''
-    if (_chronicleFiltersEl) _chronicleFiltersEl.style.display = 'none'
+    if (chronicleLogEl)     chronicleLogEl.style.display = 'none'
+    if (breakthroughLogEl)  breakthroughLogEl.style.display = ''
+    if (chronicleFiltersEl) chronicleFiltersEl.style.display = 'none'
   }
 })
 

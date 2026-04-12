@@ -1,6 +1,7 @@
 import type { NarrativeEntry, FeedSeverity, BreakthroughRecord } from '../types'
 import { FEED_ICONS } from '../types'
 import { tf } from '../i18n'
+import { MAX_BREAKTHROUGH_ENTRIES } from '../constants/engine-interventions'
 
 const log = document.getElementById('feed-log')!
 const chronicleLog = document.getElementById('chronicle-log')!
@@ -214,8 +215,7 @@ export function addBreakthroughToLog(record: BreakthroughRecord): void {
 
   breakthroughLog.prepend(el)
 
-  // Cap at 50 entries
-  while (breakthroughLog.children.length > 50) {
+  while (breakthroughLog.children.length > MAX_BREAKTHROUGH_ENTRIES) {
     breakthroughLog.removeChild(breakthroughLog.lastChild!)
   }
 }
@@ -227,4 +227,5 @@ function escapeHtml(s: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
+    .replace(/`/g, '&#96;')
 }

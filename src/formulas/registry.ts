@@ -41,14 +41,31 @@ export function getFormulaExpr(key: FormulaKey): string {
  * @param key     - Which formula to replace.
  * @param newExpr - Replacement JS expression (must use same parameter names).
  * @returns The previous expression string.
- * @throws  If `newExpr` fails to compile or evaluate to a number on a test call.
+ * @throws  If `newExpr` fails to compile or evaluates to a non-numeric result.
  */
+
+/** Sample parameter sets used to validate formula expressions at patch time. */
+const FORMULA_SAMPLE_PARAMS: Record<FormulaKey, Record<string, number>> = {
+  stability:    { avgTrustGov: 0.5, cohesion: 0.8, food: 60, avgStress: 40, politicalPressure: 30 },
+  polarization: { stdCollectivism: 0.15, stdAuthority: 0.12, centerDrift: 0.2 },
+  labor_unrest: { avgSolidarity: 40, gini: 0.35 },
+  stress:       { hunger: 30, exhaustion: 40, isolation: 20, fear: 15, identityStress: 0.02, socialBuffer: 0.03 },
+  happiness:    { stressPenalty: 20, relativeStatus: 2, inequalityPain: 8, memoryEffect: 3, trustBonus: 5 },
+  birth_chance: { baseFertility: 0.8, happinessFactor: 1.0, stressFactor: 0.8, fearFactor: 0.9, needsFactor: 0.85, wealthFactor: 1.0, trustFactor: 0.9, foodFactor: 1.0 },
+}
+
 export function patchFormula(key: FormulaKey, newExpr: string): string {
-  // Validate: the expression must be syntactically valid JS.
+  // Validate: the expression must be syntactically valid JS that returns a finite number.
   // NOTE: formula expressions come exclusively from trusted AI outputs
   // (god-agent LLM, government AI, science AI) — never from raw user text input.
-  // We compile only for early syntax validation; the function object is discarded.
-  new Function(`return (${newExpr})`)   // syntax check only
+  const sample = FORMULA_SAMPLE_PARAMS[key]
+  const paramNames = Object.keys(sample)
+  const paramValues = Object.values(sample)
+  const testFn = new Function(...paramNames, `return (${newExpr})`) as (...args: number[]) => unknown
+  const result = testFn(...paramValues)
+  if (typeof result !== 'number' || !isFinite(result)) {
+    throw new TypeError(`Formula expression for "${key}" must return a finite number; got ${result}`)
+  }
 
   switch (key) {
     case 'stability':    return patchStabilityExpr(newExpr)
