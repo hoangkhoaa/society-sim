@@ -8,7 +8,7 @@ import { checkNarrativeEvents, checkRumors, checkMilestones } from '../sim/narra
 import { addChronicle } from '../ui/feed'
 import { tf } from '../i18n'
 import { tickEvents, spawnEvent, applyInstantEventDeaths, getEventDeathsThisDay, resetEventDeaths } from './events'
-import { applyInterventions, applyConstitutionPatch, applyWorldDelta, applyInstitutionDeltas, recordFormulaBreakthrough } from './interventions'
+import { applyInterventions, applyConstitutionPatch, applyWorldDelta, applyInstitutionDeltas, recordFormulaBreakthrough, GOD_AGENT_FORMULA_OVERRIDE_TITLE } from './interventions'
 import { computeMacroStats, computeDriftScore, checkCrisis, checkPopulationViability } from './macro'
 import { checkLifecycleEvents, checkImmigration } from './lifecycle'
 import {
@@ -35,7 +35,7 @@ export {
   MIN_NPC_COUNT, DEFAULT_NPC_COUNT, initWorld,
   spawnEvent, applyInstantEventDeaths,
   applyInterventions, applyConstitutionPatch, applyWorldDelta, applyInstitutionDeltas,
-  recordFormulaBreakthrough,
+  recordFormulaBreakthrough, GOD_AGENT_FORMULA_OVERRIDE_TITLE,
   computeMacroStats, getIncomeTaxRate,
   updatePublicHealth, runElection, updateRunStats,
 }

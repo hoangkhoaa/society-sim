@@ -4,7 +4,7 @@ import { setupGreeting, setupChat, applyPreset, handlePlayerChat, resetInGameHis
 import { listAvailableModels, PROVIDER_MODELS, getAIUsage, getRemainingRPM, initKeyRing } from './ai/provider'
 import { addFeedRaw, addFeedThinking, setFeedFilter, setChronicleFilter, refreshChronicleTimestamps, addBreakthroughToLog } from './ui/feed'
 import { showConfirm, showInfo, showPolicyChoice, type PolicyDisplayCard } from './ui/modal'
-import { initWorld, tick, spawnEvent, applyInterventions, applyInstantEventDeaths, getIncomeTaxRate, MIN_NPC_COUNT, DEFAULT_NPC_COUNT, applyConstitutionPatch, applyWorldDelta, applyInstitutionDeltas, recordFormulaBreakthrough } from './engine'
+import { initWorld, tick, spawnEvent, applyInterventions, applyInstantEventDeaths, getIncomeTaxRate, MIN_NPC_COUNT, DEFAULT_NPC_COUNT, applyConstitutionPatch, applyWorldDelta, applyInstitutionDeltas, recordFormulaBreakthrough, GOD_AGENT_FORMULA_OVERRIDE_TITLE } from './engine'
 import {
   setLang,
   t,
@@ -2198,7 +2198,7 @@ function applySideChannels(response: Awaited<ReturnType<typeof handlePlayerChat>
       world,
       response.formula_patch,
       'god_agent',
-      'God Agent Formula Override',
+      GOD_AGENT_FORMULA_OVERRIDE_TITLE,
       response.answer ?? 'Simulation formula rewritten by the Architect.',
     )
     if (record) {
@@ -2391,23 +2391,24 @@ document.getElementById('chronicle-filters')!.addEventListener('click', e => {
 })
 
 // ── Chronicle tab switching (Events / Breakthroughs) ──────────────────────
+const _chronicleLogEl     = document.getElementById('chronicle-log')
+const _breakthroughLogEl  = document.getElementById('breakthrough-log')
+const _chronicleFiltersEl = document.getElementById('chronicle-filters')
+
 document.getElementById('chronicle-tabs')?.addEventListener('click', e => {
   const btn = (e.target as HTMLElement).closest('.chronicle-tab') as HTMLElement | null
   if (!btn) return
   const tab = btn.dataset.tab
   document.querySelectorAll('.chronicle-tab').forEach(b => b.classList.remove('active'))
   btn.classList.add('active')
-  const chronicleLog     = document.getElementById('chronicle-log')
-  const breakthroughLog  = document.getElementById('breakthrough-log')
-  const chronicleFilters = document.getElementById('chronicle-filters')
   if (tab === 'chronicle') {
-    if (chronicleLog)     chronicleLog.style.display = ''
-    if (breakthroughLog)  breakthroughLog.style.display = 'none'
-    if (chronicleFilters) chronicleFilters.style.display = ''
+    if (_chronicleLogEl)     _chronicleLogEl.style.display = ''
+    if (_breakthroughLogEl)  _breakthroughLogEl.style.display = 'none'
+    if (_chronicleFiltersEl) _chronicleFiltersEl.style.display = ''
   } else {
-    if (chronicleLog)     chronicleLog.style.display = 'none'
-    if (breakthroughLog)  breakthroughLog.style.display = ''
-    if (chronicleFilters) chronicleFilters.style.display = 'none'
+    if (_chronicleLogEl)     _chronicleLogEl.style.display = 'none'
+    if (_breakthroughLogEl)  _breakthroughLogEl.style.display = ''
+    if (_chronicleFiltersEl) _chronicleFiltersEl.style.display = 'none'
   }
 })
 

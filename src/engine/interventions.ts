@@ -4,6 +4,9 @@ import { permanentRoleChange } from '../sim/npc'
 import { MAX_NPC_MEMORIES } from '../constants/engine-interventions'
 import { patchFormula, getFormulaExpr } from '../formulas/registry'
 
+/** Default title used when a formula patch originates from a god-agent response. */
+export const GOD_AGENT_FORMULA_OVERRIDE_TITLE = 'God Agent Formula Override'
+
 // ── Direct NPC Interventions ─────────────────────────────────────────────────
 
 export function applyInterventions(state: WorldState, interventions: NPCIntervention[]): { affected: number; killed: number } {
@@ -193,7 +196,7 @@ export function applyWorldDelta(state: WorldState, delta: WorldDelta): void {
       state,
       delta.formula_patch,
       'god_agent',
-      'God Agent Formula Override',
+      GOD_AGENT_FORMULA_OVERRIDE_TITLE,
       'The Architect directly rewrote a simulation formula.',
     )
   }
@@ -218,6 +221,7 @@ export function recordFormulaBreakthrough(
 ): BreakthroughRecord | null {
   if (!patches.length) return null
 
+  const skipped: string[] = []
   const applied: BreakthroughRecord['formula_patches'] = []
   for (const p of patches) {
     try {
@@ -225,8 +229,9 @@ export function recordFormulaBreakthrough(
       patchFormula(p.key, p.expr)
       applied.push({ key: p.key, prev_expr: prevExpr, new_expr: p.expr })
     } catch (err) {
-      // Silently skip invalid expressions rather than crashing the sim
+      // Skip invalid expressions without crashing the sim, but track which ones failed
       console.warn(`[formula-patch] invalid expr for "${p.key}":`, err)
+      skipped.push(p.key)
     }
   }
 
@@ -239,7 +244,9 @@ export function recordFormulaBreakthrough(
     day:              state.day,
     source,
     title,
-    description,
+    description:      skipped.length
+      ? `${description} (skipped invalid patches: ${skipped.join(', ')})`
+      : description,
     formula_patches:  applied,
   }
 

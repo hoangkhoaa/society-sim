@@ -44,8 +44,10 @@ export function getFormulaExpr(key: FormulaKey): string {
  * @throws  If `newExpr` fails to compile or evaluate to a number on a test call.
  */
 export function patchFormula(key: FormulaKey, newExpr: string): string {
-  // Validate: the expression must be a valid JS expression that returns a number.
-  // We try compiling it; if it throws, we propagate the error to the caller.
+  // Validate: the expression must be syntactically valid JS.
+  // NOTE: formula expressions come exclusively from trusted AI outputs
+  // (god-agent LLM, government AI, science AI) — never from raw user text input.
+  // We compile only for early syntax validation; the function object is discarded.
   new Function(`return (${newExpr})`)   // syntax check only
 
   switch (key) {
