@@ -13,7 +13,7 @@ import {
   getStoredLangPreference,
   isSupportedLang,
 } from './i18n'
-import { initMap, setMapPaused, setMapLegendVisible, setMapNetworkVisible, triggerMapShake } from './ui/map'
+import { initMap, setMapPaused, setMapLegendVisible, setMapNetworkVisible, setMapConflictOverlayVisible, triggerMapShake } from './ui/map'
 import {
   resetNPCChatHistories,
   registerSpotlightCallbacks,
@@ -38,6 +38,7 @@ import {
   UI_NETWORK_VISIBLE_KEY,
   UI_ECON_VISIBLE_KEY,
   UI_NPC_CONTACTS_VISIBLE_KEY,
+  UI_CONFLICT_OVERLAY_KEY,
 } from './constants/storage-keys'
 import { ACHIEVEMENT_DEFINITIONS, type AchievementDef } from './constants/achievements'
 import { DEMOGRAPHICS_AGE_GROUPS } from './constants/demographics-age-groups'
@@ -1245,6 +1246,7 @@ const btnToggleNetwork = document.getElementById('btn-toggle-network') as HTMLBu
 const btnToggleLegend = document.getElementById('btn-toggle-legend') as HTMLButtonElement
 const btnToggleEcon = document.getElementById('btn-toggle-econ') as HTMLButtonElement
 const btnToggleNpcContacts = document.getElementById('btn-toggle-npc-contacts') as HTMLButtonElement
+const btnToggleConflict = document.getElementById('btn-toggle-conflict') as HTMLButtonElement
 const panelsDropdown = document.getElementById('panels-dropdown') as HTMLElement | null
 const btnPanelsToggle = document.getElementById('btn-panels-toggle') as HTMLButtonElement | null
 btnPanelsToggle?.addEventListener('click', (e) => {
@@ -1273,6 +1275,7 @@ let legendVisible = localStorage.getItem(UI_LEGEND_VISIBLE_KEY) === '1'
 let networkVisible = localStorage.getItem(UI_NETWORK_VISIBLE_KEY) !== '0'
 let econVisible = localStorage.getItem(UI_ECON_VISIBLE_KEY) === '1'
 let npcContactsVisible = localStorage.getItem(UI_NPC_CONTACTS_VISIBLE_KEY) === '1'
+let conflictOverlayVisible = localStorage.getItem(UI_CONFLICT_OVERLAY_KEY) === '1'
 
 function applyOverlayVisibility() {
   demographicsPanel.classList.toggle('hidden', !demographicsVisible)
@@ -1288,6 +1291,8 @@ function applyOverlayVisibility() {
   btnToggleLegend.classList.toggle('active', legendVisible)
   btnToggleEcon.classList.toggle('active', econVisible)
   btnToggleNpcContacts.classList.toggle('active', npcContactsVisible)
+  setMapConflictOverlayVisible(conflictOverlayVisible)
+  btnToggleConflict.classList.toggle('active', conflictOverlayVisible)
 }
 
 btnToggleDemo.addEventListener('click', () => {
@@ -1326,6 +1331,12 @@ btnToggleNpcContacts.addEventListener('click', () => {
   localStorage.setItem(UI_NPC_CONTACTS_VISIBLE_KEY, npcContactsVisible ? '1' : '0')
   applyOverlayVisibility()
   if (npcContactsVisible) updateNpcContactsPanel()
+})
+
+btnToggleConflict.addEventListener('click', () => {
+  conflictOverlayVisible = !conflictOverlayVisible
+  localStorage.setItem(UI_CONFLICT_OVERLAY_KEY, conflictOverlayVisible ? '1' : '0')
+  applyOverlayVisibility()
 })
 
 document.addEventListener(SPOTLIGHT_NPC_CONTACTS_CHANGED_EVENT, () => {

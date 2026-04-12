@@ -2,17 +2,25 @@ import type { WorldState } from '../types'
 import { clamp, getSeason, SEASON_LABELS } from '../sim/constitution'
 import { addFeedRaw, addChronicle } from '../ui/feed'
 import { t, tf } from '../i18n'
+import { applyMutualRelation, removeEnmity } from '../sim/npc'
+import {
+  NPC_RECONCILIATION_AFFINITY_THRESHOLD,
+  NPC_RECONCILIATION_DAILY_CHANCE,
+  NPC_FEUD_ESCALATION_AGGRESSION_MIN,
+  NPC_FEUD_ESCALATION_DAILY_CHANCE,
+} from '../constants/npc-social-limits'
 
-// ── Season tracking ────────────────────────────────────────────────────────
+// ── Season tracking ───────────────────────────────────────────────
 let lastSeason = 'spring'
 
-// ── Community collective action cooldown ──────────────────────────────────
+// ── Community collective action cooldown ────────────────────────────
 // Maps community_group id → last tick a collective action event was emitted.
 // Prevents spam: at most one event per group per 10 sim-days (240 ticks).
 const groupCollectiveActionTick = new Map<number, number>()
 
 let nextGroupId = 1
 let lastOutcomeTick = -9999
+let lastReconciliationFeedTick = -9999
 
 // ── Season Transition ────────────────────────────────────────────────────────
 
@@ -210,5 +218,78 @@ export function checkTrustRecovery(state: WorldState): void {
       npc.trust_in.government.intention + recoveryRate,
       0, cap,
     )
+  }
+}
+
+// ── Feud Escalation & Reconciliation ─────────────────────────────────────────
+// NPCs with active enmity in the same zone can escalate to confront.
+// If their relation_map shows residual affinity AND a scholar/healthcare strong
+// tie is shared by both, a 5%/day reconciliation roll can clear the grudge,
+// emit a chronicle event, and boost mutual affinity.
+
+export function checkFeudsAndReconciliation(state: WorldState): void {
+  const living = state.npcs.filter(n => n.lifecycle.is_alive)
+
+  for (const npc of living) {
+    if (!npc.enmity_ids || npc.enmity_ids.length === 0) continue
+
+    for (const enemyId of [...npc.enmity_ids]) {
+      const enemy = state.npcs[enemyId]
+      if (!enemy?.lifecycle.is_alive) continue
+
+      // ── Escalation: enmity + same zone + aggression → confront ─────────
+      if (
+        npc.zone === enemy.zone &&
+        npc.action_state !== 'confront' &&
+        (npc.personality?.aggression ?? 0.5) > NPC_FEUD_ESCALATION_AGGRESSION_MIN &&
+        Math.random() < NPC_FEUD_ESCALATION_DAILY_CHANCE
+      ) {
+        npc.action_state = 'confront'
+        applyMutualRelation(
+          npc, enemy,
+          { event: 'conflict', conflict: 0.030, affinity: -0.020 },
+          { event: 'conflict', conflict: 0.025, affinity: -0.015 },
+          state.tick,
+        )
+        continue
+      }
+
+      // ── Reconciliation: mutual residual affinity + mediator ─────────────
+      if (npc.zone !== enemy.zone) continue
+
+      const npcEdge   = npc.relation_map?.[enemyId]
+      const enemyEdge = enemy.relation_map?.[npc.id]
+      const mutualAffinity = ((npcEdge?.affinity ?? 0.5) + (enemyEdge?.affinity ?? 0.5)) / 2
+      if (mutualAffinity < NPC_RECONCILIATION_AFFINITY_THRESHOLD) continue
+
+      // Mediator must be an alive scholar or healthcare NPC strong-tied to both
+      const mediator = living.find(m =>
+        (m.role === 'scholar' || m.role === 'healthcare') &&
+        m.strong_ties.includes(npc.id) &&
+        m.strong_ties.includes(enemyId),
+      )
+      if (!mediator) continue
+
+      // 5% daily chance when all conditions are met
+      if (Math.random() > NPC_RECONCILIATION_DAILY_CHANCE) continue
+
+      removeEnmity(npc, enemyId)
+      removeEnmity(enemy, npc.id)
+
+      applyMutualRelation(
+        npc, enemy,
+        { event: 'reconciled', affinity: 0.08, intention: 0.05, conflict: -0.10 },
+        { event: 'reconciled', affinity: 0.08, intention: 0.05, conflict: -0.10 },
+        state.tick,
+      )
+
+      if (state.tick - lastReconciliationFeedTick > 10 * 24) {
+        lastReconciliationFeedTick = state.tick
+        const text = tf('engine.reconciliation', { a: npc.name, b: enemy.name, mediator: mediator.name }) as string
+        addChronicle(text, state.year, state.day, 'minor')
+        addFeedRaw(text, 'info', state.year, state.day)
+      }
+      break  // One reconciliation per NPC per day is enough
+    }
   }
 }

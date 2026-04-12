@@ -1,12 +1,35 @@
-import type { NPC, Constitution, WorldState, Role, TrustMap, ActionState, WorkMotivationType, WorkSchedule, NPCPersonality } from '../types'
+import type { NPC, Constitution, WorldState, Role, TrustMap, ActionState, WorkMotivationType, WorkSchedule, NPCPersonality, NPCRelationEventType } from '../types'
 import { faker } from '@faker-js/faker'
 import { clamp, gaussian, rand, randInt, weightedRandom, getSeason, ZONE_ADJACENCY } from './constitution'
 import { t, tf, tOccVariant } from '../i18n'
 import { getRegimeProfile, type SimRestrictions } from './regime-config'
-import { NPC_MAX_ENMITY_IDS, NPC_SOCIAL_HUB_ZONES } from '../constants/npc-social-limits'
-import { NPC_TRADE_EFFICIENCY, NPC_MERCHANT_MARKUP, NPC_SURVIVAL_COST_PER_TICK } from '../constants/npc-wealth-trade'
+import {
+  NPC_MAX_ENMITY_IDS,
+  NPC_MAX_RELATION_EDGES,
+  NPC_MAX_RELATION_HISTORY,
+  NPC_RELATION_CONFLICT_DECAY_PER_DAY,
+  NPC_RELATION_STALE_TICKS,
+  NPC_SOCIAL_HUB_ZONES,
+} from '../constants/npc-social-limits'
+import { NPC_TRADE_EFFICIENCY, NPC_MERCHANT_MARKUP, NPC_SURVIVAL_COST_PER_TICK,
+  FARMER_SUPPLY_MERCHANT_RATIO, FARMER_SUPPLY_CRAFTSMAN_RATIO,
+  FARMER_SUPPLY_STRONG_LIMIT, FARMER_SUPPLY_WEAK_LIMIT,
+  CRAFTSMAN_SUPPLY_STRONG_LIMIT, CRAFTSMAN_SUPPLY_WEAK_LIMIT,
+  SCHOLAR_MAX_STUDENTS, SCHOLAR_STRESS_THRESHOLD, SCHOLAR_DISSONANCE_THRESHOLD,
+  SCHOLAR_STRESS_RELIEF, SCHOLAR_DISSONANCE_RELIEF, SCHOLAR_STRONG_LIMIT, SCHOLAR_WEAK_LIMIT,
+  HEALTHCARE_MAX_PATIENTS, HEALTHCARE_HUNGER_THRESHOLD,
+  HEALTHCARE_SICK_TICKS_RELIEF, HEALTHCARE_HUNGER_RELIEF, HEALTHCARE_STRESS_RELIEF,
+  HEALTHCARE_STRONG_LIMIT, HEALTHCARE_WEAK_LIMIT,
+  CONSUMER_SPEND_FRACTION, CONSUMER_CRAFTSMAN_MODULO, CONSUMER_CRAFTSMAN_CYCLES,
+  CRAFTSMAN_GOODS_HAPPINESS_BONUS,
+  FARMER_FOOD_HUNGER_THRESHOLD, FARMER_FOOD_HUNGER_RELIEF, FARMER_FOOD_MIN_PRODUCTIVITY,
+} from '../constants/npc-wealth-trade'
 import { NPC_TRUST_DELTAS, type NpcTrustEvent } from '../constants/npc-trust-deltas'
-import { computeStressScore, computeHappinessScore } from '../formulas/npc'
+import { computeStressScore, computeHappinessScore,
+  computeFarmerSurplusRate, computeFarmerSaleValue,
+  computeScholarTuition, computeHealthcareFee,
+  computeCraftsmanMaterialCost, computeCraftsmanGoodsPrice, computeFarmerFoodPrice,
+} from '../formulas/npc'
 
 // ── Active sim restrictions (set once per game from regime profile) ───────────
 // Cached here to avoid calling getRegimeProfile() in the per-NPC hot path.
@@ -354,6 +377,111 @@ export function removeEnmity(npc: NPC, targetId: number): void {
   npc.enmity_ids = npc.enmity_ids.filter(id => id !== targetId)
 }
 
+type RelationDelta = {
+  event: NPCRelationEventType
+  competence?: number
+  intention?: number
+  affinity?: number
+  conflict?: number
+}
+
+function ensureRelationState(npc: NPC): void {
+  if (!npc.relation_map) npc.relation_map = {}
+  if (!npc.relation_history) npc.relation_history = []
+}
+
+function relationScore(edge: { competence: number; intention: number; affinity: number; conflict: number; event_count: number; last_event_tick: number }, tick: number): number {
+  const ageDays = Math.max(0, (tick - edge.last_event_tick) / 24)
+  const warmth = (edge.competence + edge.intention + edge.affinity) / 3
+  const engagementBonus = Math.min(edge.event_count, 10) * 0.01
+  return warmth - edge.conflict * 0.90 - ageDays * 0.05 + engagementBonus
+}
+
+function pruneRelationEdges(npc: NPC, tick: number): void {
+  if (!npc.relation_map) return
+  const entries = Object.entries(npc.relation_map)
+  if (entries.length <= NPC_MAX_RELATION_EDGES) return
+  const keep = entries
+    .sort((a, b) => relationScore(b[1], tick) - relationScore(a[1], tick))
+    .slice(0, NPC_MAX_RELATION_EDGES)
+  npc.relation_map = Object.fromEntries(keep)
+}
+
+function recordRelationEvent(npc: NPC, event: {
+  other_id: number
+  tick: number
+  type: NPCRelationEventType
+  delta_competence: number
+  delta_intention: number
+  delta_affinity: number
+  delta_conflict: number
+}): void {
+  ensureRelationState(npc)
+  npc.relation_history!.push(event)
+  if (npc.relation_history!.length > NPC_MAX_RELATION_HISTORY) npc.relation_history!.shift()
+}
+
+function applyRelationDelta(from: NPC, to: NPC, delta: RelationDelta, tick: number): void {
+  if (from.id === to.id) return
+  ensureRelationState(from)
+  const prev = from.relation_map![to.id] ?? {
+    competence: 0.50,
+    intention: 0.50,
+    affinity: 0.50,
+    conflict: 0,
+    event_count: 0,
+    last_event_tick: tick,
+    last_event_type: delta.event,
+  }
+  const dComp = delta.competence ?? 0
+  const dInt = delta.intention ?? 0
+  const dAff = delta.affinity ?? 0
+  const dConf = delta.conflict ?? 0
+  from.relation_map![to.id] = {
+    competence: clamp(prev.competence + dComp, 0, 1),
+    intention: clamp(prev.intention + dInt, 0, 1),
+    affinity: clamp(prev.affinity + dAff, 0, 1),
+    conflict: clamp(prev.conflict + dConf, 0, 1),
+    event_count: prev.event_count + 1,
+    last_event_tick: tick,
+    last_event_type: delta.event,
+  }
+  recordRelationEvent(from, {
+    other_id: to.id,
+    tick,
+    type: delta.event,
+    delta_competence: dComp,
+    delta_intention: dInt,
+    delta_affinity: dAff,
+    delta_conflict: dConf,
+  })
+  pruneRelationEdges(from, tick)
+}
+
+export function applyMutualRelation(a: NPC, b: NPC, aToB: RelationDelta, bToA: RelationDelta, tick: number): void {
+  applyRelationDelta(a, b, aToB, tick)
+  applyRelationDelta(b, a, bToA, tick)
+}
+
+function decayDirectRelations(npc: NPC, tick: number): void {
+  if (!npc.relation_map) return
+  for (const [id, edge] of Object.entries(npc.relation_map)) {
+    edge.competence = clamp(edge.competence + (0.5 - edge.competence) * 0.01, 0, 1)
+    edge.intention = clamp(edge.intention + (0.5 - edge.intention) * 0.01, 0, 1)
+    edge.affinity = clamp(edge.affinity + (0.5 - edge.affinity) * 0.02, 0, 1)
+    edge.conflict = clamp(edge.conflict - NPC_RELATION_CONFLICT_DECAY_PER_DAY, 0, 1)
+
+    const stale = tick - edge.last_event_tick > NPC_RELATION_STALE_TICKS
+    const nearNeutral =
+      Math.abs(edge.competence - 0.5) < 0.04
+      && Math.abs(edge.intention - 0.5) < 0.04
+      && Math.abs(edge.affinity - 0.5) < 0.04
+      && edge.conflict < 0.03
+    if (stale && nearNeutral) delete npc.relation_map[Number(id)]
+  }
+  pruneRelationEdges(npc, tick)
+}
+
 // Means of production distributed at society start according to regime type.
 
 function initialCapital(role: Role, constitution: Constitution): number {
@@ -600,6 +728,8 @@ export function createNPC(idx: number, total: number, constitution: Constitution
     // Personality and enmity (new depth features)
     personality: generatePersonality(idx, role),
     enmity_ids: [],
+    relation_map: {},
+    relation_history: [],
   }
 
   return {
@@ -633,6 +763,7 @@ export function tickNPC(npc: NPC, state: WorldState, events: IndividualEvent[] |
     updateGrievance(npc, state)
     updateWorldview(npc, state)
   }
+  if (state.tick % 24 === npc.id % 24) decayDirectRelations(npc, state.tick)
   applyResistanceBehavior(npc, state, eventFlags)
   npc.action_state = selectAction(npc, state)
   updateZone(npc, state)
@@ -1417,17 +1548,28 @@ function wealthTick(npc: NPC, state: WorldState): void {
       && state.tick % 24 === npc.id % 24
       && state.constitution.market_freedom >= 0.10
       && _simRestrictions.trade_mult > 0.20) {
-    const farmerSurplusRate = clamp(productivity - 0.3, 0, 1) * 0.8  // surplus above subsistence
+    const farmerSurplusRate = computeFarmerSurplusRate(productivity)
     if (farmerSurplusRate > 0) {
-      for (const tid of npc.strong_ties.slice(0, 4)) {
-        const merchant = state.npcs[tid]
-        if (!merchant?.lifecycle.is_alive || merchant.role !== 'merchant') continue
-        // Farmer sells produce to merchant — regime trade_mult scales the volume
-        const saleValue = farmerSurplusRate * 3 * state.constitution.market_freedom * _simRestrictions.trade_mult
-        const buyerCost = saleValue * 0.7  // merchant pays 70%; keeps 30% as inventory margin
-        if (merchant.wealth >= buyerCost) {
-          npc.wealth      = clamp(npc.wealth      + saleValue,   0, 50000)
-          merchant.wealth = clamp(merchant.wealth - buyerCost,   0, 50000)
+      const saleValue = computeFarmerSaleValue(farmerSurplusRate, state.constitution.market_freedom, _simRestrictions.trade_mult)
+      // Prefer merchant (best margin); also accept craftsman as buyer (pays 90%, no reseller cut).
+      // Search weak_ties too so early-game farmers without merchant strong-ties still sell surplus.
+      const buyerPool = [...npc.strong_ties.slice(0, FARMER_SUPPLY_STRONG_LIMIT), ...npc.weak_ties.slice(0, FARMER_SUPPLY_WEAK_LIMIT)]
+      for (const tid of buyerPool) {
+        const buyer = state.npcs[tid]
+        if (!buyer?.lifecycle.is_alive) continue
+        if (buyer.role !== 'merchant' && buyer.role !== 'craftsman') continue
+        // Merchant pays less (reseller margin); craftsman pays more (direct material use)
+        const buyerCost = buyer.role === 'merchant' ? saleValue * FARMER_SUPPLY_MERCHANT_RATIO : saleValue * FARMER_SUPPLY_CRAFTSMAN_RATIO
+        if (buyer.wealth >= buyerCost) {
+          npc.wealth   = clamp(npc.wealth   + saleValue, 0, 50000)
+          buyer.wealth = clamp(buyer.wealth - buyerCost, 0, 50000)
+          applyMutualRelation(
+            npc,
+            buyer,
+            { event: 'trade_fair', competence: 0.010, intention: 0.010, affinity: 0.008, conflict: -0.010 },
+            { event: 'trade_fair', competence: 0.010, intention: 0.006, affinity: 0.006, conflict: -0.008 },
+            state.tick,
+          )
         }
         break  // one sale per day per farmer
       }
@@ -1442,17 +1584,89 @@ function wealthTick(npc: NPC, state: WorldState): void {
       && state.tick % 24 === npc.id % 24
       && state.constitution.market_freedom >= 0.10
       && _simRestrictions.trade_mult > 0.20) {
-    for (const tid of npc.strong_ties.slice(0, 4)) {
+    const materialCost = computeCraftsmanMaterialCost(state.constitution.market_freedom, _simRestrictions.trade_mult)
+    // Also search weak_ties so craftsmen can find suppliers beyond their strong-tie circle.
+    const supplierPool = [...npc.strong_ties.slice(0, CRAFTSMAN_SUPPLY_STRONG_LIMIT), ...npc.weak_ties.slice(0, CRAFTSMAN_SUPPLY_WEAK_LIMIT)]
+    for (const tid of supplierPool) {
       const supplier = state.npcs[tid]
       if (!supplier?.lifecycle.is_alive) continue
       if (supplier.role !== 'merchant' && supplier.role !== 'farmer') continue
-      const materialCost = 1.5 * state.constitution.market_freedom * _simRestrictions.trade_mult
       if (supplier.wealth >= materialCost * 2) {
         // Craftsman pays for raw materials — supplier earns income
         npc.wealth      = clamp(npc.wealth      - materialCost, 0, 50000)
         supplier.wealth = clamp(supplier.wealth + materialCost, 0, 50000)
+        applyMutualRelation(
+          npc,
+          supplier,
+          { event: 'trade_fair', competence: 0.010, intention: 0.010, affinity: 0.006, conflict: -0.008 },
+          { event: 'trade_fair', competence: 0.010, intention: 0.008, affinity: 0.006, conflict: -0.008 },
+          state.tick,
+        )
       }
       break  // one purchase per day
+    }
+  }
+
+  // ── Scholar tutoring / consultation ──────────────────────────────────────
+  // Scholars earn income by advising and teaching neighbors. Students pay a
+  // small tuition in return for stress relief and reduced cognitive dissonance.
+  if (npc.role === 'scholar' && npc.action_state === 'working'
+      && state.tick % 24 === npc.id % 24
+      && state.constitution.market_freedom >= 0.05) {
+    const tuition = computeScholarTuition(state.constitution.market_freedom)
+    let served = 0
+    for (const tid of [...npc.strong_ties.slice(0, SCHOLAR_STRONG_LIMIT), ...npc.weak_ties.slice(0, SCHOLAR_WEAK_LIMIT)]) {
+      if (served >= SCHOLAR_MAX_STUDENTS) break
+      const student = state.npcs[tid]
+      if (!student?.lifecycle.is_alive || student.role === 'child') continue
+      if (student.stress < SCHOLAR_STRESS_THRESHOLD && student.dissonance_acc < SCHOLAR_DISSONANCE_THRESHOLD) continue
+      if (student.wealth >= tuition) {
+        student.wealth         = clamp(student.wealth         - tuition,               0, 50000)
+        npc.wealth             = clamp(npc.wealth             + tuition,               0, 50000)
+        student.stress         = clamp(student.stress         - SCHOLAR_STRESS_RELIEF, 0, 100)
+        student.dissonance_acc = clamp(student.dissonance_acc - SCHOLAR_DISSONANCE_RELIEF, 0, 100)
+        applyMutualRelation(
+          student,
+          npc,
+          { event: 'tutored', competence: 0.025, intention: 0.018, affinity: 0.015, conflict: -0.015 },
+          { event: 'tutored', competence: 0.010, intention: 0.010, affinity: 0.010, conflict: -0.010 },
+          state.tick,
+        )
+        served++
+      }
+    }
+  }
+
+  // ── Healthcare treatment income ───────────────────────────────────────────
+  // Healthcare workers earn income by treating sick or malnourished neighbors.
+  // Patients pay a consultation fee and receive accelerated recovery.
+  if (npc.role === 'healthcare' && npc.action_state === 'working'
+      && state.tick % 24 === npc.id % 24
+      && state.constitution.market_freedom >= 0.05) {
+    const consultFee = computeHealthcareFee(state.constitution.market_freedom)
+    let served = 0
+    for (const tid of [...npc.strong_ties.slice(0, HEALTHCARE_STRONG_LIMIT), ...npc.weak_ties.slice(0, HEALTHCARE_WEAK_LIMIT)]) {
+      if (served >= HEALTHCARE_MAX_PATIENTS) break
+      const patient = state.npcs[tid]
+      if (!patient?.lifecycle.is_alive || patient.role === 'child') continue
+      if (!patient.sick && patient.hunger < HEALTHCARE_HUNGER_THRESHOLD) continue
+      if (patient.wealth >= consultFee) {
+        patient.wealth     = clamp(patient.wealth     - consultFee,                  0, 50000)
+        npc.wealth         = clamp(npc.wealth         + consultFee,                  0, 50000)
+        if (patient.sick) {
+          patient.sick_ticks = Math.max(0, patient.sick_ticks - HEALTHCARE_SICK_TICKS_RELIEF)  // accelerated recovery
+        }
+        patient.hunger     = clamp(patient.hunger     - HEALTHCARE_HUNGER_RELIEF,   0, 100)
+        patient.stress     = clamp(patient.stress     - HEALTHCARE_STRESS_RELIEF,   0, 100)
+        applyMutualRelation(
+          patient,
+          npc,
+          { event: 'treated', competence: 0.030, intention: 0.025, affinity: 0.020, conflict: -0.020 },
+          { event: 'treated', competence: 0.010, intention: 0.010, affinity: 0.012, conflict: -0.012 },
+          state.tick,
+        )
+        served++
+      }
     }
   }
 
@@ -1464,26 +1678,38 @@ function wealthTick(npc: NPC, state: WorldState): void {
 
   npc.wealth = clamp(npc.wealth + laborIncome, 0, 50000)
 
-  // ── Consumer spending flows to merchants ────────────────────────────────
+  // ── Consumer spending flows to merchants and craftsmen ──────────────────
   // Survival cost represents daily purchases (food, shelter, goods).
-  // A fraction flows to a nearby merchant, simulating real market circulation.
+  // ~60% flows to a nearby merchant (traded goods), ~40% to a craftsman (manufactured goods).
   // Only when market freedom allows trade and NPC has enough wealth.
   if (npc.wealth > 1 && state.constitution.market_freedom >= 0.15 && state.tick % 6 === npc.id % 6) {
-    const spendAmount = NPC_SURVIVAL_COST_PER_TICK * 6 * 0.5  // half of 6-tick spending
-    const merchant = (() => {
+    const spendAmount = NPC_SURVIVAL_COST_PER_TICK * 6 * CONSUMER_SPEND_FRACTION
+    // ~40% of spend cycles prefer craftsman over merchant (buying manufactured goods)
+    const preferCraftsman = (npc.id + Math.floor(state.tick / 6)) % CONSUMER_CRAFTSMAN_MODULO < CONSUMER_CRAFTSMAN_CYCLES
+    const findSeller = (role: string) => {
       for (const tid of npc.weak_ties) {
         const t = state.npcs[tid]
-        if (t?.lifecycle.is_alive && t.role === 'merchant') return t
+        if (t?.lifecycle.is_alive && t.role === role) return t
       }
       for (const tid of npc.strong_ties) {
         const t = state.npcs[tid]
-        if (t?.lifecycle.is_alive && t.role === 'merchant') return t
+        if (t?.lifecycle.is_alive && t.role === role) return t
       }
       return null
-    })()
-    if (merchant) {
-      npc.wealth     = clamp(npc.wealth - spendAmount, 0, 50000)
-      merchant.wealth = clamp(merchant.wealth + spendAmount, 0, 50000)
+    }
+    const seller = preferCraftsman
+      ? (findSeller('craftsman') ?? findSeller('merchant'))
+      : (findSeller('merchant') ?? findSeller('craftsman'))
+    if (seller) {
+      npc.wealth    = clamp(npc.wealth    - spendAmount, 0, 50000)
+      seller.wealth = clamp(seller.wealth + spendAmount, 0, 50000)
+      applyMutualRelation(
+        npc,
+        seller,
+        { event: 'trade_fair', competence: 0.005, intention: 0.004, affinity: 0.004, conflict: -0.004 },
+        { event: 'trade_fair', competence: 0.004, intention: 0.004, affinity: 0.003, conflict: -0.003 },
+        state.tick,
+      )
     }
   }
 
@@ -1606,6 +1832,61 @@ function wealthTick(npc: NPC, state: WorldState): void {
     }
   }
 
+  // ── Craftsman direct goods sales when socializing ────────────────────────
+  // Craftsmen sell finished goods directly to neighbors — bypassing merchants.
+  // Buyers pay for quality crafted items and feel a small happiness boost.
+  if (npc.role === 'craftsman' && npc.action_state === 'socializing'
+      && state.tick % 12 === npc.id % 12
+      && state.constitution.market_freedom >= 0.10) {
+    for (const tid of npc.strong_ties.slice(0, 3)) {
+      const buyer = state.npcs[tid]
+      if (!buyer?.lifecycle.is_alive || buyer.role === 'child') continue
+      if (buyer.role === 'craftsman') continue  // craftsmen don't buy from each other here
+      const goodsPrice = computeCraftsmanGoodsPrice(state.constitution.market_freedom, _simRestrictions.trade_mult)
+      if (buyer.wealth >= goodsPrice * 3) {
+        buyer.wealth    = clamp(buyer.wealth    - goodsPrice,                       0, 50000)
+        npc.wealth      = clamp(npc.wealth      + goodsPrice,                       0, 50000)
+        buyer.happiness = clamp(buyer.happiness + CRAFTSMAN_GOODS_HAPPINESS_BONUS,  0, 100)
+        applyMutualRelation(
+          buyer,
+          npc,
+          { event: 'trade_fair', competence: 0.012, intention: 0.010, affinity: 0.010, conflict: -0.010 },
+          { event: 'trade_fair', competence: 0.008, intention: 0.008, affinity: 0.008, conflict: -0.008 },
+          state.tick,
+        )
+        break
+      }
+    }
+  }
+
+  // ── Farmer direct food sales to hungry neighbors when socializing ─────────
+  // Surplus farmers sell food directly to hungry neighbors — cutting out the
+  // merchant for immediate community relief and extra farm income.
+  if (npc.role === 'farmer' && npc.action_state === 'socializing'
+      && state.tick % 12 === npc.id % 12
+      && productivity > FARMER_FOOD_MIN_PRODUCTIVITY
+      && state.constitution.market_freedom >= 0.05) {
+    for (const tid of npc.strong_ties.slice(0, 3)) {
+      const hungry = state.npcs[tid]
+      if (!hungry?.lifecycle.is_alive || hungry.role === 'child') continue
+      if (hungry.hunger < FARMER_FOOD_HUNGER_THRESHOLD) continue
+      const foodPrice = computeFarmerFoodPrice(state.constitution.market_freedom, _simRestrictions.trade_mult)
+      if (hungry.wealth >= foodPrice) {
+        hungry.wealth = clamp(hungry.wealth - foodPrice,                   0, 50000)
+        npc.wealth    = clamp(npc.wealth    + foodPrice,                   0, 50000)
+        hungry.hunger = clamp(hungry.hunger - FARMER_FOOD_HUNGER_RELIEF,  0, 100)
+        applyMutualRelation(
+          hungry,
+          npc,
+          { event: 'helped_direct', competence: 0.012, intention: 0.014, affinity: 0.012, conflict: -0.010 },
+          { event: 'trade_fair', competence: 0.008, intention: 0.010, affinity: 0.008, conflict: -0.008 },
+          state.tick,
+        )
+        break
+      }
+    }
+  }
+
   // ── Merchant lending (once per day, staggered) ─────────────────────────
   // Planned economies and usury-banning regimes block private lending.
   if (npc.role === 'merchant' && npc.wealth > 1000
@@ -1631,6 +1912,13 @@ function wealthTick(npc: NPC, state: WorldState): void {
         tick: state.tick,
       })
       if (borrower.memory.length > 10) borrower.memory.shift()
+      applyMutualRelation(
+        borrower,
+        npc,
+        { event: 'lent_money', competence: 0.020, intention: 0.016, affinity: 0.012, conflict: 0.010 },
+        { event: 'lent_money', competence: 0.010, intention: 0.008, affinity: 0.010, conflict: 0.008 },
+        state.tick,
+      )
       break   // one loan per merchant per day
     }
   }
@@ -1647,6 +1935,13 @@ function wealthTick(npc: NPC, state: WorldState): void {
       creditor.trust_in.community.intention = clamp(creditor.trust_in.community.intention - 0.04, 0, 1)
       npc.fear      = clamp(npc.fear      + 20, 0, 100)
       npc.grievance  = clamp(npc.grievance  + 15, 0, 100)
+      applyMutualRelation(
+        npc,
+        creditor,
+        { event: 'defaulted_debt', competence: -0.020, intention: -0.030, affinity: -0.020, conflict: 0.040 },
+        { event: 'defaulted_debt', competence: -0.030, intention: -0.040, affinity: -0.025, conflict: 0.055 },
+        state.tick,
+      )
       npc.debt = 0; npc.debt_to = null
     } else {
       // Normal repayment: 5% of current wealth per day
@@ -1654,6 +1949,13 @@ function wealthTick(npc: NPC, state: WorldState): void {
       npc.wealth      = clamp(npc.wealth      - repayment, 0, 50000)
       creditor.wealth  = clamp(creditor.wealth + repayment, 0, 50000)
       npc.debt -= repayment
+      applyMutualRelation(
+        npc,
+        creditor,
+        { event: 'repaid_debt', competence: 0.008, intention: 0.010, affinity: 0.006, conflict: -0.010 },
+        { event: 'repaid_debt', competence: 0.010, intention: 0.012, affinity: 0.006, conflict: -0.012 },
+        state.tick,
+      )
       if (npc.debt < 0.01) { npc.debt = 0; npc.debt_to = null }
     }
   }
@@ -1812,6 +2114,8 @@ function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[])
           witness.grievance = clamp(witness.grievance + 5, 0, 100)
           // Witnesses develop enmity toward the criminal perpetrator
           addEnmity(witness, npc.id)
+          // Record the witnessed crime in the direct relation map
+          applyRelationDelta(witness, npc, { event: 'witnessed_crime', conflict: 0.12, affinity: -0.08, intention: -0.10 }, state.tick)
         }
       }
       events?.push({ type: 'crime', npc })
@@ -1838,6 +2142,8 @@ function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[])
           witness.fear     = clamp(witness.fear     + 5, 0, 100)
           witness.grievance = clamp(witness.grievance + 8, 0, 100)
           addEnmity(witness, npc.id)
+          // Record the recidivism witness event — stronger than first offence
+          applyRelationDelta(witness, npc, { event: 'witnessed_crime', conflict: 0.18, affinity: -0.12, intention: -0.14 }, state.tick)
         }
       }
       events?.push({ type: 'crime', npc })

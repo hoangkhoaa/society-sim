@@ -211,6 +211,21 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;')
 }
 
+/** Emoji icons for each direct-relation event type. */
+const RELATION_EVENT_ICONS: Record<string, string> = {
+  trade_fair:      '🤝',
+  tutored:         '📚',
+  treated:         '💊',
+  lent_money:      '💰',
+  repaid_debt:     '✅',
+  defaulted_debt:  '❌',
+  conflict:        '⚔️',
+  helped_direct:   '🤲',
+  persuaded:       '💬',
+  reconciled:      '🕊️',
+  witnessed_crime: '👁',
+}
+
 function renderNPCChatThread(history: NPCChatTurn[], npcName: string, root: ParentNode = document): void {
   const thread = root.querySelector('#sp-chat-thread')
   if (!thread) return
@@ -956,6 +971,68 @@ function renderStatic(npc: NPC, state: WorldState): string {
     </div>`
   })() : ''
 
+  const relationEntries = Object.entries(npc.relation_map ?? {})
+    .map(([id, edge]) => ({
+      id: Number(id),
+      edge,
+      score: (edge.competence + edge.intention + edge.affinity) / 3 - edge.conflict,
+    }))
+    .filter(({ id }) => state.npcs[id]?.lifecycle.is_alive)
+
+  const relationSection = (() => {
+    // ── Top-5 relation edges ───────────────────────────────────────────────
+    const edgeHtml = relationEntries.length > 0 ? (() => {
+      const sorted = [...relationEntries].sort((a, b) => b.score - a.score)
+      const topPos = sorted.slice(0, 3)
+      const topNeg = sorted.slice(-2).filter(e => e.score < 0.30 && e.edge.conflict > 0.20)
+      const seenIds = new Set<number>()
+      const topEdges = [...topPos, ...topNeg].filter(e => {
+        if (seenIds.has(e.id)) return false
+        seenIds.add(e.id); return true
+      }).slice(0, 5)
+      return topEdges.map(({ id, edge, score }) => {
+        const other = state.npcs[id]
+        if (!other) return ''
+        const barPct  = Math.round(Math.max(0, Math.min(1, score)) * 100)
+        const barColor = score > 0.55 ? '#5dcaa5' : score < 0.25 ? '#e24b4b' : '#ef9f27'
+        const lastIcon = RELATION_EVENT_ICONS[edge.last_event_type] ?? '•'
+        return `
+        <div class="sp-rel-row">
+          <button class="sp-npc-link sp-rel-name" data-npc-id="${other.id}">${escapeHtml(other.name)}</button>
+          <div class="sp-rel-bar-wrap"><div class="sp-rel-bar-fill" style="width:${barPct}%;background:${barColor}"></div></div>
+          <span class="sp-rel-event-icon" title="${escapeHtml(edge.last_event_type)}">${lastIcon}</span>
+        </div>`
+      }).join('')
+    })() : ''
+
+    // ── Rolling relation history (last 8, newest first) ────────────────────
+    const history = [...(npc.relation_history ?? [])].reverse().slice(0, 8)
+    const historyHtml = history.length > 0 ? [
+      `<div class="sp-section-title" style="margin-top:8px;margin-bottom:4px">Recent Events</div>`,
+      ...history.map(ev => {
+        const other = state.npcs[ev.other_id]
+        if (!other?.lifecycle.is_alive) return ''
+        const icon     = RELATION_EVENT_ICONS[ev.type] ?? '•'
+        const netDelta = ev.delta_affinity + ev.delta_competence + ev.delta_intention - ev.delta_conflict * 2
+        const dClass   = netDelta >= 0 ? 'sp-rel-delta-pos' : 'sp-rel-delta-neg'
+        const dStr     = netDelta >= 0 ? '▲' : '▼'
+        return `
+        <div class="sp-rel-timeline-row">
+          <span class="sp-rel-event-icon">${icon}</span>
+          <button class="sp-npc-link sp-rel-other" data-npc-id="${other.id}">${escapeHtml(other.name)}</button>
+          <span class="${dClass}" style="margin-left:auto">${dStr}</span>
+        </div>`
+      }),
+    ].join('') : ''
+
+    return `
+    <div class="sp-section">
+      <div class="sp-section-title">Relations</div>
+      <div class="sp-rel-list">${edgeHtml}</div>
+      ${historyHtml}
+    </div>`
+  })()
+
   return `
     <!-- Pixel character avatar -->
     ${renderPixelCharacterSection()}
@@ -1108,6 +1185,8 @@ function renderStatic(npc: NPC, state: WorldState): string {
         </div>`
       })()}
     </div>
+
+    ${relationSection}
 
     <!-- Status flags -->
     ${(npc.sick || npc.criminal_record || (npc.enmity_ids?.length ?? 0) > 0) ? `

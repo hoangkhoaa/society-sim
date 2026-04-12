@@ -96,3 +96,56 @@ export function computeHappinessScore(
 ): number {
   return clamp(happinessFn(stressPenalty, relativeStatus, inequalityPain, memoryEffect, trustBonus), 0, 100)
 }
+
+// ── Trade computation helpers ──────────────────────────────────────────────
+//
+// Pure functions that encode the economic exchange formulas used in wealthTick.
+// Keeping them here (a) separates policy-relevant math from engine mechanics,
+// (b) makes them easy to find and reason about, and (c) mirrors the
+// refactorable-formula philosophy of the rest of this module.
+
+import {
+  FARMER_SUPPLY_SUBSISTENCE_FLOOR,
+  FARMER_SUPPLY_SURPLUS_SCALE,
+  FARMER_SUPPLY_SALE_VOLUME,
+  SCHOLAR_TUITION_BASE,
+  HEALTHCARE_FEE_BASE,
+  CRAFTSMAN_MATERIAL_COST_BASE,
+  CRAFTSMAN_GOODS_PRICE_BASE,
+  FARMER_FOOD_PRICE_BASE,
+} from '../constants/npc-wealth-trade'
+
+/** Fraction of productivity available as surplus produce (above subsistence floor). */
+export function computeFarmerSurplusRate(productivity: number): number {
+  return clamp(productivity - FARMER_SUPPLY_SUBSISTENCE_FLOOR, 0, 1) * FARMER_SUPPLY_SURPLUS_SCALE
+}
+
+/** Market value of a farmer's surplus sale given current market conditions. */
+export function computeFarmerSaleValue(surplusRate: number, market_freedom: number, trade_mult: number): number {
+  return surplusRate * FARMER_SUPPLY_SALE_VOLUME * market_freedom * trade_mult
+}
+
+/** Scholar tuition charged per student session. */
+export function computeScholarTuition(market_freedom: number): number {
+  return SCHOLAR_TUITION_BASE * market_freedom
+}
+
+/** Healthcare consultation fee charged per patient session. */
+export function computeHealthcareFee(market_freedom: number): number {
+  return HEALTHCARE_FEE_BASE * market_freedom
+}
+
+/** Cost of raw materials purchased by a craftsman per supply run. */
+export function computeCraftsmanMaterialCost(market_freedom: number, trade_mult: number): number {
+  return CRAFTSMAN_MATERIAL_COST_BASE * market_freedom * trade_mult
+}
+
+/** Price of craftsman goods sold directly to neighbours while socialising. */
+export function computeCraftsmanGoodsPrice(market_freedom: number, trade_mult: number): number {
+  return CRAFTSMAN_GOODS_PRICE_BASE * market_freedom * trade_mult
+}
+
+/** Price of farmer food sold directly to hungry neighbours while socialising. */
+export function computeFarmerFoodPrice(market_freedom: number, trade_mult: number): number {
+  return FARMER_FOOD_PRICE_BASE * market_freedom * trade_mult
+}

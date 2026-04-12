@@ -65,6 +65,7 @@ const translations = {
     'panels.economics':    '💰 Economics',
     'panels.npc_contacts': '📇 NPC contacts',
     'panels.network':      '🕸 Social ties',
+    'panels.conflict':     '⚔️ Conflict',
     'panels.map_legend':   '📋 Map legend',
     'npc_contacts.empty':
       'No contacts yet — click an NPC on the map (spotlight or chat).',
@@ -209,6 +210,7 @@ const translations = {
       'Warm gold — spouse link when both are in the same district and close on the map',
     'map.legend.spotlight':
       'Click someone — orange close ties, blue dashed info links, pale rings for acquaintances',
+    'map.conflict_overlay_idle': 'No active conflict right now',
     'map.legend.roles_title': 'Dot colors — roles',
     'map.initializing':       'Initializing…',
     'map.note_btn_title':     'Map notes',
@@ -436,6 +438,8 @@ const translations = {
     'engine.opinion_pro_chronicle': 'Opinion leaders rallied support for institutional stability.',
     'engine.schism_chronicle': 'Ideological schism: information bridges collapsed as society split into rival camps.',
     'engine.schism_feed': 'Society fractures into opposing camps as polarization crosses a critical threshold.',
+    'engine.persuasion_win': '{winner} has convinced {loser} to reconsider their views.',
+    'engine.reconciliation': '{a} and {b} have reconciled — mediated by {mediator}.',
     'engine.season.spring': '{season} — farmers return to the fields. Food stores running low.',
     'engine.season.summer': '{season} — crops are growing. The society settles into its rhythm.',
     'engine.season.autumn': '{season} — harvest season. Food production at its peak.',
@@ -812,6 +816,7 @@ const translations = {
     'panels.economics':    '💰 Kinh tế',
     'panels.npc_contacts': '📇 NPC đã gặp',
     'panels.network':      '🕸 Quan hệ (đường nối)',
+    'panels.conflict':     '⚔️ Xung đột',
     'panels.map_legend':   '📋 Chú thích bản đồ',
     'npc_contacts.empty':
       'Chưa có ai — bấm NPC trên bản đồ (spotlight hoặc chat).',
@@ -956,6 +961,7 @@ const translations = {
       'Vàng ấm — vợ/chồng khi cùng khu trên bản đồ và đứng gần nhau',
     'map.legend.spotlight':
       'Bấm một người — cam là quan hệ thân, xanh nét đứt là tin tức, vòng nhạt là quen biết xa',
+    'map.conflict_overlay_idle': 'Hiện chưa có xung đột trực tiếp',
     'map.legend.roles_title': 'Màu chấm — nghề & vai trò',
     'map.initializing':       'Đang khởi tạo…',
     'map.note_btn_title':     'Ghi chú bản đồ',
@@ -1182,6 +1188,8 @@ const translations = {
     'engine.opinion_pro_chronicle': 'Các thủ lĩnh dư luận đã tập hợp sự ủng hộ cho ổn định thể chế.',
     'engine.schism_chronicle': 'Rạn nứt tư tưởng: các cầu nối thông tin sụp đổ khi xã hội tách thành những phe đối nghịch.',
     'engine.schism_feed': 'Xã hội rạn nứt thành các phe đối lập khi phân cực vượt ngưỡng nguy hiểm.',
+    'engine.persuasion_win': '{winner} đã thuyết phục {loser} xem xét lại quan điểm của mình.',
+    'engine.reconciliation': '{a} và {b} đã hòa giải — nhờ sự can thiệp của {mediator}.',
     'engine.season.spring': '{season} — nông dân trở lại đồng ruộng. Kho lương bắt đầu xuống thấp.',
     'engine.season.summer': '{season} — mùa màng đang phát triển. Xã hội ổn định vào nhịp vận hành.',
     'engine.season.autumn': '{season} — mùa thu hoạch. Sản lượng lương thực đạt đỉnh.',

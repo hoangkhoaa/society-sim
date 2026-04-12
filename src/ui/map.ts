@@ -477,6 +477,12 @@ export function setMapNetworkVisible(value: boolean) {
   _needsMapRedraw = true
 }
 
+let _mapConflictOverlayVisible = false
+export function setMapConflictOverlayVisible(value: boolean) {
+  _mapConflictOverlayVisible = value
+  _needsMapRedraw = true
+}
+
 // ── Map shake / flash effect ───────────────────────────────────────────────
 
 let _shakeEndTime  = 0
@@ -1349,6 +1355,99 @@ function drawZones(world: WorldState, W: number, H: number, bgMode: MapBackgroun
 }
 
 // ── Selected NPC relationship overlay ─────────────────────────────────────────
+// ── Conflict / enmity overlay ──────────────────────────────────────────────────
+// Red dashed lines between same-zone enmity pairs; pulsing rings on confront NPCs.
+// Drawn before NPC dots so rings stay behind dots.
+
+function drawConflictOverlay(
+  world: WorldState,
+  posMap: Map<number, { px: number; py: number }>,
+): void {
+  if (!ctx) return
+  const pulse = 0.5 + 0.5 * Math.sin(frameCount * 0.06)
+  const drawn = new Set<string>()
+  let lineCount = 0
+  let confrontCount = 0
+  let tensionCount = 0
+
+  // Enmity lines
+  for (const npc of world.npcs) {
+    if (lineCount >= 30) break
+    if (!npc.lifecycle.is_alive || !npc.enmity_ids?.length) continue
+    const aPos = posMap.get(npc.id)
+    if (!aPos) continue
+    for (const eid of npc.enmity_ids) {
+      if (lineCount >= 30) break
+      const enemy = world.npcs[eid]
+      if (!enemy?.lifecycle.is_alive) continue
+      const pairKey = npc.id < eid ? `${npc.id}-${eid}` : `${eid}-${npc.id}`
+      if (drawn.has(pairKey)) continue
+      drawn.add(pairKey)
+      const bPos = posMap.get(eid)
+      if (!bPos) continue
+      const dist = Math.hypot(aPos.px - bPos.px, aPos.py - bPos.py)
+      // Allow cross-zone grudges to be visible too (still bounded for readability).
+      if (dist > 420) continue
+      ctx.beginPath()
+      ctx.moveTo(aPos.px, aPos.py)
+      ctx.lineTo(bPos.px, bPos.py)
+      const sameZone = npc.zone === enemy.zone
+      ctx.strokeStyle = sameZone
+        ? `rgba(230,55,55,${0.40 + pulse * 0.28})`
+        : `rgba(230,90,55,${0.30 + pulse * 0.20})`
+      ctx.lineWidth = sameZone ? 1.5 : 1.0
+      ctx.setLineDash(sameZone ? [4, 4] : [2, 5])
+      ctx.stroke()
+      ctx.setLineDash([])
+      lineCount++
+    }
+  }
+
+  // Confront rings
+  for (const npc of world.npcs) {
+    if (!npc.lifecycle.is_alive || npc.action_state !== 'confront') continue
+    confrontCount++
+    const pos = posMap.get(npc.id)
+    if (!pos) continue
+    ctx.beginPath()
+    ctx.arc(pos.px, pos.py, 7 + pulse * 3, 0, Math.PI * 2)
+    ctx.strokeStyle = `rgba(220,50,50,${0.55 + pulse * 0.28})`
+    ctx.lineWidth = 1.6
+    ctx.stroke()
+  }
+
+  // Secondary signal: NPCs carrying active enmity get a faint tension ring.
+  for (const npc of world.npcs) {
+    if (!npc.lifecycle.is_alive || (npc.enmity_ids?.length ?? 0) === 0) continue
+    tensionCount++
+    const pos = posMap.get(npc.id)
+    if (!pos) continue
+    ctx.beginPath()
+    ctx.arc(pos.px, pos.py, 5.5 + pulse * 1.5, 0, Math.PI * 2)
+    ctx.strokeStyle = `rgba(255,120,80,${0.28 + pulse * 0.16})`
+    ctx.lineWidth = 1.0
+    ctx.stroke()
+  }
+
+  // If overlay is on but there are no active signals, show a subtle hint.
+  if (lineCount === 0 && confrontCount === 0 && tensionCount === 0 && ctx.canvas) {
+    const w = ctx.canvas.width
+    const h = ctx.canvas.height
+    const label = String(t('map.conflict_overlay_idle'))
+    ctx.save()
+    ctx.font = '600 10px system-ui'
+    const tw = ctx.measureText(label).width
+    const x = w - tw - 16
+    const y = h - 14
+    ctx.fillStyle = 'rgba(20,20,20,0.55)'
+    ctx.fillRect(x - 6, y - 10, tw + 12, 16)
+    ctx.fillStyle = 'rgba(255,190,160,0.85)'
+    ctx.fillText(label, x, y + 2)
+    ctx.restore()
+  }
+}
+
+// ── Selected NPC relationship overlay ─────────────────────────────────────────
 // Drawn BEFORE NPC dots so lines appear underneath dots.
 // The selection glow ring is drawn AFTER the dots inside drawNPCs.
 
@@ -1627,6 +1726,7 @@ function drawNPCs(world: WorldState, W: number, H: number) {
 
   // ── Selected NPC relationship overlay (over normal ties, under dots) ────
   if (_mapNetworkVisible) drawSelectedNPCTies(world, posMap)
+  if (_mapConflictOverlayVisible) drawConflictOverlay(world, posMap)
 
   // ── NPC dots ────────────────────────────────────────────────────────────
   for (const npc of world.npcs) {

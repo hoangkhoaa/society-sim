@@ -8,11 +8,17 @@ import {
   WEAK_TIE_REPLENISHMENT_THRESHOLD,
   WEAK_TIE_REPLENISHMENT_SAMPLE_RATE,
 } from '../constants/network-weak-ties'
+import {
+  NPC_PERSUASION_MIN_WORLDVIEW_GAP,
+  NPC_PERSUASION_MAX_SHIFT,
+} from '../constants/npc-social-limits'
+import { applyMutualRelation } from '../sim/npc'
 
 // ── Network dynamics cooldowns ───────────────────────────────────────────
 let lastSchismTick = -9999
 let lastOpinionFeedTick = -9999
 let lastCrisisTick = -9999
+let lastPersuasionFeedTick = -9999
 
 // ── Network Maintenance ───────────────────────────────────────────────────────
 
@@ -119,7 +125,18 @@ export function formOrganicStrongTies(state: WorldState): void {
       const b = group[Math.floor(Math.random() * group.length)]
       if (a.id === b.id || a.strong_ties.includes(b.id)) continue
       if (b.strong_ties.length >= MAX_STRONG_TIES) continue
-      if (Math.random() < 0.003) {  // ~0.3% daily chance — real friendships take weeks/months
+      // Personality compatibility: loyal↔loyal bonds faster; greed↔loyalty repels
+      const loyalA = a.personality?.loyalty ?? 0.5
+      const loyalB = b.personality?.loyalty ?? 0.5
+      const greedA = a.personality?.greed ?? 0.5
+      const greedB = b.personality?.greed ?? 0.5
+      const aggrA  = a.personality?.aggression ?? 0.5
+      const aggrB  = b.personality?.aggression ?? 0.5
+      const personalityBoost   = loyalA * loyalB * 0.40 + aggrA * aggrB * 0.15
+      const personalityPenalty = Math.max(greedA - 0.6, 0) * Math.max(loyalB - 0.6, 0) * 0.5
+                                + Math.max(greedB - 0.6, 0) * Math.max(loyalA - 0.6, 0) * 0.5
+      const tieP = clamp(0.003 * (1 + personalityBoost - personalityPenalty), 0.0005, 0.010)
+      if (Math.random() < tieP) {  // ~0.3% base daily chance — real friendships take weeks/months
         a.strong_ties.push(b.id)
         b.strong_ties.push(a.id)
         state.network.strong.get(a.id)?.add(b.id)
@@ -437,6 +454,74 @@ export function applyOpinionLeaderDynamics(state: WorldState): void {
     } else if (proGov > antiGov) {
       addFeedRaw(t('engine.opinion_pro_feed') as string, 'political', state.year, state.day)
       addChronicle(t('engine.opinion_pro_chronicle') as string, state.year, state.day, 'major')
+    }
+  }
+}
+
+// ── Direct Persuasion ────────────────────────────────────────────────────────
+// Socializing NPCs with ideological gaps can debate and shift each other's
+// worldview. Winner biases loser's view ~3–5%. Personality and influence matter.
+// Staggered by NPC id so cost stays O(N/24) per tick.
+
+export function applyDirectPersuasion(state: WorldState): void {
+  const living = state.npcs.filter(n => n.lifecycle.is_alive)
+  for (const npc of living) {
+    if (state.tick % 24 !== npc.id % 24) continue
+    if (npc.action_state !== 'socializing') continue
+
+    // Pick one candidate from strong or info ties in same zone
+    const candidates = [...npc.strong_ties, ...npc.info_ties]
+      .map(id => state.npcs[id])
+      .filter((o): o is NPC => !!(o?.lifecycle.is_alive && o.zone === npc.zone && o.action_state === 'socializing'))
+    if (candidates.length === 0) continue
+
+    const other = candidates[Math.floor(Math.random() * candidates.length)]
+
+    // Find the worldview dimension with the largest gap
+    const dims = ['collectivism', 'authority_trust', 'risk_tolerance'] as const
+    let maxGap = 0
+    let debateDim: (typeof dims)[number] = 'collectivism'
+    for (const dim of dims) {
+      const gap = Math.abs(npc.worldview[dim] - other.worldview[dim])
+      if (gap > maxGap) { maxGap = gap; debateDim = dim }
+    }
+    if (maxGap < NPC_PERSUASION_MIN_WORLDVIEW_GAP) continue  // Not enough ideological distance to debate
+
+    // Persuasion scores: influence + ambition vs loyalty-backed resistance
+    const npcStrength    = npc.influence_score * 0.6 + (npc.personality?.ambition   ?? 0.5) * 0.4
+    const npcResistance  = (npc.personality?.loyalty  ?? 0.5) * 0.6 + 0.4
+    const othStrength    = other.influence_score * 0.6 + (other.personality?.ambition  ?? 0.5) * 0.4
+    const othResistance  = (other.personality?.loyalty ?? 0.5) * 0.6 + 0.4
+
+    const npcScore = npcStrength  / othResistance
+    const othScore = othStrength  / npcResistance
+
+    const npcWins = npcScore >= othScore
+    const winner  = npcWins ? npc : other
+    const loser   = npcWins ? other : npc
+
+    // Loser's worldview nudges toward winner's on the debated dimension
+    const shift = 0.03 + Math.random() * (NPC_PERSUASION_MAX_SHIFT - 0.03)
+    loser.worldview[debateDim] = clamp(
+      loser.worldview[debateDim] + (winner.worldview[debateDim] - loser.worldview[debateDim]) * shift,
+      0, 1,
+    )
+
+    // Winner: slight competence/intention gain; loser: small conflict bump
+    applyMutualRelation(
+      winner, loser,
+      { event: 'persuaded', competence: 0.015, intention: 0.010, affinity: -0.005 },
+      { event: 'persuaded', competence: -0.010, intention: -0.015, affinity: -0.010, conflict: 0.020 },
+      state.tick,
+    )
+
+    // Emit feed entry at most once per 15 sim-days
+    if (state.tick - lastPersuasionFeedTick > 15 * 24) {
+      lastPersuasionFeedTick = state.tick
+      addFeedRaw(
+        tf('engine.persuasion_win', { winner: winner.name, loser: loser.name }) as string,
+        'info', state.year, state.day,
+      )
     }
   }
 }

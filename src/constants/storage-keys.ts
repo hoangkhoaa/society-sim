@@ -24,6 +24,9 @@ export const UI_ECON_VISIBLE_KEY = 'ui_econ_visible'
 /** NPC contacts panel (spotlight / chat history). */
 export const UI_NPC_CONTACTS_VISIBLE_KEY = 'ui_npc_contacts_visible'
 
+/** Conflict / enmity overlay on the map canvas. */
+export const UI_CONFLICT_OVERLAY_KEY = 'ui_conflict_overlay_visible'
+
 /** Serialized `GameSettings` JSON (see `game-settings-defaults.ts`). */
 export const GAME_SETTINGS_STORAGE_KEY = 'game_settings_v1'
 

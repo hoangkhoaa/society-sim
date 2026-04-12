@@ -15,9 +15,9 @@ import {
   maintainNetworkLinks, refreshInfoTies, formOrganicStrongTies, replenishWeakTies,
   spreadSolidarity, checkLaborStrikes, computeBridgeScores,
   applyMentorshipDynamics, applyOpinionLeaderDynamics, propagateCrossZoneOrganizing,
-  applyCrisisBonding, checkIdeologicalSchism,
+  applyCrisisBonding, checkIdeologicalSchism, applyDirectPersuasion,
 } from './network-dynamics'
-import { checkSeasonTransition, checkCommunityGroups, checkOrganizingOutcome, checkTrustRecovery } from './social'
+import { checkSeasonTransition, checkCommunityGroups, checkOrganizingOutcome, checkTrustRecovery, checkFeudsAndReconciliation } from './social'
 import {
   applyWelfare, applyStateRationing, applyFeudalTribute, applyIncomeTax, getIncomeTaxRate,
   applyGovernmentWages, spendTaxRevenue, applyIncomeInequalityEffects, processInheritance, checkWealthMobility,
@@ -158,11 +158,13 @@ export function tick(state: WorldState): void {
     maintainNetworkLinks(state)
     applyMentorshipDynamics(state)
     applyOpinionLeaderDynamics(state)
+    applyDirectPersuasion(state)
     propagateCrossZoneOrganizing(state)
     applyCrisisBonding(state)
     formOrganicStrongTies(state)
     computeBridgeScores(state)
     checkIdeologicalSchism(state)
+    checkFeudsAndReconciliation(state)
 
     // Info tie refresh: every 30 sim-days (720 ticks)
     if (state.day % 30 === 0) {

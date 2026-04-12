@@ -79,6 +79,39 @@ export interface MemoryEntry {
   tick: number
 }
 
+export type NPCRelationEventType =
+  | 'trade_fair'
+  | 'tutored'
+  | 'treated'
+  | 'lent_money'
+  | 'repaid_debt'
+  | 'defaulted_debt'
+  | 'conflict'
+  | 'helped_direct'
+  | 'persuaded'
+  | 'reconciled'
+  | 'witnessed_crime'
+
+export interface NPCRelationEdge {
+  competence: number            // perceived ability of this specific NPC (0-1)
+  intention: number             // perceived goodwill of this specific NPC (0-1)
+  affinity: number              // social closeness / liking (0-1)
+  conflict: number              // active interpersonal tension (0-1)
+  event_count: number           // number of recorded interactions on this edge
+  last_event_tick: number       // recency marker for decay/eviction
+  last_event_type: NPCRelationEventType
+}
+
+export interface NPCRelationEvent {
+  other_id: number
+  tick: number
+  type: NPCRelationEventType
+  delta_competence: number
+  delta_intention: number
+  delta_affinity: number
+  delta_conflict: number
+}
+
 // ── Worldview ──────────────────────────────────────────────────────────────
 
 export interface Worldview {
@@ -237,6 +270,12 @@ export interface NPC {
   // dropped when the list overflows.  Enemies in the same zone escalate to confront.
   // Optional for backward-compat with any serialised state that predates this field.
   enmity_ids?: number[]
+
+  // ── Direct NPC relationship graph (sparse) ──────────────────────────────
+  // Captures interpersonal trust and tension toward specific NPC ids.
+  // Optional for backward-compat with saves created before this system.
+  relation_map?: Record<number, NPCRelationEdge>
+  relation_history?: NPCRelationEvent[]
 }
 
 // ── Constitution ───────────────────────────────────────────────────────────

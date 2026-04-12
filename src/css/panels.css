@@ -584,3 +584,55 @@ body[data-theme='light'] .sp-pixel-section--flush { background: #eceef2; }
 body[data-theme='light'] .sp-pixel-canvas {
   background: transparent;
 }
+
+/* ── Direct Relations Panel ────────────────────────────────────────────────── */
+.sp-rel-badges {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.sp-rel-badge {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: #181818;
+  border: 1px solid #2a2a2a;
+  color: #666;
+  line-height: 1.7;
+}
+.sp-rel-badge--strong { border-color: rgba(255,165,50,0.30); color: #b07040; }
+.sp-rel-badge--info   { border-color: rgba(80,160,255,0.30); color: #4080b0; }
+.sp-rel-badge--weak   { border-color: rgba(180,180,210,0.22); color: #6868a0; }
+.sp-rel-badge--enmity { border-color: rgba(220,60,60,0.35);  color: #b04040; }
+.sp-rel-list  { margin-bottom: 2px; }
+.sp-rel-row   { display: flex; align-items: center; gap: 5px; margin-bottom: 5px; }
+.sp-rel-name  {
+  font-size: 10px;
+  flex: 0 0 72px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  text-align: left;
+}
+.sp-rel-bar-wrap {
+  flex: 1; height: 3px;
+  background: #1e1e1e; border-radius: 2px; overflow: hidden;
+}
+.sp-rel-bar-fill    { height: 100%; border-radius: 2px; }
+.sp-rel-event-icon  { font-size: 10px; flex-shrink: 0; line-height: 1; }
+.sp-rel-timeline-row {
+  display: flex; align-items: center; gap: 4px;
+  margin-bottom: 3px; font-size: 10px;
+}
+.sp-rel-other {
+  font-size: 10px; flex: 1;
+  text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sp-rel-delta-pos { color: #5dcaa5; font-size: 9px; }
+.sp-rel-delta-neg { color: #e24b4b; font-size: 9px; }
+/* Light theme */
+body[data-theme='light'] .sp-rel-badge { background: #f0f0f0; border-color: #ddd; color: #888; }
+body[data-theme='light'] .sp-rel-badge--strong { border-color: rgba(180,100,30,0.4);  color: #8c5020; }
+body[data-theme='light'] .sp-rel-badge--info   { border-color: rgba(30,100,200,0.3);  color: #2060a0; }
+body[data-theme='light'] .sp-rel-badge--weak   { border-color: rgba(100,100,180,0.3); color: #5050a0; }
+body[data-theme='light'] .sp-rel-badge--enmity { border-color: rgba(180,30,30,0.35);  color: #902020; }
+body[data-theme='light'] .sp-rel-bar-wrap      { background: #e0e0e0; }
