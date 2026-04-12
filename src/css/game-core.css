@@ -585,6 +585,89 @@ body[data-theme='light'] .press-censored-note { color: #a22; }
   font-size: 10px;
 }
 
+/* ── Chronicle Tabs ── */
+#chronicle-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid #1a1a1a;
+  flex-shrink: 0;
+}
+.chronicle-tab {
+  flex: 1;
+  padding: 4px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: #555;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.chronicle-tab:hover { color: #999; }
+.chronicle-tab.active { color: #c0a060; border-bottom-color: #c0a060; }
+
+/* ── Breakthrough Log ── */
+#breakthrough-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+#breakthrough-log::-webkit-scrollbar { width: 2px; }
+#breakthrough-log::-webkit-scrollbar-thumb { background: #1a1a1a; border-radius: 2px; }
+.chronicle-pane { display: flex; flex-direction: column; gap: 0; }
+.breakthrough-entry {
+  padding: 6px 10px;
+  font-size: 11px;
+  border-bottom: 1px solid #111;
+}
+.breakthrough-header {
+  display: flex;
+  gap: 5px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  margin-bottom: 3px;
+}
+.breakthrough-icon { font-size: 12px; flex-shrink: 0; }
+.breakthrough-time { color: #444; font-size: 10px; flex-shrink: 0; }
+.breakthrough-title { color: #c0a060; font-weight: 600; }
+.breakthrough-desc { color: #555; line-height: 1.4; margin-bottom: 4px; }
+.breakthrough-changes { display: flex; flex-direction: column; gap: 4px; }
+.breakthrough-change {
+  background: #0d0d0d;
+  border-radius: 3px;
+  padding: 4px 6px;
+}
+.breakthrough-key {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  margin-bottom: 2px;
+}
+.breakthrough-expr {
+  font-family: monospace;
+  font-size: 10px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.4;
+}
+.breakthrough-expr-new { color: #5d9944; }
+.breakthrough-expr-old { color: #663333; }
+.breakthrough-delta { font-size: 11px; color: #888; margin-left: 6px; }
+
+/* Source-specific accent colors */
+.breakthrough-government_reform .breakthrough-title { color: #5b8fd4; }
+.breakthrough-science_discovery .breakthrough-title { color: #5db87f; }
+.breakthrough-god_agent .breakthrough-title         { color: #c09040; }
+
 /* Rumors sub-panel inside chronicle */
 #chronicle-rumors {
   border-bottom: 1px solid #151515;

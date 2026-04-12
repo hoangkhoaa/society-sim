@@ -3,10 +3,11 @@
 // With AI: calls LLM for contextual, regime-aware policy.
 // Without AI: deterministic fallbacks + witty routine messages.
 
-import type { WorldState, AIConfig, NPCIntervention, Constitution, NPC } from '../types'
+import type { WorldState, AIConfig, NPCIntervention, Constitution, NPC, FormulaPatch } from '../types'
 import { callAI, extractJSON } from '../ai/provider'
-import { addFeedRaw, addChronicle } from '../ui/feed'
+import { addFeedRaw, addChronicle, addBreakthroughToLog } from '../ui/feed'
 import { applyInterventions } from '../engine'
+import { recordFormulaBreakthrough } from '../engine/interventions'
 import { clamp } from './constitution'
 import { getLang, tf, type Lang } from '../i18n'
 import { getLatestHeadlines } from './press'
@@ -66,6 +67,13 @@ export interface GovernmentPolicyAI {
   worker_role?: string             // which role to target with worker_solidarity_delta
   // Public health
   health_investment?: number       // coins spent on health infrastructure (300–600); unlocks hospital_capacity for 30 days
+  /**
+   * Long-term reform: permanently patch one or more simulation formula expressions.
+   * Use for fundamental structural changes that alter how society computes macro stats.
+   * Each entry replaces the named formula for the rest of the session and is logged
+   * in `WorldState.breakthrough_log`.
+   */
+  formula_patch?: FormulaPatch[]
 }
 
 // ── Regime detection ──────────────────────────────────────────────────────────
@@ -306,6 +314,18 @@ function applyPolicy(state: WorldState, policy: GovernmentPolicyAI): void {
         ph.disease_resistance = ph.sanitation / 100
       }
     }
+  }
+
+  // Long-term structural reform: permanently patch simulation formula expressions
+  if (policy.formula_patch?.length) {
+    const record = recordFormulaBreakthrough(
+      state,
+      policy.formula_patch,
+      'government_reform',
+      policy.policy_name,
+      policy.description,
+    )
+    if (record) addBreakthroughToLog(record)
   }
 }
 

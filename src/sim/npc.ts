@@ -6,6 +6,7 @@ import { getRegimeProfile, type SimRestrictions } from './regime-config'
 import { NPC_MAX_ENMITY_IDS, NPC_SOCIAL_HUB_ZONES } from '../constants/npc-social-limits'
 import { NPC_TRADE_EFFICIENCY, NPC_MERCHANT_MARKUP, NPC_SURVIVAL_COST_PER_TICK } from '../constants/npc-wealth-trade'
 import { NPC_TRUST_DELTAS, type NpcTrustEvent } from '../constants/npc-trust-deltas'
+import { computeStressScore, computeHappinessScore } from '../formulas/npc'
 
 // ── Active sim restrictions (set once per game from regime profile) ───────────
 // Cached here to avoid calling getRegimeProfile() in the per-NPC hot path.
@@ -952,19 +953,14 @@ function decayNeeds(npc: NPC, state: WorldState): void {
 // ── Stress ─────────────────────────────────────────────────────────────────
 
 function computeStress(npc: NPC): number {
-  const h = Math.pow(npc.hunger     / 100, 1.3) * 0.30
-  const e = Math.pow(npc.exhaustion / 100, 1.2) * 0.15
-  const i = Math.pow(npc.isolation  / 100, 1.2) * 0.18
-  const f = Math.pow(npc.fear       / 100, 1.5) * 0.22
-
   const roleExpected = ROLE_WEALTH_EXPECTATION[npc.role]
   // Guard: roleExpected=0 for children — avoid division by zero.
-  const identity = roleExpected > 0
+  const identityStress = roleExpected > 0
     ? Math.max(0, (roleExpected - npc.wealth) / roleExpected) * 0.10
     : 0
   const socialBuffer = Math.min(npc.strong_ties.length, 12) / 12 * 0.08
 
-  return clamp((h + e + i + f + identity - socialBuffer) * 100, 0, 100)
+  return computeStressScore(npc.hunger, npc.exhaustion, npc.isolation, npc.fear, identityStress, socialBuffer)
 }
 
 // ── Happiness ──────────────────────────────────────────────────────────────
@@ -988,7 +984,7 @@ function computeHappiness(npc: NPC, state: WorldState): number {
   const avgTrust        = Object.values(npc.trust_in).reduce((s, t) => s + (t.competence + t.intention) / 2, 0) / 5
   const trustBonus      = avgTrust * 8
 
-  return clamp(50 - stressPenalty + relativeStatus - inequalityPain + memoryEffect + trustBonus, 0, 100)
+  return computeHappinessScore(stressPenalty, relativeStatus, inequalityPain, memoryEffect, trustBonus)
 }
 
 // ── Action Selection ───────────────────────────────────────────────────────

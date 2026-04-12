@@ -146,6 +146,22 @@ POLLUTION: natural_resources drives environmental health. When resources % < 20 
 "answer":"brief","requires_confirm":true}
 NOTE: Only triggers if no referendum is already active. Use for democratic reforms, popular demands, or player-initiated votes. The outcome is decided by NPC worldviews — not guaranteed to pass.
 
+8. FORMULA PATCH — permanently rewrite a simulation formula expression:
+{"type":"intervention","event":null,"interventions":null,
+"formula_patch":[{"key":"stability"|"polarization"|"labor_unrest"|"stress"|"happiness"|"birth_chance","expr":"<JS expression>"}],
+"answer":"brief explaining what changed and why","requires_confirm":true,"warning":"permanent and irreversible for this session"}
+Formula parameter names (MUST use exactly):
+- stability:    avgTrustGov(0-1), cohesion(0-1), food(0-100), avgStress(0-100), politicalPressure(0-100)  → result 0-100
+- polarization: stdCollectivism(0+), stdAuthority(0+), centerDrift(0-1)                                    → result 0-100
+- labor_unrest: avgSolidarity(0-100), gini(0-1)                                                             → result 0-100
+- stress:       hunger(0-100), exhaustion(0-100), isolation(0-100), fear(0-100), identityStress, socialBuffer → inner sum (×100 automatic)
+- happiness:    stressPenalty(0-55), relativeStatus(-12 to 12), inequalityPain(0-18), memoryEffect(-15 to 15), trustBonus(0-8)
+- birth_chance: baseFertility(0-1), happinessFactor(0.65-1.25), stressFactor(0.2-1), fearFactor(0.25-1), needsFactor(0.25-1), wealthFactor(0.6-1.2), trustFactor(0.75-1.1), foodFactor(0.55-1.2) → ~0.00015
+RULES for formula_patch:
+- Use only for paradigm-shifting commands (e.g. "rewrite how stress works", "change the birth formula").
+- Always set requires_confirm:true — changes are permanent.
+- Multiple formulas can be patched in one response: "formula_patch":[{...},{...}]
+
 ── LIMITS & HONEST GUIDANCE (IMPORTANT) ──
 Some requests have **no real effect** in the simulation (the engine simply does not implement them). Do **not** invent JSON that pretends they worked. Instead return type **"answer"** with a short honest explanation + **concrete guidance** for the Architect.
 
@@ -174,8 +190,9 @@ RULES:
 - To kill specific people (assassination, execution): intervention with kill:true + target:"id_list" or target:"role".
 - For events: use effects_per_tick.instant_kill_rate to override default kill fraction (e.g. 0.99 for 99% instant death).
 - Default event kill rates: nuclear_explosion~55%, tsunami~35%, meteor_strike~45%, volcanic_eruption~40%, bombing~30%, earthquake~15% — these are DEFAULTS, override via effects_per_tick if needed.
-- Multiple side-channels can combine: e.g. interventions[] + world_delta + constitution in one response.
+- Multiple side-channels can combine: e.g. interventions[] + world_delta + constitution + formula_patch in one response.
 - Constitution reform: always set requires_confirm:true.
+- Formula patch: always set requires_confirm:true — permanent change to simulation math.
 
 ZONES: "north_farm","south_farm","clinic_district","scholar_quarter","workshop_district","market_square","guard_post","plaza","residential_east","residential_west","underworld_quarter"
 
@@ -433,6 +450,7 @@ export async function handlePlayerChat(
       delete json.world_delta
       delete json.institution_deltas
       delete json.constitution
+      delete json.formula_patch
     }
     inGameHistory.push({ user: userMessage, answer: json.answer ?? raw.slice(0, 200) })
     if (inGameHistory.length > 20) inGameHistory.splice(0, 1)

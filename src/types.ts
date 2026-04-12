@@ -382,6 +382,53 @@ export interface HistoryMilestone {
   icon: string
 }
 
+// ── Formula / Parameter Runtime Patching ─────────────────────────────────
+
+/** All formula keys that can be patched at runtime. */
+export type FormulaKey =
+  | 'stability'
+  | 'polarization'
+  | 'labor_unrest'
+  | 'stress'
+  | 'happiness'
+  | 'birth_chance'
+
+/** A single formula expression patch — replaces the named formula with a new expression. */
+export interface FormulaPatch {
+  /** Which formula to replace. */
+  key: FormulaKey
+  /** New JS expression string. Must use the same parameter names as the original. */
+  expr: string
+}
+
+/** Source category for a breakthrough (used for icon/filter display). */
+export type BreakthroughSource = 'government_reform' | 'science_discovery' | 'god_agent'
+
+/**
+ * A recorded breakthrough — any permanent change to formula expressions or
+ * constitution parameters driven by a government reform, scientific discovery,
+ * or a direct god-agent command.
+ *
+ * Stored in `WorldState.breakthrough_log` so the player can review the
+ * full history of how society's underlying rules have evolved.
+ */
+export interface BreakthroughRecord {
+  id: string
+  tick: number
+  year: number
+  day: number
+  /** Human-readable category label */
+  source: BreakthroughSource
+  /** Short title shown in the log */
+  title: string
+  /** One-sentence description of what changed and why */
+  description: string
+  /** Formula patches applied (key → new expression) */
+  formula_patches?: Array<{ key: FormulaKey; prev_expr: string; new_expr: string }>
+  /** Constitution parameter deltas applied (key → delta value) */
+  constitution_patch?: Partial<Constitution>
+}
+
 // ── Institution ────────────────────────────────────────────────────────────
 
 export interface InstitutionRelation {
@@ -534,6 +581,8 @@ export interface WorldState {
   // History & rumor
   rumors: Rumor[]
   milestones: HistoryMilestone[]
+  /** Permanent formula / parameter breakthroughs — government reforms, science, god agent. */
+  breakthrough_log: BreakthroughRecord[]
   births_total: number
   immigration_total: number
 
@@ -657,6 +706,8 @@ export interface WorldDelta {
     proposed_value: number
     proposal_text: string
   }
+  /** Patch one or more simulation formula expressions permanently. */
+  formula_patch?: FormulaPatch[]
 }
 
 export interface InstitutionDelta {
@@ -676,6 +727,8 @@ export interface GodResponse {
   constitution?: Partial<Constitution>  // live constitution reform (was dead code — now applied)
   world_delta?: WorldDelta              // macro world changes (food, resources, tax, quarantine, rumors)
   institution_deltas?: InstitutionDelta[] // institution power/legitimacy/resources shifts
+  /** Direct formula expression patches — permanent change to simulation math. */
+  formula_patch?: FormulaPatch[]
 }
 
 export interface ConversationMessage {
