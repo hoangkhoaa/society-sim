@@ -59,6 +59,36 @@ export function getSeasonFactor(day: number): number {
   return 0.3
 }
 
+// Seasonal income modifier per role — models agricultural cycles and trade
+// rhythms in a pre-modern economy.  Farmers are most affected (harvest/dormant
+// cycle); craftsmen thrive in winter when farm labour demand drops; merchants
+// peak in autumn when harvest goods flood the markets; other roles are stable.
+//
+//  Farmer:    spring 0.90 | summer 1.00 | autumn 1.30 | winter 0.70
+//  Craftsman: spring 1.00 | summer 1.00 | autumn 0.95 | winter 1.08
+//  Merchant:  spring 1.00 | summer 1.00 | autumn 1.18 | winter 0.88
+//  Others:    1.00 throughout (guards, scholars, healthcare, gang, leader)
+export function getSeasonIncomeModifier(day: number, role: string): number {
+  const s = getSeason(day)
+  if (role === 'farmer') {
+    if (s === 'spring') return 0.90
+    if (s === 'summer') return 1.00
+    if (s === 'autumn') return 1.30
+    return 0.70   // winter
+  }
+  if (role === 'craftsman') {
+    if (s === 'winter') return 1.08
+    if (s === 'autumn') return 0.95
+    return 1.00
+  }
+  if (role === 'merchant') {
+    if (s === 'autumn') return 1.18
+    if (s === 'winter') return 0.88
+    return 1.00
+  }
+  return 1.00
+}
+
 // ── Zone adjacency (shared by engine & npc) ────────────────────────────────
 // Adjacency mirrors the 3-row town layout in map.ts:
 //   Row 0: north_farm | clinic_district | scholar_quarter

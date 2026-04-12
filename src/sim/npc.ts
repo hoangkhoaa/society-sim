@@ -1,6 +1,6 @@
 import type { NPC, Constitution, WorldState, Role, TrustMap, ActionState, WorkMotivationType, WorkSchedule, NPCPersonality, NPCRelationEventType } from '../types'
 import { faker } from '@faker-js/faker'
-import { clamp, gaussian, rand, randInt, weightedRandom, getSeason, ZONE_ADJACENCY } from './constitution'
+import { clamp, gaussian, rand, randInt, weightedRandom, getSeason, getSeasonIncomeModifier, ZONE_ADJACENCY } from './constitution'
 import { t, tf, tOccVariant } from '../i18n'
 import { getRegimeProfile, type SimRestrictions } from './regime-config'
 import {
@@ -24,6 +24,11 @@ import { NPC_TRADE_EFFICIENCY, NPC_MERCHANT_MARKUP, NPC_SURVIVAL_COST_PER_TICK,
   CRAFTSMAN_GOODS_HAPPINESS_BONUS,
   FARMER_FOOD_HUNGER_THRESHOLD, FARMER_FOOD_HUNGER_RELIEF, FARMER_FOOD_MIN_PRODUCTIVITY,
 } from '../constants/npc-wealth-trade'
+import {
+  CONSUMPTION_TAX_RATE,
+  EXPERIENCE_INCOME_GROWTH_RATE,
+  EXPERIENCE_INCOME_MULT_CAP,
+} from '../constants/economy-tuning'
 import { NPC_TRUST_DELTAS, type NpcTrustEvent } from '../constants/npc-trust-deltas'
 import { computeStressScore, computeHappinessScore,
   computeFarmerSurplusRate, computeFarmerSaleValue,
@@ -1534,10 +1539,39 @@ function wealthTick(npc: NPC, state: WorldState): void {
 
   const productivity = computeProductivity(npc, state)
 
+  // Experience bonus: "learning by doing" — workers gradually earn more in a stable role.
+  // daysSinceRoleStart tracks uninterrupted tenure; resets naturally on role switch.
+  const daysSinceRoleStart = (state.tick - (npc.last_role_switch_tick ?? 0)) / 24
+  const experienceBonus = Math.min(daysSinceRoleStart * EXPERIENCE_INCOME_GROWTH_RATE, EXPERIENCE_INCOME_MULT_CAP - 1)
+
+  // Technology income bonus: each discovery permanently raises income for
+  // relevant roles — modelling the real productivity gains from new knowledge.
+  //   agriculture → +10% farmer   | medicine  → +10% healthcare
+  //   commerce    → +10% merchant, +5% craftsman (higher market demand)
+  //   printing    → +5% all roles (better contracts, record-keeping, literacy)
+  //   engineering → +12% craftsman (master techniques, better workshops)
+  //   finance     → +8% merchant, +5% all productive roles (capital markets)
+  // Inline to avoid circular import with tech.ts (which imports computeProductivity).
+  let techIncomeMult = 1.0
+  for (const d of state.discoveries) {
+    if (d.id === 'printing')     { techIncomeMult += 0.05 }
+    if (d.id === 'agriculture'   && npc.role === 'farmer')     { techIncomeMult += 0.10 }
+    if (d.id === 'medicine'      && npc.role === 'healthcare') { techIncomeMult += 0.10 }
+    if (d.id === 'commerce'      && npc.role === 'merchant')   { techIncomeMult += 0.10 }
+    if (d.id === 'commerce'      && npc.role === 'craftsman')  { techIncomeMult += 0.05 }
+    if (d.id === 'engineering'   && npc.role === 'craftsman')  { techIncomeMult += 0.12 }
+    if (d.id === 'finance'       && npc.role === 'merchant')   { techIncomeMult += 0.08 }
+    if (d.id === 'finance'       && (npc.role === 'farmer' || npc.role === 'craftsman' || npc.role === 'scholar' || npc.role === 'healthcare')) { techIncomeMult += 0.05 }
+  }
+
+  // Seasonal income modifier: harvest peaks, winter slowdowns.
+  // Guards/leaders are government-paid (income_rate=0) so modifier has no effect on them.
+  const seasonMod = getSeasonIncomeModifier(state.day, npc.role)
+
   // Gross earned income: always non-negative, scales with productivity.
   // Government-paid roles earn 0 from market labor (paid via tax pool instead).
   const incomeRate   = ROLE_CONFIG[npc.role].income_rate
-  const grossIncome  = productivity * incomeRate
+  const grossIncome  = productivity * incomeRate * (1 + experienceBonus) * techIncomeMult * seasonMod
 
   // ── Farmer → Merchant supply-chain bonus ────────────────────────────────
   // Farmers with merchant contacts earn extra income by selling surplus
@@ -1672,9 +1706,11 @@ function wealthTick(npc: NPC, state: WorldState): void {
 
   // Net wealth change: gross earnings minus cost of living.
   // Government-paid roles still pay survival cost (deducted, compensated by wages).
+  const inflationMultiplier = 1 + clamp(state.inflation_rate ?? 0, 0, 2) * 0.60
+  const survivalCost = NPC_SURVIVAL_COST_PER_TICK * inflationMultiplier
   const laborIncome = ROLE_CONFIG[npc.role].govt_paid
-    ? -NPC_SURVIVAL_COST_PER_TICK                  // only cost of living; wages come from tax pool
-    : grossIncome - NPC_SURVIVAL_COST_PER_TICK     // net market income
+    ? -survivalCost                  // only cost of living; wages come from tax pool
+    : grossIncome - survivalCost     // net market income
 
   npc.wealth = clamp(npc.wealth + laborIncome, 0, 50000)
 
@@ -1683,7 +1719,7 @@ function wealthTick(npc: NPC, state: WorldState): void {
   // ~60% flows to a nearby merchant (traded goods), ~40% to a craftsman (manufactured goods).
   // Only when market freedom allows trade and NPC has enough wealth.
   if (npc.wealth > 1 && state.constitution.market_freedom >= 0.15 && state.tick % 6 === npc.id % 6) {
-    const spendAmount = NPC_SURVIVAL_COST_PER_TICK * 6 * CONSUMER_SPEND_FRACTION
+    const spendAmount = survivalCost * 6 * CONSUMER_SPEND_FRACTION
     // ~40% of spend cycles prefer craftsman over merchant (buying manufactured goods)
     const preferCraftsman = (npc.id + Math.floor(state.tick / 6)) % CONSUMER_CRAFTSMAN_MODULO < CONSUMER_CRAFTSMAN_CYCLES
     const findSeller = (role: string) => {
@@ -1701,8 +1737,20 @@ function wealthTick(npc: NPC, state: WorldState): void {
       ? (findSeller('craftsman') ?? findSeller('merchant'))
       : (findSeller('merchant') ?? findSeller('craftsman'))
     if (seller) {
-      npc.wealth    = clamp(npc.wealth    - spendAmount, 0, 50000)
-      seller.wealth = clamp(seller.wealth + spendAmount, 0, 50000)
+      // Consumption tax (VAT-style): buyer pays a small levy on top of the purchase price.
+      // The tax portion flows to the state treasury rather than to the seller.
+      // Only collected when market_freedom ≥ 0.15 (planned economies skip this).
+      const taxCut  = spendAmount * CONSUMPTION_TAX_RATE
+      const totalCost = spendAmount + taxCut
+      if (npc.wealth >= totalCost) {
+        npc.wealth    = clamp(npc.wealth    - totalCost,  0, 50000)
+        seller.wealth = clamp(seller.wealth + spendAmount, 0, 50000)
+        state.tax_pool = clamp((state.tax_pool ?? 0) + taxCut, 0, 9_999_999)
+      } else {
+        // Buyer can't afford the tax premium; fall back to tax-free purchase
+        npc.wealth    = clamp(npc.wealth    - spendAmount, 0, 50000)
+        seller.wealth = clamp(seller.wealth + spendAmount, 0, 50000)
+      }
       applyMutualRelation(
         npc,
         seller,
@@ -1714,9 +1762,13 @@ function wealthTick(npc: NPC, state: WorldState): void {
   }
 
   // Daily income: exponential moving average of gross daily earnings.
-  // EMA of daily income (coins/day). Factor 0.01 matches the govt wages formula so
-  // both market and state workers sit on the same scale: converges to grossIncome × 24.
-  npc.daily_income = npc.daily_income * 0.99 + grossIncome * 24 * 0.01
+  // Guard/leader incomes are updated by government payroll in engine/economy.ts,
+  // so we avoid blending them with market grossIncome (income_rate=0) every tick.
+  const isStatePayrollRole = npc.role === 'guard' || npc.role === 'leader'
+  if (!isStatePayrollRole) {
+    // EMA of daily income (coins/day): converges to grossIncome × 24.
+    npc.daily_income = npc.daily_income * 0.99 + grossIncome * 24 * 0.01
+  }
 
   // ── Shadow market (planned economies, criminals only) ─────────────────
   // Criminal NPCs in low-market-freedom societies earn illicit income by

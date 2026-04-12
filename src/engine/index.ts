@@ -20,7 +20,9 @@ import {
 import { checkSeasonTransition, checkCommunityGroups, checkOrganizingOutcome, checkTrustRecovery, checkFeudsAndReconciliation } from './social'
 import {
   applyWelfare, applyStateRationing, applyFeudalTribute, applyIncomeTax, getIncomeTaxRate,
+  applyExternalTradeBalance, maybePrintEmergencyMoney, applyInflationDrift,
   applyGovernmentWages, spendTaxRevenue, applyIncomeInequalityEffects, processInheritance, checkWealthMobility,
+  applyPropertyTax, applyDebtRelief,
 } from './economy'
 import {
   checkRegimeEvents, applyTheocracyEffect, applyCommuneEffect,
@@ -127,9 +129,14 @@ export function tick(state: WorldState): void {
     applyWelfare(state)
     applyStateRationing(state)
     applyFeudalTribute(state)
+    applyPropertyTax(state)
     applyIncomeTax(state)
+    applyDebtRelief(state)
+    applyExternalTradeBalance(state)
+    maybePrintEmergencyMoney(state)
     applyGovernmentWages(state)
     spendTaxRevenue(state)
+    applyInflationDrift(state)
     applyIncomeInequalityEffects(state)
     processInheritance(state)
     checkRegimeEvents(state)

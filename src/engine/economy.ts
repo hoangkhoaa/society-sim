@@ -1,18 +1,207 @@
-import type { WorldState } from '../types'
+import type { WorldState, Role } from '../types'
 import { clamp } from '../sim/constitution'
 import { permanentRoleChange } from '../sim/npc'
 import { addFeedRaw, addChronicle } from '../ui/feed'
-import { tf } from '../i18n'
+import { t, tf } from '../i18n'
 import {
   GOVT_WAGE_GUARD_COINS,
   GOVT_WAGE_LEADER_COINS,
+  GOVT_WAGE_QUIT_PAY_RATIO_THRESHOLD,
+  GOVT_WAGE_MAX_QUITS_PER_DAY_FRACTION,
+  GOVT_WAGE_QUIT_MIN_EXPECTED_GAIN,
+  GOVT_WAGE_QUIT_UNDERFUNDED_DAYS,
+  GOVT_WAGE_QUIT_GRACE_DAYS,
+  GOVT_WAGE_MIN_GUARD_FRACTION,
+  TRADE_BASE_EXPORT_GDP_SHARE,
+  TRADE_BASE_IMPORT_GDP_SHARE,
+  TRADE_RESOURCE_EXPORT_BONUS,
+  TRADE_SCARCITY_IMPORT_PRESSURE,
+  MONEY_PRINT_CRITICAL_DAYS,
+  MONEY_PRINT_COOLDOWN_DAYS,
+  MONEY_PRINT_PAYROLL_MULTIPLIER,
+  MONEY_PRINT_INFLATION_MULTIPLIER,
   WEALTH_INVEST_THRESHOLD,
   WEALTH_GANG_THRESHOLD,
   WEALTH_INVEST_INTERVAL_TICKS,
+  PROPERTY_TAX_RATE,
+  PROPERTY_TAX_WEALTH_FLOOR,
 } from '../constants/economy-tuning'
 
 let lastTaxSpendingDay = -1
 let lastWealthMobilityDay = -1
+let lastMoneyPrintDay = -1
+let underfundedPayrollDays = 0
+
+// ── Recession / Debt-Relief tracking (module-level, not persisted) ──────────
+// Tracks consecutive days of GDP contraction (≥2% daily drop) to trigger
+// government debt-relief stimulus when the economy enters a sustained recession.
+let _prevDayGdp = 0
+let _gdpDeclineDays = 0
+
+const GOVERNMENT_EXIT_TARGET_ROLES: Role[] = ['farmer', 'craftsman', 'merchant', 'scholar', 'healthcare']
+
+function maybeExitGovernmentRoles(state: WorldState, payRatio: number): void {
+  if (payRatio >= GOVT_WAGE_QUIT_PAY_RATIO_THRESHOLD) return
+  if (state.day <= GOVT_WAGE_QUIT_GRACE_DAYS) return
+  if (underfundedPayrollDays < GOVT_WAGE_QUIT_UNDERFUNDED_DAYS) return
+
+  const govWorkers = state.npcs.filter(n =>
+    n.lifecycle.is_alive && (n.role === 'guard' || n.role === 'leader'),
+  )
+  if (govWorkers.length === 0) return
+
+  const aliveAdults = state.npcs.filter(n => n.lifecycle.is_alive && n.role !== 'child').length
+  const currentGuards = state.npcs.filter(n => n.lifecycle.is_alive && n.role === 'guard').length
+  const minGuardCount = Math.max(1, Math.ceil(aliveAdults * GOVT_WAGE_MIN_GUARD_FRACTION))
+
+  const living = state.npcs.filter(n => n.lifecycle.is_alive && n.role !== 'child')
+  const avgIncomeByRole = Object.fromEntries(
+    GOVERNMENT_EXIT_TARGET_ROLES.map(role => {
+      const group = living.filter(n => n.role === role)
+      const avg = group.length > 0
+        ? group.reduce((s, n) => s + n.daily_income, 0) / group.length
+        : 0
+      return [role, avg]
+    }),
+  ) as Record<Role, number>
+
+  const maxQuits = Math.max(1, Math.ceil(govWorkers.length * GOVT_WAGE_MAX_QUITS_PER_DAY_FRACTION))
+  let quitCount = 0
+
+  const ordered = [...govWorkers].sort((a, b) => (b.grievance + b.fear) - (a.grievance + a.fear))
+  for (const npc of ordered) {
+    if (quitCount >= maxQuits) break
+    if (npc.role === 'guard' && currentGuards - quitCount <= minGuardCount) continue
+    const sinceLastSwitch = state.tick - (npc.last_role_switch_tick ?? -999999)
+    if (sinceLastSwitch < 20 * 24) continue
+
+    const currentIncome = Math.max(npc.daily_income, npc.role === 'leader' ? GOVT_WAGE_LEADER_COINS * payRatio : GOVT_WAGE_GUARD_COINS * payRatio)
+    const targetRole = [...GOVERNMENT_EXIT_TARGET_ROLES]
+      .sort((a, b) => avgIncomeByRole[b] - avgIncomeByRole[a])[0]
+    const expectedGain = avgIncomeByRole[targetRole] - currentIncome
+    if (expectedGain < GOVT_WAGE_QUIT_MIN_EXPECTED_GAIN) continue
+
+    // Low payroll pushes stressed officers toward better-paying civilian roles.
+    const quitPressure = clamp((1 - payRatio) * 0.4 + npc.grievance / 260 + npc.fear / 280, 0, 0.85)
+    if (Math.random() > quitPressure) continue
+
+    const fromRole = npc.role
+    permanentRoleChange(npc, targetRole, state)
+    npc.last_role_switch_tick = state.tick
+    npc.role_retraining_until_tick = state.tick + 10 * 24
+    npc.daily_income = Math.max(0, npc.daily_income * 0.65)
+
+    const roleLabel = t(`role.${fromRole}`) as string
+    const targetLabel = t(`role.${targetRole}`) as string
+    addFeedRaw(
+      tf('engine.gov_payroll_exit', { role: roleLabel, to: targetLabel }) as string,
+      'warning',
+      state.year,
+      state.day,
+    )
+    quitCount++
+  }
+}
+
+// ── Trade-driven state revenue + external money flow ───────────────────────
+// Simulates exports/imports as a macro loop linked to production and scarcity.
+// Trade balance changes overall money_supply (external inflow/outflow), while
+// duties/tariffs create direct treasury income.
+
+export function applyExternalTradeBalance(state: WorldState): void {
+  if (state.collapse_phase !== 'normal') return
+
+  const c = state.constitution
+  const gdp = Math.max(state.macro.gdp ?? 0, 0)
+  const resourceLevel = clamp((state.macro.natural_resources ?? 0) / 100, 0, 1)
+  const foodStress = clamp((55 - (state.macro.food ?? 50)) / 55, 0, 1)
+  const resourceStress = clamp((45 - (state.macro.natural_resources ?? 50)) / 45, 0, 1)
+
+  const tradeVolume = clamp(0.50 + c.market_freedom * 0.95 - c.state_power * 0.12, 0.30, 1.45)
+  const exportShare = TRADE_BASE_EXPORT_GDP_SHARE
+    * tradeVolume
+    * (1 + resourceLevel * TRADE_RESOURCE_EXPORT_BONUS)
+    * (1 - c.resource_scarcity * 0.35)
+  const importShare = TRADE_BASE_IMPORT_GDP_SHARE
+    * clamp(0.85 + c.safety_net * 0.12 + (1 - c.market_freedom) * 0.10, 0.60, 1.25)
+    * (1 + (foodStress + resourceStress) * TRADE_SCARCITY_IMPORT_PRESSURE)
+
+  const exportsValue = Math.max(0, gdp * exportShare)
+  const importsValue = Math.max(0, gdp * importShare)
+  const tradeBalance = exportsValue - importsValue
+
+  const exportDuty = clamp(0.07 + c.state_power * 0.05, 0.05, 0.14)
+  const importTariff = clamp(0.03 + (1 - c.market_freedom) * 0.06, 0.02, 0.11)
+  let tradeRevenue = exportsValue * exportDuty + importsValue * importTariff
+
+  // High-state regimes often subsidize strategic imports when the economy runs a deficit.
+  if (tradeBalance < 0 && c.state_power > 0.45) {
+    const subsidy = Math.abs(tradeBalance) * 0.08 * c.state_power
+    tradeRevenue -= subsidy
+  }
+
+  state.tax_pool = clamp((state.tax_pool ?? 0) + tradeRevenue, 0, 9_999_999)
+  state.money_supply = clamp((state.money_supply ?? 0) + tradeBalance, 1, 99_999_999)
+
+  state.trade_exports_last_day = exportsValue
+  state.trade_imports_last_day = importsValue
+  state.trade_balance_last_day = tradeBalance
+  state.trade_revenue_last_day = tradeRevenue
+}
+
+// ── Emergency money printing (critical treasury backstop) ──────────────────
+// If tax_pool remains critical for multiple days, state can print money.
+// This rescues payroll short-term but raises inflation pressure.
+
+export function maybePrintEmergencyMoney(state: WorldState): void {
+  if (state.collapse_phase !== 'normal') return
+  state.money_printed_last_day = 0
+
+  const guards = state.npcs.filter(n => n.lifecycle.is_alive && n.role === 'guard').length
+  const leaders = state.npcs.filter(n => n.lifecycle.is_alive && n.role === 'leader').length
+  const dailyPayroll = guards * GOVT_WAGE_GUARD_COINS + leaders * GOVT_WAGE_LEADER_COINS
+  if (dailyPayroll <= 0) return
+
+  const criticalThreshold = Math.max(80, dailyPayroll * 2.5)
+  if ((state.tax_pool ?? 0) < criticalThreshold) state.tax_pool_critical_days = (state.tax_pool_critical_days ?? 0) + 1
+  else state.tax_pool_critical_days = 0
+
+  if ((state.tax_pool_critical_days ?? 0) < MONEY_PRINT_CRITICAL_DAYS) return
+  if (lastMoneyPrintDay >= 0 && state.day - lastMoneyPrintDay < MONEY_PRINT_COOLDOWN_DAYS) return
+
+  const printed = Math.max(120, dailyPayroll * MONEY_PRINT_PAYROLL_MULTIPLIER * (0.9 + state.constitution.state_power * 0.4))
+  state.tax_pool = clamp((state.tax_pool ?? 0) + printed, 0, 9_999_999)
+  state.money_supply = clamp((state.money_supply ?? 0) + printed, 1, 99_999_999)
+  state.money_printed_last_day = printed
+  state.tax_pool_critical_days = 0
+  lastMoneyPrintDay = state.day
+
+  const priorSupply = Math.max((state.money_supply ?? 1) - printed, 1)
+  const inflationShock = (printed / priorSupply) * MONEY_PRINT_INFLATION_MULTIPLIER
+  state.inflation_rate = clamp((state.inflation_rate ?? 0) + inflationShock, 0, 2)
+
+  addFeedRaw(
+    tf('engine.money_printing', {
+      amount: Math.round(printed),
+      inf: ((state.inflation_rate ?? 0) * 100).toFixed(1),
+    }) as string,
+    'warning',
+    state.year,
+    state.day,
+  )
+}
+
+export function applyInflationDrift(state: WorldState): void {
+  const foodPressure = clamp((45 - (state.macro.food ?? 50)) / 45, 0, 1)
+  const resourcePressure = clamp((35 - (state.macro.natural_resources ?? 50)) / 35, 0, 1)
+  const deficitPressure = state.trade_balance_last_day < 0
+    ? clamp(Math.abs(state.trade_balance_last_day) / Math.max(state.macro.gdp ?? 1, 1), 0, 1)
+    : 0
+
+  const inflationUp = foodPressure * 0.002 + resourcePressure * 0.0015 + deficitPressure * 0.0015
+  const inflationDown = 0.0012 + state.constitution.market_freedom * 0.0005
+  state.inflation_rate = clamp((state.inflation_rate ?? 0) + inflationUp - inflationDown, 0, 2)
+}
 
 // ── Welfare Redistribution ───────────────────────────────────────────────────
 // `safety_net` (0–1) drives daily wealth transfer from the top 20% to the
@@ -159,9 +348,9 @@ export function getIncomeTaxRate(state: WorldState): number {
   if (c.state_power >= 0.75 && c.market_freedom < 0.25) return 0.25  // authoritarian
   if (c.safety_net >= 0.65 && c.gini_start < 0.40) return 0.20       // welfare
   if (c.state_power >= 0.70 && c.base_trust >= 0.65) return 0.20     // theocratic
-  if (c.gini_start >= 0.55 && c.individual_rights_floor < 0.20) return 0.15  // feudal
+  if (c.gini_start >= 0.55 && c.individual_rights_floor < 0.20) return 0.18  // feudal (was 0.15)
   if (c.market_freedom >= 0.70 && c.state_power < 0.40) return 0.05  // libertarian
-  return 0.10  // moderate
+  return 0.15  // moderate (was 0.10)
 }
 
 export function applyIncomeTax(state: WorldState): void {
@@ -203,7 +392,12 @@ export function applyIncomeTax(state: WorldState): void {
 export function applyGovernmentWages(state: WorldState): void {
   // No wages when government has dissolved due to population collapse
   if (state.collapse_phase !== 'normal') return
-  if ((state.tax_pool ?? 0) <= 0) return
+  if (state.tick <= 24) underfundedPayrollDays = 0
+  if ((state.tax_pool ?? 0) <= 0) {
+    underfundedPayrollDays++
+    maybeExitGovernmentRoles(state, 0)
+    return
+  }
 
   const guards  = state.npcs.filter(n => n.lifecycle.is_alive && n.role === 'guard')
   const leaders = state.npcs.filter(n => n.lifecycle.is_alive && n.role === 'leader')
@@ -212,9 +406,21 @@ export function applyGovernmentWages(state: WorldState): void {
   if (totalWageBill <= 0) return
 
   const pool = state.tax_pool ?? 0
-  const payRatio = pool >= totalWageBill ? 1.0 : pool / totalWageBill
-  const poolSpent = Math.min(pool, totalWageBill)
+
+  // Dynamic fiscal health bonus: when treasury is very healthy (>45 days payroll),
+  // government workers receive a small prosperity bonus — reflects real-world public
+  // sector raises during surplus years and builds loyalty/reduces future unrest.
+  const fiscalHealthDays = pool / Math.max(totalWageBill, 1)
+  const wageHealthBonus = fiscalHealthDays > 45 ? 1.06   // +6% when flush
+    : fiscalHealthDays > 20 ? 1.02                       // +2% when comfortable
+    : 1.0                                                // standard
+
+  const effectiveWageBill = totalWageBill * wageHealthBonus
+  const payRatio = pool >= effectiveWageBill ? wageHealthBonus : pool / totalWageBill
+  const poolSpent = Math.min(pool, effectiveWageBill)
   state.tax_pool = clamp(pool - poolSpent, 0, 9_999_999)
+  if (payRatio < GOVT_WAGE_QUIT_PAY_RATIO_THRESHOLD) underfundedPayrollDays++
+  else underfundedPayrollDays = 0
 
   for (const npc of guards) {
     const wage = GOVT_WAGE_GUARD_COINS * payRatio
@@ -236,6 +442,8 @@ export function applyGovernmentWages(state: WorldState): void {
       npc.grievance = clamp(npc.grievance + 5, 0, 100)
     }
   }
+
+  maybeExitGovernmentRoles(state, payRatio)
 }
 
 // ── Regime-Based Tax Spending ─────────────────────────────────────────────────
@@ -254,7 +462,13 @@ export function spendTaxRevenue(state: WorldState): void {
   lastTaxSpendingDay = state.day
 
   const pool = state.tax_pool ?? 0
-  const spendAmount = pool * 0.10   // spend 10% of pool each day (smooth, steady disbursement)
+  const guards = state.npcs.filter(n => n.lifecycle.is_alive && n.role === 'guard').length
+  const leaders = state.npcs.filter(n => n.lifecycle.is_alive && n.role === 'leader').length
+  const dailyPayroll = guards * GOVT_WAGE_GUARD_COINS + leaders * GOVT_WAGE_LEADER_COINS
+  const protectedReserve = dailyPayroll * 5
+  const spendablePool = Math.max(0, pool - protectedReserve)
+  if (spendablePool < 20) return
+  const spendAmount = spendablePool * 0.10   // spend 10%/day from pool above payroll reserve
   state.tax_pool = clamp(pool - spendAmount, 0, 9_999_999)
 
   const c = state.constitution
@@ -283,7 +497,7 @@ export function spendTaxRevenue(state: WorldState): void {
 
   switch (spendType) {
     case 'infrastructure': {
-      // Infrastructure: workers get cash + quality-of-life boost
+      // Infrastructure: workers get cash + quality-of-life boost + skill development
       const workers = living.filter(n => n.role === 'farmer' || n.role === 'craftsman' || n.role === 'merchant')
       if (workers.length > 0) {
         const perWorker = spendAmount / workers.length
@@ -291,6 +505,8 @@ export function spendTaxRevenue(state: WorldState): void {
           npc.wealth     = clamp(npc.wealth + perWorker, 0, 50000)
           npc.exhaustion = clamp(npc.exhaustion - 8, 0, 100)
           npc.happiness  = clamp(npc.happiness  + 3, 0, 100)
+          // Infrastructure investment builds worker skills over time (learning by doing)
+          npc.base_skill = clamp(npc.base_skill + 0.02, 0, 1.0)
         }
       }
       feedMsg = tf('engine.tax_spend.infrastructure', { amount: Math.round(spendAmount) }) as string
@@ -528,4 +744,108 @@ export function checkWealthMobility(state: WorldState): void {
       addChronicle(text, state.year, state.day, 'major')
     }
   }
+}
+
+// ── Property / Land Tax ───────────────────────────────────────────────────────
+// Levied once per day on all living adult NPCs whose accumulated wealth exceeds
+// PROPERTY_TAX_WEALTH_FLOOR. Only the taxable surplus (wealth − floor) is taxed.
+//
+// This models the land/property tax that was the primary revenue source for
+// pre-modern states worldwide (Rome, Tang China, Ottoman, medieval Europe).
+// Unlike income tax, it is stable across business cycles because it targets
+// accumulated stock, not volatile flow.
+//
+// Rate: PROPERTY_TAX_RATE (0.05 %/day) on surplus wealth above the floor.
+// At avg wealth 300, floor 100: 200 × 0.0005 = 0.10 coins/day per NPC.
+// For 200 NPCs: ~20 coins/day into the treasury.
+
+export function applyPropertyTax(state: WorldState): void {
+  if (state.collapse_phase !== 'normal') return
+
+  let poolGain = 0
+  for (const npc of state.npcs) {
+    if (!npc.lifecycle.is_alive || npc.role === 'child') continue
+    const taxableWealth = npc.wealth - PROPERTY_TAX_WEALTH_FLOOR
+    if (taxableWealth <= 0) continue
+
+    const tax = taxableWealth * PROPERTY_TAX_RATE
+    if (tax < 0.01) continue
+    npc.wealth = clamp(npc.wealth - tax, 0, 50000)
+    poolGain  += tax
+  }
+
+  if (poolGain > 0) {
+    state.tax_pool = clamp((state.tax_pool ?? 0) + poolGain, 0, 9_999_999)
+  }
+}
+
+// ── Recession Stabilizer: Debt Relief Program ─────────────────────────────
+// Automatic stabilizer inspired by real-world debt jubilees and government
+// stimulus programs. Triggered when:
+//   1. GDP has declined ≥2% for 5+ consecutive days (recession detected)
+//   2. Government treasury has ≥8 days of payroll reserves
+//
+// Mechanism: government buys distressed debt at 50 cents on the dollar,
+//   • Debtors get debt cleared → can resume spending → multiplier effect
+//   • Creditors receive partial compensation from treasury → no wealth destruction
+//   • Treasury cost is spread across a 30%-batch of debtors per trigger
+//
+// Cooldown: resets _gdpDeclineDays to 0 after each program, preventing
+// re-triggering until the next fresh recession.
+
+export function applyDebtRelief(state: WorldState): void {
+  if (state.collapse_phase !== 'normal') return
+
+  // Track daily GDP trend (called once per sim-day)
+  const currentGdp = state.macro?.gdp ?? 0
+  if (_prevDayGdp > 0) {
+    if (currentGdp < _prevDayGdp * 0.98) {
+      _gdpDeclineDays++
+    } else {
+      _gdpDeclineDays = Math.max(0, _gdpDeclineDays - 1)
+    }
+  }
+  _prevDayGdp = currentGdp
+
+  // Need sustained recession (5+ days of ≥2% daily drop)
+  if (_gdpDeclineDays < 5) return
+
+  // Need fiscal reserves: estimate payroll from living govt employees
+  const govtNpcs = state.npcs.filter(n => n.lifecycle.is_alive && (n.role === 'guard' || n.role === 'leader'))
+  const guards   = govtNpcs.filter(n => n.role === 'guard').length
+  const leaders  = govtNpcs.filter(n => n.role === 'leader').length
+  const dailyPayroll = guards * GOVT_WAGE_GUARD_COINS + leaders * GOVT_WAGE_LEADER_COINS
+  if (dailyPayroll <= 0 || (state.tax_pool ?? 0) < dailyPayroll * 8) return
+
+  // Find debtors eligible for relief (alive, has debt with a living creditor)
+  const debtors = state.npcs.filter(n =>
+    n.lifecycle.is_alive &&
+    n.debt > 0 &&
+    n.debt_to !== null &&
+    state.npcs[n.debt_to]?.lifecycle.is_alive,
+  )
+  if (debtors.length === 0) return
+
+  // Forgive 30% of debtors per program (sorted by debt size — largest relief first)
+  debtors.sort((a, b) => b.debt - a.debt)
+  const batch = debtors.slice(0, Math.max(1, Math.ceil(debtors.length * 0.30)))
+
+  let costToGovt = 0
+  for (const npc of batch) {
+    const creditor = state.npcs[npc.debt_to!]
+    if (creditor?.lifecycle.is_alive) {
+      // Government pays creditor 50 cents on the dollar — partial compensation
+      const payment = npc.debt * 0.50
+      creditor.wealth = clamp(creditor.wealth + payment, 0, 50_000)
+      costToGovt += payment
+    }
+    npc.debt    = 0
+    npc.debt_to = null
+  }
+
+  state.tax_pool = clamp((state.tax_pool ?? 0) - costToGovt, 0, 9_999_999)
+  _gdpDeclineDays = 0  // cooldown — wait for fresh recession before re-triggering
+
+  const msg = `🏦 Debt relief: government forgave ${batch.length} debts (treasury cost: ${Math.round(costToGovt)} coins) to counter economic contraction.`
+  addFeedRaw(msg, 'info', state.year, state.day)
 }

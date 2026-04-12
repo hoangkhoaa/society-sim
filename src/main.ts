@@ -1402,10 +1402,28 @@ function updateEconomicsPanel() {
   const effEl = document.getElementById('ep-efficiency')
   const taxPoolEl = document.getElementById('ep-tax-pool')
   const taxRateEl = document.getElementById('ep-tax-rate')
+  const exportsEl = document.getElementById('ep-exports')
+  const importsEl = document.getElementById('ep-imports')
+  const tradeBalanceEl = document.getElementById('ep-trade-balance')
+  const tradeRevenueEl = document.getElementById('ep-trade-revenue')
+  const moneySupplyEl = document.getElementById('ep-money-supply')
+  const inflationEl = document.getElementById('ep-inflation')
+  const moneyPrintedEl = document.getElementById('ep-money-printed')
   const sanitationEl = document.getElementById('ep-sanitation')
   const hospitalEl = document.getElementById('ep-hospital')
 
-  if (gdpEl) gdpEl.textContent = `${Math.round(macro.gdp ?? 0)}`
+  if (gdpEl) {
+    const currentGdp = Math.round(macro.gdp ?? 0)
+    let trendArrow = '→'
+    let trendColor = '#ef9f27'
+    if (_prevGdpForTrend > 0) {
+      const pctChange = ((currentGdp - _prevGdpForTrend) / _prevGdpForTrend) * 100
+      if (pctChange > 1.5) { trendArrow = '↑'; trendColor = '#5dcaa5' }
+      else if (pctChange < -1.5) { trendArrow = '↓'; trendColor = '#e24b4b' }
+    }
+    gdpEl.innerHTML = `${currentGdp} <span style="color:${trendColor};font-size:0.85em">${trendArrow}</span>`
+    if (_prevGdpForTrend !== currentGdp) _prevGdpForTrend = currentGdp
+  }
   if (extractEl) {
     const ex = Math.round(macro.extraction_rate ?? 0)
     extractEl.textContent = `${ex}%`
@@ -1418,6 +1436,29 @@ function updateEconomicsPanel() {
   }
   if (taxPoolEl) taxPoolEl.textContent = `${Math.round(world.tax_pool ?? 0)}`
   if (taxRateEl) taxRateEl.textContent = `${Math.round(taxRate * 100)}%`
+  if (exportsEl) exportsEl.textContent = `${Math.round(world.trade_exports_last_day ?? 0)}`
+  if (importsEl) importsEl.textContent = `${Math.round(world.trade_imports_last_day ?? 0)}`
+  if (tradeBalanceEl) {
+    const bal = world.trade_balance_last_day ?? 0
+    tradeBalanceEl.textContent = `${Math.round(bal)}`
+    tradeBalanceEl.style.color = bal < -20 ? '#e24b4b' : bal < 20 ? '#ef9f27' : '#5dcaa5'
+  }
+  if (tradeRevenueEl) {
+    const rev = world.trade_revenue_last_day ?? 0
+    tradeRevenueEl.textContent = `${Math.round(rev)}`
+    tradeRevenueEl.style.color = rev < -10 ? '#e24b4b' : rev < 10 ? '#ef9f27' : '#5dcaa5'
+  }
+  if (moneySupplyEl) moneySupplyEl.textContent = `${Math.round(world.money_supply ?? 0)}`
+  if (inflationEl) {
+    const infPct = (world.inflation_rate ?? 0) * 100
+    inflationEl.textContent = `${infPct.toFixed(1)}%`
+    inflationEl.style.color = infPct >= 20 ? '#e24b4b' : infPct >= 8 ? '#ef9f27' : '#5dcaa5'
+  }
+  if (moneyPrintedEl) {
+    const printed = world.money_printed_last_day ?? 0
+    moneyPrintedEl.textContent = `${Math.round(printed)}`
+    moneyPrintedEl.style.color = printed > 0 ? '#ef9f27' : '#aaa'
+  }
   if (sanitationEl) {
     const san = Math.round(world.public_health?.sanitation ?? 0)
     sanitationEl.textContent = `${san}%`
@@ -1425,7 +1466,9 @@ function updateEconomicsPanel() {
   }
   if (hospitalEl) {
     const active = (world.public_health?.hospital_capacity ?? 0) > 0
-    hospitalEl.textContent = active ? '🏥 Active' : 'None'
+    hospitalEl.textContent = active
+      ? String(t('econ.hospital_active'))
+      : String(t('econ.hospital_none'))
     hospitalEl.style.color = active ? '#5dcaa5' : '#aaa'
   }
 }
@@ -1520,6 +1563,7 @@ function setPaused(value: boolean) {
 }
 
 let _lastSimDay = -1
+let _prevGdpForTrend = 0
 
 function startSimLoop() {
   if (simInterval) clearInterval(simInterval)

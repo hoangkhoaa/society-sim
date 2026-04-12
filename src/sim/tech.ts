@@ -45,6 +45,18 @@ export const TECH_MILESTONES: Milestone[] = [
     threshold: 5000,
     description: 'Scholars introduce written records — literacy and information spread accelerate.',
   },
+  {
+    id: 'engineering',
+    name: 'Engineering & Craftsmanship',
+    threshold: 9000,
+    description: 'Craftsmen master structural techniques — workshops produce more with less labour.',
+  },
+  {
+    id: 'finance',
+    name: 'Banking & Finance',
+    threshold: 14000,
+    description: 'Merchants develop credit and capital markets — investment accelerates growth.',
+  },
 ]
 
 // Called once per sim-day to accumulate scholar output into the research pool.
