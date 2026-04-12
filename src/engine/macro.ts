@@ -5,6 +5,7 @@ import { autoSurvivalRoleShift } from '../sim/roles'
 import { getDiscoveryBonuses } from '../sim/tech'
 import { addFeedRaw, addChronicle } from '../ui/feed'
 import { t } from '../i18n'
+import { computeStability, computePolarization, computeLaborUnrest } from '../formulas/macro'
 
 /**
  * Multiplier for macro `energy` (daily productive output vs max productivity).
@@ -137,17 +138,10 @@ export function computeMacroStats(state: WorldState): WorldState['macro'] {
   const cohesion = 1 - fleeingCount / n
   const avgStress = stressSum / n
 
-  const stability = clamp(
-    avgTrustGov * 30 +
-    cohesion * 20 +
-    (food / 100) * 25 +
-    (1 - avgStress / 100) * 15 +
-    (1 - politicalPressure / 100) * 10,
-    0, 100,
-  )
+  const stability = computeStability(avgTrustGov, cohesion, food, avgStress, politicalPressure)
 
   const avgSolidarity = workerCount > 0 ? solidaritySum / workerCount : 0
-  const labor_unrest = clamp(avgSolidarity * (0.4 + gini * 0.6), 0, 100)
+  const labor_unrest = computeLaborUnrest(avgSolidarity, gini)
 
   // Polarization index (0–100): variance in ideology + distance from center.
   const meanCollectivism = collectivismSum / n
@@ -157,7 +151,7 @@ export function computeMacroStats(state: WorldState): WorldState['macro'] {
   const stdCollectivism = Math.sqrt(varCollectivism)
   const stdAuthority = Math.sqrt(varAuthority)
   const centerDrift = Math.abs(meanCollectivism - 0.5) + Math.abs(meanAuthority - 0.5)
-  const polarization = clamp(stdCollectivism * 90 + stdAuthority * 90 + centerDrift * 40, 0, 100)
+  const polarization = computePolarization(stdCollectivism, stdAuthority, centerDrift)
 
   // GDP: sum of all living NPC daily incomes (coins earned per day).
   let gdpSum = 0

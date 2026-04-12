@@ -9,6 +9,7 @@ import {
   LIFECYCLE_HEARTBREAK_COOLDOWN_TICKS,
   LIFECYCLE_ROMANCE_THRESHOLD,
 } from '../constants/engine-lifecycle'
+import { computeBirthChance } from '../formulas/lifecycle'
 
 // ── Lifecycle Events (birth / marriage) ─────────────────────────────────────
 
@@ -54,16 +55,7 @@ function computeBirthChancePerDay(a: NPC, b: NPC, state: WorldState): number {
   // producing ~1% annual growth (pre-modern realistic). Was 0.0008 which caused 16% growth.
   // With all factors maximally favorable the cap is 0.0006/day.
   // Spacing and max-children limits (maxChildrenPerCouple) ensure realistic lifetime family sizes.
-  const chance = 0.00015 * baseFertility
-    * happinessFactor
-    * stressFactor
-    * fearFactor
-    * needsFactor
-    * wealthFactor
-    * trustFactor
-    * foodFactor
-
-  return clamp(chance, 0, 0.0006)
+  return computeBirthChance(baseFertility, happinessFactor, stressFactor, fearFactor, needsFactor, wealthFactor, trustFactor, foodFactor)
 }
 
 // ── Romance / Marriage helpers ──────────────────────────────────────────────
