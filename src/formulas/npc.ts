@@ -2,11 +2,10 @@
  * NPC-level individual psychological formulas.
  *
  * These expressions determine each NPC's moment-to-moment mental state.
- * Stored as inspectable strings so players can tune how stress and
- * happiness respond to the environment.
+ * Stored as mutable strings so government reforms, scientific breakthroughs,
+ * or god-agent commands can change them at runtime.
  *
- * Example — make hunger affect stress more severely:
- *   Change the hunger weight from 0.30 to 0.45 in STRESS_EXPR.
+ * To patch a formula at runtime, use `patchFormula` from `./registry`.
  */
 
 import { clamp } from '../sim/constitution'
@@ -24,7 +23,7 @@ import { clamp } from '../sim/constitution'
 // Non-linear exponents mean high values hurt disproportionately.
 // The inner sum is multiplied by 100 to return a 0–100 value; callers clamp.
 
-export const STRESS_EXPR = `
+export let STRESS_EXPR = `
   Math.pow(hunger / 100, 1.3) * 0.30
   + Math.pow(exhaustion / 100, 1.2) * 0.15
   + Math.pow(isolation / 100, 1.2) * 0.18
@@ -33,10 +32,20 @@ export const STRESS_EXPR = `
   - socialBuffer
 `.trim()
 
-export const stressFn = new Function(
+export let stressFn = new Function(
   "hunger", "exhaustion", "isolation", "fear", "identityStress", "socialBuffer",
   `return (${STRESS_EXPR}) * 100`,
 ) as (hunger: number, exhaustion: number, isolation: number, fear: number, identityStress: number, socialBuffer: number) => number
+
+export function patchStressExpr(newExpr: string): string {
+  const prev = STRESS_EXPR
+  STRESS_EXPR = newExpr
+  stressFn = new Function(
+    "hunger", "exhaustion", "isolation", "fear", "identityStress", "socialBuffer",
+    `return (${STRESS_EXPR}) * 100`,
+  ) as typeof stressFn
+  return prev
+}
 
 export function computeStressScore(
   hunger: number,
@@ -60,13 +69,23 @@ export function computeStressScore(
 //
 // Base is 50; callers clamp result to 0–100.
 
-export const HAPPINESS_EXPR =
+export let HAPPINESS_EXPR =
   "50 - stressPenalty + relativeStatus - inequalityPain + memoryEffect + trustBonus"
 
-export const happinessFn = new Function(
+export let happinessFn = new Function(
   "stressPenalty", "relativeStatus", "inequalityPain", "memoryEffect", "trustBonus",
   `return ${HAPPINESS_EXPR}`,
 ) as (stressPenalty: number, relativeStatus: number, inequalityPain: number, memoryEffect: number, trustBonus: number) => number
+
+export function patchHappinessExpr(newExpr: string): string {
+  const prev = HAPPINESS_EXPR
+  HAPPINESS_EXPR = newExpr
+  happinessFn = new Function(
+    "stressPenalty", "relativeStatus", "inequalityPain", "memoryEffect", "trustBonus",
+    `return ${HAPPINESS_EXPR}`,
+  ) as typeof happinessFn
+  return prev
+}
 
 export function computeHappinessScore(
   stressPenalty: number,

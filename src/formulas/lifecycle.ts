@@ -2,11 +2,10 @@
  * Lifecycle formulas for birth, death, and demographic transitions.
  *
  * These expressions determine how the population grows and shrinks.
- * Players can adjust the base birth rate or factor weights to simulate
- * different demographic conditions.
+ * Stored as mutable strings so government reforms, scientific breakthroughs,
+ * or god-agent commands can change them at runtime.
  *
- * Example — model a baby-boom after high food security:
- *   Increase the foodFactor weight by raising the food coefficient (0.55 → 0.70).
+ * To patch a formula at runtime, use `patchFormula` from `./registry`.
  */
 
 import { clamp } from '../sim/constitution'
@@ -26,10 +25,10 @@ import { clamp } from '../sim/constitution'
 // Base rate 0.00015/day ≈ 1 % annual growth at realistic population sizes.
 // Result: raw daily probability; callers clamp to 0–0.0006.
 
-export const BIRTH_CHANCE_EXPR =
+export let BIRTH_CHANCE_EXPR =
   "0.00015 * baseFertility * happinessFactor * stressFactor * fearFactor * needsFactor * wealthFactor * trustFactor * foodFactor"
 
-export const birthChanceFn = new Function(
+export let birthChanceFn = new Function(
   "baseFertility", "happinessFactor", "stressFactor", "fearFactor",
   "needsFactor", "wealthFactor", "trustFactor", "foodFactor",
   `return ${BIRTH_CHANCE_EXPR}`,
@@ -43,6 +42,17 @@ export const birthChanceFn = new Function(
   trustFactor: number,
   foodFactor: number,
 ) => number
+
+export function patchBirthChanceExpr(newExpr: string): string {
+  const prev = BIRTH_CHANCE_EXPR
+  BIRTH_CHANCE_EXPR = newExpr
+  birthChanceFn = new Function(
+    "baseFertility", "happinessFactor", "stressFactor", "fearFactor",
+    "needsFactor", "wealthFactor", "trustFactor", "foodFactor",
+    `return ${BIRTH_CHANCE_EXPR}`,
+  ) as typeof birthChanceFn
+  return prev
+}
 
 export function computeBirthChance(
   baseFertility: number,

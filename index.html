@@ -282,7 +282,12 @@
               <button class="log-filter-btn" data-filter="critical" data-i18n="filter.critical">Critical</button>
             </div>
           </div>
-          <div id="chronicle-log"></div>
+          <div id="chronicle-tabs">
+            <button class="chronicle-tab active" data-tab="chronicle" data-i18n="chronicle.tab_events">Events</button>
+            <button class="chronicle-tab" data-tab="breakthrough" data-i18n="chronicle.tab_breakthroughs">⚗️ Breakthroughs</button>
+          </div>
+          <div id="chronicle-log" class="chronicle-pane active"></div>
+          <div id="breakthrough-log" class="chronicle-pane" style="display:none"></div>
         </div>
 
       </div>

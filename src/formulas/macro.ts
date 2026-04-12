@@ -2,14 +2,11 @@
  * Macro-level society formulas.
  *
  * These expressions determine key macro statistics that drive the simulation.
- * Each formula is stored as an inspectable string constant so that players can
- * read, experiment with, and modify the underlying social dynamics.
+ * Each formula is stored as a mutable string so that government reforms,
+ * scientific breakthroughs, or god-agent commands can change them at runtime.
  *
- * Example — swap the stability formula to weight food more heavily:
- *   STABILITY_EXPR = "avgTrustGov * 20 + cohesion * 20 + (food / 100) * 40 + ..."
- *
- * After editing, the compiled `stabilityFn` will automatically pick up the
- * new string on the next module load.
+ * To patch a formula at runtime, use `patchFormula` from `./registry`.
+ * The `computeX` wrapper functions automatically use the latest compiled `Fn`.
  */
 
 import { clamp } from '../sim/constitution'
@@ -25,7 +22,7 @@ import { clamp } from '../sim/constitution'
 //
 // Result: raw stability score; callers clamp to 0–100.
 
-export const STABILITY_EXPR = `
+export let STABILITY_EXPR = `
   avgTrustGov * 30
   + cohesion * 20
   + (food / 100) * 25
@@ -33,10 +30,20 @@ export const STABILITY_EXPR = `
   + (1 - politicalPressure / 100) * 10
 `.trim()
 
-export const stabilityFn = new Function(
+export let stabilityFn = new Function(
   "avgTrustGov", "cohesion", "food", "avgStress", "politicalPressure",
   `return ${STABILITY_EXPR}`,
 ) as (avgTrustGov: number, cohesion: number, food: number, avgStress: number, politicalPressure: number) => number
+
+export function patchStabilityExpr(newExpr: string): string {
+  const prev = STABILITY_EXPR
+  STABILITY_EXPR = newExpr
+  stabilityFn = new Function(
+    "avgTrustGov", "cohesion", "food", "avgStress", "politicalPressure",
+    `return ${STABILITY_EXPR}`,
+  ) as typeof stabilityFn
+  return prev
+}
 
 export function computeStability(
   avgTrustGov: number,
@@ -57,13 +64,23 @@ export function computeStability(
 //
 // Result: raw polarization index; callers clamp to 0–100.
 
-export const POLARIZATION_EXPR =
+export let POLARIZATION_EXPR =
   "stdCollectivism * 90 + stdAuthority * 90 + centerDrift * 40"
 
-export const polarizationFn = new Function(
+export let polarizationFn = new Function(
   "stdCollectivism", "stdAuthority", "centerDrift",
   `return ${POLARIZATION_EXPR}`,
 ) as (stdCollectivism: number, stdAuthority: number, centerDrift: number) => number
+
+export function patchPolarizationExpr(newExpr: string): string {
+  const prev = POLARIZATION_EXPR
+  POLARIZATION_EXPR = newExpr
+  polarizationFn = new Function(
+    "stdCollectivism", "stdAuthority", "centerDrift",
+    `return ${POLARIZATION_EXPR}`,
+  ) as typeof polarizationFn
+  return prev
+}
 
 export function computePolarization(
   stdCollectivism: number,
@@ -81,13 +98,23 @@ export function computePolarization(
 //
 // Result: raw labor unrest score; callers clamp to 0–100.
 
-export const LABOR_UNREST_EXPR =
+export let LABOR_UNREST_EXPR =
   "avgSolidarity * (0.4 + gini * 0.6)"
 
-export const laborUnrestFn = new Function(
+export let laborUnrestFn = new Function(
   "avgSolidarity", "gini",
   `return ${LABOR_UNREST_EXPR}`,
 ) as (avgSolidarity: number, gini: number) => number
+
+export function patchLaborUnrestExpr(newExpr: string): string {
+  const prev = LABOR_UNREST_EXPR
+  LABOR_UNREST_EXPR = newExpr
+  laborUnrestFn = new Function(
+    "avgSolidarity", "gini",
+    `return ${LABOR_UNREST_EXPR}`,
+  ) as typeof laborUnrestFn
+  return prev
+}
 
 export function computeLaborUnrest(avgSolidarity: number, gini: number): number {
   return clamp(laborUnrestFn(avgSolidarity, gini), 0, 100)
