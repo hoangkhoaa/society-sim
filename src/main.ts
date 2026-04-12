@@ -2,9 +2,9 @@ import './css/main.css'
 import type { AIConfig, AIProvider, Constitution, NPC, WorldState } from './types'
 import { setupGreeting, setupChat, applyPreset, handlePlayerChat, resetInGameHistory, predictConsequences, generateConstitutionText } from './ai/god-agent'
 import { listAvailableModels, PROVIDER_MODELS, getAIUsage, getRemainingRPM, initKeyRing } from './ai/provider'
-import { addFeedRaw, addFeedThinking, setFeedFilter, setChronicleFilter, refreshChronicleTimestamps } from './ui/feed'
+import { addFeedRaw, addFeedThinking, setFeedFilter, setChronicleFilter, refreshChronicleTimestamps, addBreakthroughToLog } from './ui/feed'
 import { showConfirm, showInfo, showPolicyChoice, type PolicyDisplayCard } from './ui/modal'
-import { initWorld, tick, spawnEvent, applyInterventions, applyInstantEventDeaths, getIncomeTaxRate, MIN_NPC_COUNT, DEFAULT_NPC_COUNT, applyConstitutionPatch, applyWorldDelta, applyInstitutionDeltas } from './engine'
+import { initWorld, tick, spawnEvent, applyInterventions, applyInstantEventDeaths, getIncomeTaxRate, MIN_NPC_COUNT, DEFAULT_NPC_COUNT, applyConstitutionPatch, applyWorldDelta, applyInstitutionDeltas, recordFormulaBreakthrough } from './engine'
 import {
   setLang,
   t,
@@ -2193,6 +2193,20 @@ function applySideChannels(response: Awaited<ReturnType<typeof handlePlayerChat>
     const names = response.institution_deltas.map(d => d.id).join(', ')
     addFeedRaw(`🏛 Institutions adjusted: ${names}`, 'political', world.year, world.day)
   }
+  if (response.formula_patch?.length) {
+    const record = recordFormulaBreakthrough(
+      world,
+      response.formula_patch,
+      'god_agent',
+      'God Agent Formula Override',
+      response.answer ?? 'Simulation formula rewritten by the Architect.',
+    )
+    if (record) {
+      const keys = record.formula_patches?.map(p => p.key).join(', ') ?? ''
+      addFeedRaw(`⚗️ Formula rewritten: ${keys}`, 'political', world.year, world.day)
+      addBreakthroughToLog(record)
+    }
+  }
 }
 
 function injectEvent(response: Awaited<ReturnType<typeof handlePlayerChat>>) {
@@ -2374,6 +2388,27 @@ document.getElementById('chronicle-filters')!.addEventListener('click', e => {
   document.querySelectorAll('#chronicle-filters .log-filter-btn').forEach(b => b.classList.remove('active'))
   btn.classList.add('active')
   setChronicleFilter(btn.dataset.filter as 'minor' | 'major' | 'critical')
+})
+
+// ── Chronicle tab switching (Events / Breakthroughs) ──────────────────────
+document.getElementById('chronicle-tabs')?.addEventListener('click', e => {
+  const btn = (e.target as HTMLElement).closest('.chronicle-tab') as HTMLElement | null
+  if (!btn) return
+  const tab = btn.dataset.tab
+  document.querySelectorAll('.chronicle-tab').forEach(b => b.classList.remove('active'))
+  btn.classList.add('active')
+  const chronicleLog     = document.getElementById('chronicle-log')
+  const breakthroughLog  = document.getElementById('breakthrough-log')
+  const chronicleFilters = document.getElementById('chronicle-filters')
+  if (tab === 'chronicle') {
+    if (chronicleLog)     chronicleLog.style.display = ''
+    if (breakthroughLog)  breakthroughLog.style.display = 'none'
+    if (chronicleFilters) chronicleFilters.style.display = ''
+  } else {
+    if (chronicleLog)     chronicleLog.style.display = 'none'
+    if (breakthroughLog)  breakthroughLog.style.display = ''
+    if (chronicleFilters) chronicleFilters.style.display = 'none'
+  }
 })
 
 const chroniclePanel = document.getElementById('chronicle-panel') as HTMLElement

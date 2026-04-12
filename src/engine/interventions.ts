@@ -1,7 +1,8 @@
-import type { WorldState, Constitution, NPC, NPCIntervention, WorldDelta, InstitutionDelta } from '../types'
+import type { WorldState, Constitution, NPC, NPCIntervention, WorldDelta, InstitutionDelta, BreakthroughRecord, FormulaPatch, BreakthroughSource } from '../types'
 import { clamp } from '../sim/constitution'
 import { permanentRoleChange } from '../sim/npc'
 import { MAX_NPC_MEMORIES } from '../constants/engine-interventions'
+import { patchFormula, getFormulaExpr } from '../formulas/registry'
 
 // ── Direct NPC Interventions ─────────────────────────────────────────────────
 
@@ -187,6 +188,63 @@ export function applyWorldDelta(state: WorldState, delta: WorldDelta): void {
       expires_tick:   state.tick + 168,  // 7 days
     }
   }
+  if (delta.formula_patch?.length) {
+    recordFormulaBreakthrough(
+      state,
+      delta.formula_patch,
+      'god_agent',
+      'God Agent Formula Override',
+      'The Architect directly rewrote a simulation formula.',
+    )
+  }
+}
+
+/**
+ * Apply a set of formula patches and record them in `breakthrough_log`.
+ * Called by science discoveries, government reforms, or god-agent commands.
+ *
+ * @param state       - Current world state (breakthrough_log is mutated).
+ * @param patches     - Array of { key, expr } formula patches to apply.
+ * @param source      - Origin category for display/filtering.
+ * @param title       - Short human-readable title for the log entry.
+ * @param description - One-sentence description of the breakthrough.
+ */
+export function recordFormulaBreakthrough(
+  state: WorldState,
+  patches: FormulaPatch[],
+  source: BreakthroughSource,
+  title: string,
+  description: string,
+): BreakthroughRecord | null {
+  if (!patches.length) return null
+
+  const applied: BreakthroughRecord['formula_patches'] = []
+  for (const p of patches) {
+    try {
+      const prevExpr = getFormulaExpr(p.key)
+      patchFormula(p.key, p.expr)
+      applied.push({ key: p.key, prev_expr: prevExpr, new_expr: p.expr })
+    } catch (err) {
+      // Silently skip invalid expressions rather than crashing the sim
+      console.warn(`[formula-patch] invalid expr for "${p.key}":`, err)
+    }
+  }
+
+  if (!applied.length) return null
+
+  const record: BreakthroughRecord = {
+    id:               crypto.randomUUID(),
+    tick:             state.tick,
+    year:             state.year,
+    day:              state.day,
+    source,
+    title,
+    description,
+    formula_patches:  applied,
+  }
+
+  state.breakthrough_log.push(record)
+  return record
 }
 
 /** Apply power/legitimacy/resources changes to institutions. */

@@ -1,9 +1,10 @@
-import type { NarrativeEntry, FeedSeverity } from '../types'
+import type { NarrativeEntry, FeedSeverity, BreakthroughRecord } from '../types'
 import { FEED_ICONS } from '../types'
 import { tf } from '../i18n'
 
 const log = document.getElementById('feed-log')!
 const chronicleLog = document.getElementById('chronicle-log')!
+const breakthroughLog = document.getElementById('breakthrough-log') ?? null
 
 // ── Feed level filter ──────────────────────────────────────────────────────
 type FeedFilter = 'all' | 'warning' | 'critical'
@@ -149,4 +150,76 @@ export function refreshChronicleTimestamps() {
     const timeSpan = el.querySelector('.chronicle-time')
     if (timeSpan) timeSpan.textContent = tf('topbar.clock', { y: year, m: month, d: dayOfMonth })
   }
+}
+
+// ── Breakthrough Log ────────────────────────────────────────────────────────
+
+const SOURCE_ICONS: Record<string, string> = {
+  government_reform:  '🏛',
+  science_discovery:  '🔬',
+  god_agent:          '⚗️',
+}
+
+/**
+ * Append a breakthrough record to the `#breakthrough-log` panel.
+ * Shows source icon, timestamp, title, description, and the specific formula
+ * expressions or constitution parameters that changed.
+ */
+export function addBreakthroughToLog(record: BreakthroughRecord): void {
+  if (!breakthroughLog) return
+
+  const month = Math.ceil(record.day / 30)
+  const dayOfMonth = record.day % 30 || 30
+  const timeLabel = tf('topbar.clock', { y: record.year, m: month, d: dayOfMonth })
+  const icon = SOURCE_ICONS[record.source] ?? '📌'
+
+  const changes: string[] = []
+  if (record.formula_patches?.length) {
+    for (const fp of record.formula_patches) {
+      changes.push(
+        `<div class="breakthrough-change">` +
+        `<span class="breakthrough-key">formula: ${fp.key}</span>` +
+        `<div class="breakthrough-expr breakthrough-expr-new" title="New expression">${escapeHtml(fp.new_expr)}</div>` +
+        `<div class="breakthrough-expr breakthrough-expr-old" title="Previous expression"><del>${escapeHtml(fp.prev_expr)}</del></div>` +
+        `</div>`,
+      )
+    }
+  }
+  if (record.constitution_patch) {
+    for (const [k, v] of Object.entries(record.constitution_patch)) {
+      if (v != null) {
+        const sign = (v as number) >= 0 ? '+' : ''
+        changes.push(
+          `<div class="breakthrough-change">` +
+          `<span class="breakthrough-key">${k}</span>` +
+          `<span class="breakthrough-delta">${sign}${(v as number).toFixed(3)}</span>` +
+          `</div>`,
+        )
+      }
+    }
+  }
+
+  const el = document.createElement('div')
+  el.className = `breakthrough-entry breakthrough-${record.source}`
+  el.dataset.id = record.id
+  el.innerHTML = `
+    <div class="breakthrough-header">
+      <span class="breakthrough-icon">${icon}</span>
+      <span class="breakthrough-time">${timeLabel}</span>
+      <span class="breakthrough-title">${escapeHtml(record.title)}</span>
+    </div>
+    <div class="breakthrough-desc">${escapeHtml(record.description)}</div>
+    ${changes.length ? `<div class="breakthrough-changes">${changes.join('')}</div>` : ''}
+  `.trim()
+
+  breakthroughLog.prepend(el)
+
+  // Cap at 50 entries
+  while (breakthroughLog.children.length > 50) {
+    breakthroughLog.removeChild(breakthroughLog.lastChild!)
+  }
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }

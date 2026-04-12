@@ -11,7 +11,7 @@
 import type { WorldState, AIConfig } from '../types'
 import { callAI } from '../ai/provider'
 import { getLang } from '../i18n'
-import { addFeedRaw, addChronicle } from '../ui/feed'
+import { addFeedRaw, addChronicle, addBreakthroughToLog } from '../ui/feed'
 import { clamp } from './constitution'
 import {
   scienceSystemPrompt,
@@ -21,6 +21,7 @@ import {
   type ScienceScan,
   type ScienceDiscovery,
 } from '../local/science'
+import { recordFormulaBreakthrough } from '../engine/interventions'
 
 // Runtime state ──────────────────────────────────────────────────────────────
 
@@ -150,6 +151,18 @@ function applyDiscoveryEffects(state: WorldState, discovery: ScienceDiscovery): 
   // Food stock one-time bonus
   if (discovery.food_stock_delta != null) {
     state.food_stock = Math.max(0, state.food_stock + discovery.food_stock_delta)
+  }
+
+  // Permanent formula expression patches — paradigm-shifting breakthroughs
+  if (discovery.formula_patch?.length) {
+    const record = recordFormulaBreakthrough(
+      state,
+      discovery.formula_patch,
+      'science_discovery',
+      discovery.name,
+      discovery.description,
+    )
+    if (record) addBreakthroughToLog(record)
   }
 
   // Register discovery in the discoveries log

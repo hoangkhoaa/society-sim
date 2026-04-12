@@ -110,11 +110,13 @@ const translations = {
     'topbar.tip_level_critical': '✕ Critical',
 
     // Feed
-    'feed.header':      'Event Log',
-    'chronicle.header': 'Chronicle',
-    'filter.all':       'All',
-    'filter.important': 'Important',
-    'filter.critical':  'Critical',
+    'feed.header':             'Event Log',
+    'chronicle.header':        'Chronicle',
+    'chronicle.tab_events':    'Events',
+    'chronicle.tab_breakthroughs': '⚗️ Breakthroughs',
+    'filter.all':              'All',
+    'filter.important':        'Important',
+    'filter.critical':         'Critical',
 
     // Demographics
     'demo.title':   'Population',
@@ -855,11 +857,13 @@ const translations = {
     'topbar.tip_level_critical': '✕ Nghiêm trọng',
 
     // Feed
-    'feed.header':      'Nhật ký sự kiện',
-    'chronicle.header': 'Biên niên',
-    'filter.all':       'Tất cả',
-    'filter.important': 'Quan trọng',
-    'filter.critical':  'Khẩn cấp',
+    'feed.header':             'Nhật ký sự kiện',
+    'chronicle.header':        'Biên niên',
+    'chronicle.tab_events':    'Sự kiện',
+    'chronicle.tab_breakthroughs': '⚗️ Đột phá',
+    'filter.all':              'Tất cả',
+    'filter.important':        'Quan trọng',
+    'filter.critical':         'Khẩn cấp',
 
     // Demographics
     'demo.title':   'Dân số',

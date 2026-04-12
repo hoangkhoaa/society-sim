@@ -5,7 +5,7 @@
 // breeds social-reform theories, literacy enables scientific method, etc.
 
 import type { Lang } from '../i18n'
-import type { WorldState } from '../types'
+import type { WorldState, FormulaPatch } from '../types'
 import { pick } from './common'
 
 // ── Science scan snapshot ──────────────────────────────────────────────────
@@ -59,6 +59,12 @@ export interface ScienceDiscovery {
   scholar_happiness_delta?: number
   /** One-time food stock bonus/penalty */
   food_stock_delta?: number
+  /**
+   * Permanent formula expression patches — for truly paradigm-shifting
+   * discoveries that alter how the simulation computes macro or NPC stats.
+   * Each entry replaces the named formula expression for the rest of the session.
+   */
+  formula_patch?: FormulaPatch[]
 }
 
 // ── Template discoveries ───────────────────────────────────────────────────
@@ -247,14 +253,29 @@ ALWAYS return valid JSON matching this schema (no extra text):
   "npc_happiness_delta": <-10 to 15 or omit>,
   "npc_stress_delta": <-10 to 5 or omit>,
   "scholar_happiness_delta": <0 to 20 or omit>,
-  "food_stock_delta": <-500 to 1200 or omit>
+  "food_stock_delta": <-500 to 1200 or omit>,
+  "formula_patch": [
+    {"key": "stability"|"polarization"|"labor_unrest"|"stress"|"happiness"|"birth_chance",
+     "expr": "<valid JS expression using the formula's parameter names>"}
+  ]
 }
+
+Formula parameter names (must use exactly):
+- stability:    avgTrustGov, cohesion, food, avgStress, politicalPressure  → result 0-100
+- polarization: stdCollectivism, stdAuthority, centerDrift                 → result 0-100
+- labor_unrest: avgSolidarity, gini                                        → result 0-100
+- stress:       hunger, exhaustion, isolation, fear, identityStress, socialBuffer → inner sum (×100 applied automatically)
+- happiness:    stressPenalty, relativeStatus, inequalityPain, memoryEffect, trustBonus → result around 0-100
+- birth_chance: baseFertility, happinessFactor, stressFactor, fearFactor, needsFactor, wealthFactor, trustFactor, foodFactor → result ~0.00015
 
 Rules:
 - Keep constitution_patch values small (±0.01 to ±0.05 at most) — discoveries nudge but don't overhaul society
+- Use formula_patch ONLY for truly paradigm-shifting discoveries (new understanding of human psychology, revolutionary agricultural science, etc.)
+- Formula patches are PERMANENT for the session — use rarely and with clear thematic justification
 - Choose effects that make thematic sense with the discovery type
 - The "field" must be a lowercase snake_case id unique to this discovery
 - Make the description vivid but concise (one sentence)
+- Omit formula_patch entirely for ordinary discoveries
 
 ${directive}`
 }
