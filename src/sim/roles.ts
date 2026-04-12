@@ -31,6 +31,10 @@ import {
   ROLE_ADAPTIVE_COOLDOWN_DAYS,
   ROLE_ADAPTIVE_RETRAIN_DAYS,
   ROLE_ADAPTIVE_SWITCH_INCOME_FACTOR,
+  ROLE_ADAPTIVE_MIN_READINESS_SCORE,
+  ROLE_ADAPTIVE_MAX_EXHAUSTION_FOR_SWITCH,
+  ROLE_ADAPTIVE_MAX_HUNGER_FOR_SWITCH,
+  ROLE_ADAPTIVE_MAX_STRESS_FOR_SWITCH,
 } from '../constants/role-adaptive-switch'
 
 // ── Module-level state (hysteresis / throttling) ───────────────────────────
@@ -73,6 +77,34 @@ function roleFit(npc: WorldState['npcs'][number], role: AdaptiveSwitchRole): num
     case 'healthcare':
       return clamp(wv.collectivism * 0.55 + (1 - wv.risk_tolerance) * 0.25 + wv.authority_trust * 0.20, 0, 1)
   }
+}
+
+function roleReadinessByStats(npc: WorldState['npcs'][number], role: AdaptiveSwitchRole): number {
+  const stamina = clamp(1 - (npc.exhaustion + npc.hunger) / 200, 0, 1)
+  const calm = clamp(1 - npc.stress / 100, 0, 1)
+  const skill = clamp(npc.base_skill, 0, 1)
+  const fit = roleFit(npc, role)
+
+  let roleSpecific = 0.5
+  switch (role) {
+    case 'farmer':
+      roleSpecific = clamp(stamina * 0.65 + skill * 0.35, 0, 1)
+      break
+    case 'craftsman':
+      roleSpecific = clamp(skill * 0.55 + calm * 0.25 + npc.worldview.time_preference * 0.20, 0, 1)
+      break
+    case 'merchant':
+      roleSpecific = clamp(npc.worldview.risk_tolerance * 0.45 + (1 - npc.isolation / 100) * 0.30 + calm * 0.25, 0, 1)
+      break
+    case 'scholar':
+      roleSpecific = clamp(skill * 0.45 + npc.worldview.time_preference * 0.35 + calm * 0.20, 0, 1)
+      break
+    case 'healthcare':
+      roleSpecific = clamp(npc.worldview.collectivism * 0.40 + calm * 0.30 + skill * 0.30, 0, 1)
+      break
+  }
+
+  return clamp(fit * 0.45 + roleSpecific * 0.35 + skill * 0.20, 0, 1)
 }
 
 function computeRoleOpportunity(state: WorldState, roleAvgIncome: Record<AdaptiveSwitchRole, number>): Record<AdaptiveSwitchRole, number> {
@@ -150,6 +182,7 @@ export function checkAdaptiveRoleSwitching(state: WorldState): void {
     to: AdaptiveSwitchRole
     pressure: number
     expectedGain: number
+    readiness: number
   }> = []
 
   for (const npc of living) {
@@ -163,6 +196,9 @@ export function checkAdaptiveRoleSwitching(state: WorldState): void {
     const currentRole = npc.role
     const minCurrentFloor = Math.ceil(living.length * ADAPTIVE_ROLE_MIN_FRACTION[currentRole])
     if (roleCounts[currentRole] <= minCurrentFloor) continue
+    if (npc.exhaustion > ROLE_ADAPTIVE_MAX_EXHAUSTION_FOR_SWITCH) continue
+    if (npc.hunger > ROLE_ADAPTIVE_MAX_HUNGER_FOR_SWITCH) continue
+    if (npc.stress > ROLE_ADAPTIVE_MAX_STRESS_FOR_SWITCH) continue
 
     const currentIncome = Math.max(roleAvgIncome[currentRole], 0.1)
     const personalIncomeStress = clamp((currentIncome - npc.daily_income) / currentIncome, 0, 1)
@@ -171,10 +207,17 @@ export function checkAdaptiveRoleSwitching(state: WorldState): void {
     let bestTarget: AdaptiveSwitchRole | null = null
     let bestPressure = -Infinity
     let bestGain = 0
+    let bestReadiness = 0
 
     for (const target of ADAPTIVE_SWITCH_ROLES) {
       if (target === currentRole) continue
       if (roleCounts[target] / living.length > 0.55) continue
+
+      const readiness = roleReadinessByStats(npc, target)
+      const minReadiness = severeFoodStress && target === 'farmer'
+        ? ROLE_ADAPTIVE_MIN_READINESS_SCORE - 0.10
+        : ROLE_ADAPTIVE_MIN_READINESS_SCORE
+      if (readiness < minReadiness) continue
 
       const expectedGain = roleAvgIncome[target] - roleAvgIncome[currentRole]
       const gainRatio = clamp(expectedGain / currentIncome, -1, 1)
@@ -187,12 +230,14 @@ export function checkAdaptiveRoleSwitching(state: WorldState): void {
         + personalIncomeStress * 0.20
         + scarcityPush * 0.18
         + fitDelta * 0.12
+        + readiness * 0.16
         - 0.25
 
       if (pressure > bestPressure) {
         bestPressure = pressure
         bestTarget = target
         bestGain = expectedGain
+        bestReadiness = readiness
       }
     }
 
@@ -207,13 +252,14 @@ export function checkAdaptiveRoleSwitching(state: WorldState): void {
         to: bestTarget,
         pressure: bestPressure,
         expectedGain: bestGain,
+        readiness: bestReadiness,
       })
     }
   }
 
   if (candidates.length === 0) return
 
-  candidates.sort((a, b) => b.pressure - a.pressure || b.expectedGain - a.expectedGain)
+  candidates.sort((a, b) => b.pressure - a.pressure || b.readiness - a.readiness || b.expectedGain - a.expectedGain)
 
   const maxShift = Math.max(1, Math.ceil(living.length * ROLE_ADAPTIVE_MAX_SHIFT_FRACTION))
   const switchedByRole: Partial<Record<AdaptiveSwitchRole, number>> = {}

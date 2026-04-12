@@ -20,3 +20,15 @@ export const ROLE_ADAPTIVE_RETRAIN_DAYS = 18
 
 /** Immediate daily-income EMA shock on switch (learning curve). */
 export const ROLE_ADAPTIVE_SWITCH_INCOME_FACTOR = 0.70
+
+/** Minimum stat-readiness score required to switch into a target role. */
+export const ROLE_ADAPTIVE_MIN_READINESS_SCORE = 0.52
+
+/** Hard cap: exhausted workers above this cannot switch jobs voluntarily. */
+export const ROLE_ADAPTIVE_MAX_EXHAUSTION_FOR_SWITCH = 82
+
+/** Hard cap: hunger above this blocks non-emergency role switching. */
+export const ROLE_ADAPTIVE_MAX_HUNGER_FOR_SWITCH = 78
+
+/** Hard cap: stress above this blocks non-emergency role switching. */
+export const ROLE_ADAPTIVE_MAX_STRESS_FOR_SWITCH = 80

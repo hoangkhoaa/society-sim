@@ -47,7 +47,7 @@ On confirmation, return (MUST include "confirmed": true):
   "gini_start":0-1,"market_freedom":0-1,"resource_scarcity":0-1,"state_power":0-1,
   "safety_net":0-1,"individual_rights_floor":0-1,"base_trust":0-1,"network_cohesion":0-1,
   "value_priority":["security"|"equality"|"freedom"|"growth",...4 items],
-  "role_ratios":{"farmer":0.30,"craftsman":0.18,"merchant":0.12,"scholar":0.10,"guard":0.10,"leader":0.10,"healthcare":0.05,"gang":0.05},
+  "role_ratios":{"farmer":0.32,"craftsman":0.20,"merchant":0.13,"scholar":0.11,"guard":0.07,"leader":0.06,"healthcare":0.08,"gang":0.03},
   "description":"short description",
   "work_schedule":{"work_days_per_week":5-7,"work_start_hour":5-10,"work_end_hour":14-22}}}
 
@@ -278,7 +278,7 @@ export function applyPreset(
     base_trust: 0,
     network_cohesion: 0,
     value_priority: ['security', 'equality', 'freedom', 'growth'],
-    role_ratios: { farmer: 0.30, craftsman: 0.18, merchant: 0.12, scholar: 0.10, guard: 0.10, leader: 0.10, healthcare: 0.05, gang: 0.05 },
+    role_ratios: { farmer: 0.32, craftsman: 0.20, merchant: 0.13, scholar: 0.11, guard: 0.07, leader: 0.06, healthcare: 0.08, gang: 0.03 },
     description: '',
   }
 
@@ -288,7 +288,7 @@ export function applyPreset(
     safety_net: 0.80, base_trust: 0.72, network_cohesion: 0.70,
     individual_rights_floor: 0.70,
     value_priority: ['security', 'equality', 'freedom', 'growth'],
-    role_ratios: { farmer: 0.25, craftsman: 0.17, merchant: 0.12, scholar: 0.10, guard: 0.06, leader: 0.08, healthcare: 0.10, gang: 0.02 },
+    role_ratios: { farmer: 0.24, craftsman: 0.19, merchant: 0.13, scholar: 0.12, guard: 0.08, leader: 0.09, healthcare: 0.13, gang: 0.02 },
     description: 'preset.nordic_desc',
     work_schedule: { work_days_per_week: 5, work_start_hour: 8, work_end_hour: 16 },
   }
@@ -299,7 +299,7 @@ export function applyPreset(
     safety_net: 0.20, base_trust: 0.45, network_cohesion: 0.40,
     individual_rights_floor: 0.50,
     value_priority: ['freedom', 'growth', 'security', 'equality'],
-    role_ratios: { farmer: 0.28, craftsman: 0.17, merchant: 0.14, scholar: 0.09, guard: 0.08, leader: 0.08, healthcare: 0.06, gang: 0.10 },
+    role_ratios: { farmer: 0.29, craftsman: 0.19, merchant: 0.17, scholar: 0.10, guard: 0.07, leader: 0.07, healthcare: 0.07, gang: 0.04 },
     description: 'preset.cap_desc',
     work_schedule: { work_days_per_week: 6, work_start_hour: 7, work_end_hour: 19 },
   }
@@ -310,7 +310,7 @@ export function applyPreset(
     safety_net: 0.75, base_trust: 0.65, network_cohesion: 0.60,
     individual_rights_floor: 0.25,
     value_priority: ['equality', 'security', 'growth', 'freedom'],
-    role_ratios: { farmer: 0.30, craftsman: 0.20, merchant: 0.05, scholar: 0.12, guard: 0.10, leader: 0.10, healthcare: 0.08, gang: 0.05 },
+    role_ratios: { farmer: 0.32, craftsman: 0.23, merchant: 0.04, scholar: 0.13, guard: 0.10, leader: 0.08, healthcare: 0.08, gang: 0.02 },
     description: 'preset.soc_desc',
     work_schedule: { work_days_per_week: 6, work_start_hour: 6, work_end_hour: 16 },
   }
@@ -323,7 +323,7 @@ export function applyPreset(
     safety_net: 0.05, base_trust: 0.40, network_cohesion: 0.50,
     individual_rights_floor: 0.05, resource_scarcity: 0.60,
     value_priority: ['security', 'equality', 'growth', 'freedom'],
-    role_ratios: { farmer: 0.50, craftsman: 0.13, merchant: 0.07, scholar: 0.05, guard: 0.12, leader: 0.05, healthcare: 0.03, gang: 0.05 },
+    role_ratios: { farmer: 0.54, craftsman: 0.15, merchant: 0.07, scholar: 0.04, guard: 0.10, leader: 0.05, healthcare: 0.03, gang: 0.02 },
     description: 'preset.feudal_desc',
     work_schedule: { work_days_per_week: 6, work_start_hour: 5, work_end_hour: 19 },
   }
@@ -334,7 +334,7 @@ export function applyPreset(
     safety_net: 0.45, base_trust: 0.75, network_cohesion: 0.80,
     individual_rights_floor: 0.15, resource_scarcity: 0.45,
     value_priority: ['security', 'equality', 'growth', 'freedom'],
-    role_ratios: { farmer: 0.35, craftsman: 0.16, merchant: 0.08, scholar: 0.18, guard: 0.08, leader: 0.06, healthcare: 0.06, gang: 0.03 },
+    role_ratios: { farmer: 0.34, craftsman: 0.17, merchant: 0.08, scholar: 0.20, guard: 0.08, leader: 0.06, healthcare: 0.06, gang: 0.01 },
     description: 'preset.theocracy_desc',
     work_schedule: { work_days_per_week: 6, work_start_hour: 6, work_end_hour: 18 },
   }
@@ -345,7 +345,7 @@ export function applyPreset(
     safety_net: 0.55, base_trust: 0.55, network_cohesion: 0.45,
     individual_rights_floor: 0.60, resource_scarcity: 0.30,
     value_priority: ['growth', 'security', 'freedom', 'equality'],
-    role_ratios: { farmer: 0.15, craftsman: 0.22, merchant: 0.13, scholar: 0.26, guard: 0.06, leader: 0.06, healthcare: 0.09, gang: 0.03 },
+    role_ratios: { farmer: 0.18, craftsman: 0.24, merchant: 0.14, scholar: 0.25, guard: 0.06, leader: 0.05, healthcare: 0.07, gang: 0.01 },
     description: 'preset.technocracy_desc',
     work_schedule: { work_days_per_week: 5, work_start_hour: 9, work_end_hour: 18 },
   }
@@ -356,7 +356,7 @@ export function applyPreset(
     safety_net: 0.10, base_trust: 0.20, network_cohesion: 0.30,
     individual_rights_floor: 0.05, resource_scarcity: 0.75,
     value_priority: ['security', 'growth', 'freedom', 'equality'],
-    role_ratios: { farmer: 0.30, craftsman: 0.13, merchant: 0.08, scholar: 0.04, guard: 0.28, leader: 0.07, healthcare: 0.03, gang: 0.07 },
+    role_ratios: { farmer: 0.34, craftsman: 0.16, merchant: 0.08, scholar: 0.05, guard: 0.24, leader: 0.06, healthcare: 0.04, gang: 0.03 },
     description: 'preset.warlord_desc',
     work_schedule: { work_days_per_week: 7, work_start_hour: 5, work_end_hour: 21 },
   }
@@ -367,7 +367,7 @@ export function applyPreset(
     safety_net: 0.85, base_trust: 0.60, network_cohesion: 0.65,
     individual_rights_floor: 0.20, resource_scarcity: 0.50,
     value_priority: ['equality', 'security', 'growth', 'freedom'],
-    role_ratios: { farmer: 0.35, craftsman: 0.22, merchant: 0.03, scholar: 0.12, guard: 0.10, leader: 0.09, healthcare: 0.07, gang: 0.02 },
+    role_ratios: { farmer: 0.38, craftsman: 0.24, merchant: 0.00, scholar: 0.14, guard: 0.10, leader: 0.08, healthcare: 0.06, gang: 0.00 },
     description: 'preset.marxist_desc',
     work_schedule: { work_days_per_week: 6, work_start_hour: 6, work_end_hour: 16 },
   }
@@ -379,7 +379,7 @@ export function applyPreset(
     safety_net: 0.90, base_trust: 0.80, network_cohesion: 0.95,
     individual_rights_floor: 0.55, resource_scarcity: 0.40,
     value_priority: ['equality', 'freedom', 'security', 'growth'],
-    role_ratios: { farmer: 0.35, craftsman: 0.20, merchant: 0.07, scholar: 0.12, guard: 0.06, leader: 0.12, healthcare: 0.06, gang: 0.02 },
+    role_ratios: { farmer: 0.38, craftsman: 0.23, merchant: 0.03, scholar: 0.14, guard: 0.06, leader: 0.10, healthcare: 0.06, gang: 0.00 },
     description: 'preset.commune_desc',
     work_schedule: { work_days_per_week: 6, work_start_hour: 7, work_end_hour: 17 },
   }

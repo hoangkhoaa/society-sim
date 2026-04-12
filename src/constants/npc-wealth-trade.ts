@@ -9,7 +9,7 @@ export const NPC_TRADE_EFFICIENCY = 0.80
 export const NPC_MERCHANT_MARKUP = 0.22
 
 /** Survival spending per tick (food, shelter); scales daily drain. */
-export const NPC_SURVIVAL_COST_PER_TICK = 0.07
+export const NPC_SURVIVAL_COST_PER_TICK = 0.06
 
 // ── Farmer supply-chain ────────────────────────────────────────────────────
 
