@@ -216,6 +216,14 @@ function renderPanel(): void {
       )}
 
       ${renderToggleRow(
+        'enable_science_ai',
+        c.scienceAILabel,
+        c.scienceAIDesc,
+        _settings.enable_science_ai,
+        _lockedFeatures.has('enable_science_ai'),
+      )}
+
+      ${renderToggleRow(
         'enable_consequence_prediction',
         c.consequencesLabel,
         c.consequencesDesc,

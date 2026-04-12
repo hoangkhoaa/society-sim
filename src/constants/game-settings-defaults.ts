@@ -12,6 +12,7 @@ export const GAME_SETTINGS_DEFAULTS: GameSettings = {
   enable_government_ai:          true,
   enable_npc_thoughts:           true,
   enable_press_ai:               true,
+  enable_science_ai:             true,
   enable_consequence_prediction: true,
   map_background_mode:           'background_only',
 }
