@@ -215,6 +215,15 @@ function censorProbability(severity: 'info' | 'warning' | 'critical', censorship
   return clamp(base + jitter, 0, 0.98)
 }
 
+/**
+ * Press censorship is a side feature, so it should not trigger every cycle.
+ * Authoritarian regimes still see it more often, but many cycles remain uncensored.
+ */
+function shouldRunCensorshipThisCycle(censorshipProb: number): boolean {
+  const cycleChance = clamp(0.08 + censorshipProb * 0.42, 0, 0.50)
+  return Math.random() < cycleChance
+}
+
 // redactionNoteText(lang, censorshipProb, variant) is imported from local/press
 
 /**
@@ -379,6 +388,7 @@ export async function runPressCycle(
     const variant       = regimeProfile.variant
     const lang          = getLang()
     const cProb         = restrictions.censorship_prob
+    const censorThisCycle = shouldRunCensorshipThisCycle(cProb)
 
     // Decide censorship per headline BEFORE publishing so we can annotate the chronicle
     type PublishedEntry = {
@@ -394,7 +404,8 @@ export async function runPressCycle(
       const feedSev = h.severity === 'critical' ? 'critical' : h.severity === 'warning' ? 'warning' : 'info'
       const entryId = addFeedRaw(h.text, feedSev, state.year, state.day)
 
-      const willCensor = Math.random() < censorProbability(h.severity, cProb, variant)
+      const willCensor = censorThisCycle
+        && Math.random() < censorProbability(h.severity, cProb, variant)
 
       // Chronicle is the permanent historical record — marks censored articles
       const chronicleText = willCensor
