@@ -190,25 +190,25 @@ function censorProbability(severity: 'info' | 'warning' | 'critical', censorship
   // Warlord / collective regimes also suppress neutral-seeming 'info' items
   // that could undermine the official narrative
   if (severity === 'info') {
-    if (variant === 'warlord')   return censorshipProb * 0.40
-    if (variant === 'collective') return censorshipProb * 0.20
+    if (variant === 'warlord')   return censorshipProb * 0.22
+    if (variant === 'collective') return censorshipProb * 0.10
     return 0                                   // free/moderate regimes: neutral news left alone
   }
   let base: number
   if (severity === 'warning') {
-    // Authoritarian regimes act faster and harder on warning content
-    if (variant === 'warlord')    base = Math.min(0.95, censorshipProb * 1.10)
-    else if (variant === 'collective') base = Math.min(0.90, censorshipProb * 0.90)
-    else if (variant === 'feudal')     base = censorshipProb * 0.70
-    else if (variant === 'theocracy')  base = censorshipProb * 0.75
-    else base = censorshipProb * 0.65               // default / capitalist / technocracy
+    // Warning items should be filtered selectively, not wiped out wholesale.
+    if (variant === 'warlord')         base = Math.min(0.64, censorshipProb * 0.68)
+    else if (variant === 'collective') base = Math.min(0.52, censorshipProb * 0.54)
+    else if (variant === 'feudal')     base = censorshipProb * 0.40
+    else if (variant === 'theocracy')  base = censorshipProb * 0.44
+    else base = censorshipProb * 0.30               // default / capitalist / technocracy
   } else {
-    // critical severity: all regimes lean toward suppression; authoritarian ones especially so
-    if (variant === 'warlord')         base = Math.min(0.98, censorshipProb * 1.25)
-    else if (variant === 'collective') base = Math.min(0.95, censorshipProb * 1.20)
-    else if (variant === 'feudal')     base = Math.min(0.90, censorshipProb * 1.15)
-    else if (variant === 'theocracy')  base = Math.min(0.90, censorshipProb * 1.15)
-    else base = Math.min(0.95, censorshipProb * 1.15) // default
+    // Critical items still attract censorship, but should leave visible room for uncensored stories.
+    if (variant === 'warlord')         base = Math.min(0.74, censorshipProb * 0.86)
+    else if (variant === 'collective') base = Math.min(0.61, censorshipProb * 0.72)
+    else if (variant === 'feudal')     base = Math.min(0.52, censorshipProb * 0.58)
+    else if (variant === 'theocracy')  base = Math.min(0.52, censorshipProb * 0.58)
+    else base = Math.min(0.48, censorshipProb * 0.44) // default / capitalist / technocracy
   }
   // Per-article luck jitter: ±25% of the base rate (simulates bureaucratic efficiency variance)
   const jitter = (Math.random() - 0.5) * 0.25 * base
