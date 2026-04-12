@@ -147,6 +147,10 @@ export function applyExternalTradeBalance(state: WorldState): void {
   state.trade_imports_last_day = importsValue
   state.trade_balance_last_day = tradeBalance
   state.trade_revenue_last_day = tradeRevenue
+  // Cumulative all-time totals
+  if (tradeRevenue > 0) state.total_trade_revenue = (state.total_trade_revenue ?? 0) + tradeRevenue
+  state.total_exports = (state.total_exports ?? 0) + exportsValue
+  state.total_imports = (state.total_imports ?? 0) + importsValue
 }
 
 // ── Emergency money printing (critical treasury backstop) ──────────────────
@@ -173,6 +177,7 @@ export function maybePrintEmergencyMoney(state: WorldState): void {
   state.tax_pool = clamp((state.tax_pool ?? 0) + printed, 0, 9_999_999)
   state.money_supply = clamp((state.money_supply ?? 0) + printed, 1, 99_999_999)
   state.money_printed_last_day = printed
+  state.total_money_printed = (state.total_money_printed ?? 0) + printed
   state.tax_pool_critical_days = 0
   lastMoneyPrintDay = state.day
 
@@ -371,6 +376,7 @@ export function applyIncomeTax(state: WorldState): void {
     if (taxAmount < 0.01) continue
     npc.wealth = clamp(npc.wealth - taxAmount, 0, 50000)
     state.tax_pool = clamp((state.tax_pool ?? 0) + taxAmount, 0, 9_999_999)
+    state.total_taxes_collected = (state.total_taxes_collected ?? 0) + taxAmount
 
     // High tax with low perceived government competence → grievance
     if (taxRate >= 0.20 && npc.trust_in.government.competence < 0.40) {
@@ -776,6 +782,7 @@ export function applyPropertyTax(state: WorldState): void {
 
   if (poolGain > 0) {
     state.tax_pool = clamp((state.tax_pool ?? 0) + poolGain, 0, 9_999_999)
+    state.total_taxes_collected = (state.total_taxes_collected ?? 0) + poolGain
   }
 }
 

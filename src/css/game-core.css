@@ -285,7 +285,7 @@ body[data-theme='light'] .map-note-btn {
   position: absolute;
   bottom: 8px;
   left: 424px;
-  width: 200px;
+  width: 210px;
   background: #0f0f0f;
   border: 1px solid #1e1e1e;
   border-radius: 6px;
@@ -293,6 +293,31 @@ body[data-theme='light'] .map-note-btn {
   font-size: 11px;
   z-index: 5;
 }
+
+#econ-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid #1a1a1a;
+  margin: 0 -2px 6px;
+  flex-shrink: 0;
+}
+.econ-tab {
+  flex: 1;
+  padding: 4px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: #555;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.econ-tab:hover { color: #999; }
+.econ-tab.active { color: #5d9eca; border-bottom-color: #5d9eca; }
+.econ-pane .demo-grid { margin-bottom: 0; }
 
 #npc-contacts-panel {
   position: absolute;
@@ -380,6 +405,11 @@ body[data-theme='light'] .npc-contacts-empty {
   border-bottom: 1px solid #1a1a1a;
   margin-bottom: 6px;
 }
+.demo-note {
+  font-size: 9px;
+  color: #6f6f6f;
+  margin: -2px 0 6px;
+}
 .demo-grid {
   display: grid;
   grid-template-columns: auto auto;
@@ -397,6 +427,7 @@ body[data-theme='light'] .npc-contacts-empty {
   font-size: 11px;
   font-weight: 500;
 }
+body[data-theme='light'] .demo-note { color: #7d90a6; }
 .demo-ages {
   display: flex;
   flex-direction: column;

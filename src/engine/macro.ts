@@ -104,16 +104,18 @@ export function computeMacroStats(state: WorldState): WorldState['macro'] {
   state.food_stock = clamp(rawStock - spoilageFactor, 0, storageCapacity)
   const food = clamp(state.food_stock / (n * 30) * 100, 0, 100)
 
-  // Natural resources — craftsmen and farmers extract resources; natural regeneration
-  // Extraction scales with productivity of producers; scarcity constitution reduces both sides
-  const extractionRate = (craftsmanProd * 0.3 + farmerProd * 0.1) * scarcityFactor
+  // Natural resources — craftsmen and farmers extract resources; natural regeneration.
+  // Keep extraction moderate so long-run GDP is not forced downward by early depletion.
+  const rawPool = state.natural_resources ?? 50000
+  const extractionAccessibility = clamp(rawPool / 40000, 0.35, 1.0)
+  const extractionRate = (craftsmanProd * 0.030 + farmerProd * 0.012) * scarcityFactor * extractionAccessibility
 
   // Regen: base logistic growth (slows near cap, accelerates in mid-range)
   // Tech discovery "ecology" or low exploitation boosts regen
-  const rawPool = state.natural_resources ?? 50000
   const ecoBonus = (state.discoveries ?? []).some(d => d.id === 'ecology' || d.id === 'medicine') ? 1.4 : 1.0
-  // Logistic regen: fastest at 50% of max (25k/50k), slows as it approaches cap
-  const regenRate = rawPool * 0.00018 * (1 - rawPool / 110000) * ecoBonus
+  // Logistic regen + stronger baseline recovery so depleted worlds can recover over time.
+  const regenBase = 5 + (100000 - rawPool) * 0.0002
+  const regenRate = (rawPool * 0.00034 * (1 - rawPool / 120000) + regenBase) * ecoBonus
   state.natural_resources = clamp(rawPool + regenRate - extractionRate, 0, 100000)
   const natural_resources = clamp(state.natural_resources / 1000, 0, 100)
 

@@ -108,6 +108,7 @@ export function tick(state: WorldState): void {
   // Update macro every 24 ticks (daily)
   if (state.tick % 24 === 0) {
     state.macro = computeMacroStats(state)
+    if ((state.macro.gdp ?? 0) > (state.peak_gdp ?? 0)) state.peak_gdp = state.macro.gdp
     state.drift_score = computeDriftScore(state)
     checkCrisis(state)
     checkPopulationViability(state)

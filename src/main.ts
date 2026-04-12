@@ -1397,20 +1397,18 @@ function updateEconomicsPanel() {
   const { macro } = world
   const taxRate = getIncomeTaxRate(world)
 
-  const gdpEl = document.getElementById('ep-gdp')
-  const extractEl = document.getElementById('ep-extraction')
-  const effEl = document.getElementById('ep-efficiency')
-  const taxPoolEl = document.getElementById('ep-tax-pool')
-  const taxRateEl = document.getElementById('ep-tax-rate')
-  const exportsEl = document.getElementById('ep-exports')
-  const importsEl = document.getElementById('ep-imports')
+  // ── Tab 1: Daily ──────────────────────────────────────────────────────────
+  const gdpEl          = document.getElementById('ep-gdp')
+  const extractEl      = document.getElementById('ep-extraction')
+  const effEl          = document.getElementById('ep-efficiency')
+  const taxRateEl      = document.getElementById('ep-tax-rate')
+  const exportsEl      = document.getElementById('ep-exports')
+  const importsEl      = document.getElementById('ep-imports')
   const tradeBalanceEl = document.getElementById('ep-trade-balance')
   const tradeRevenueEl = document.getElementById('ep-trade-revenue')
-  const moneySupplyEl = document.getElementById('ep-money-supply')
-  const inflationEl = document.getElementById('ep-inflation')
   const moneyPrintedEl = document.getElementById('ep-money-printed')
-  const sanitationEl = document.getElementById('ep-sanitation')
-  const hospitalEl = document.getElementById('ep-hospital')
+  const sanitationEl   = document.getElementById('ep-sanitation')
+  const hospitalEl     = document.getElementById('ep-hospital')
 
   if (gdpEl) {
     const currentGdp = Math.round(macro.gdp ?? 0)
@@ -1434,7 +1432,6 @@ function updateEconomicsPanel() {
     effEl.textContent = `${ef}%`
     effEl.style.color = ef < 30 ? '#e24b4b' : ef < 55 ? '#ef9f27' : '#5dcaa5'
   }
-  if (taxPoolEl) taxPoolEl.textContent = `${Math.round(world.tax_pool ?? 0)}`
   if (taxRateEl) taxRateEl.textContent = `${Math.round(taxRate * 100)}%`
   if (exportsEl) exportsEl.textContent = `${Math.round(world.trade_exports_last_day ?? 0)}`
   if (importsEl) importsEl.textContent = `${Math.round(world.trade_imports_last_day ?? 0)}`
@@ -1447,12 +1444,6 @@ function updateEconomicsPanel() {
     const rev = world.trade_revenue_last_day ?? 0
     tradeRevenueEl.textContent = `${Math.round(rev)}`
     tradeRevenueEl.style.color = rev < -10 ? '#e24b4b' : rev < 10 ? '#ef9f27' : '#5dcaa5'
-  }
-  if (moneySupplyEl) moneySupplyEl.textContent = `${Math.round(world.money_supply ?? 0)}`
-  if (inflationEl) {
-    const infPct = (world.inflation_rate ?? 0) * 100
-    inflationEl.textContent = `${infPct.toFixed(1)}%`
-    inflationEl.style.color = infPct >= 20 ? '#e24b4b' : infPct >= 8 ? '#ef9f27' : '#5dcaa5'
   }
   if (moneyPrintedEl) {
     const printed = world.money_printed_last_day ?? 0
@@ -1470,6 +1461,51 @@ function updateEconomicsPanel() {
       ? String(t('econ.hospital_active'))
       : String(t('econ.hospital_none'))
     hospitalEl.style.color = active ? '#5dcaa5' : '#aaa'
+  }
+
+  // ── Tab 2: All-Time ───────────────────────────────────────────────────────
+  const taxPoolEl      = document.getElementById('ep-tax-pool')
+  const totalTaxesEl   = document.getElementById('ep-total-taxes')
+  const moneySupplyEl  = document.getElementById('ep-money-supply')
+  const inflationEl    = document.getElementById('ep-inflation')
+  const totalPrintedEl = document.getElementById('ep-total-printed')
+  const totalExportsEl = document.getElementById('ep-total-exports')
+  const totalImportsEl = document.getElementById('ep-total-imports')
+  const totalTradeRevEl= document.getElementById('ep-total-trade-rev')
+  const peakGdpEl      = document.getElementById('ep-peak-gdp')
+  const researchEl     = document.getElementById('ep-research')
+  const discoveriesEl  = document.getElementById('ep-discoveries')
+
+  if (taxPoolEl) {
+    const pool = Math.round(world.tax_pool ?? 0)
+    taxPoolEl.textContent = `${pool}`
+    taxPoolEl.style.color = pool < 50 ? '#e24b4b' : pool < 200 ? '#ef9f27' : '#5dcaa5'
+  }
+  if (totalTaxesEl) totalTaxesEl.textContent = `${Math.round(world.total_taxes_collected ?? 0)}`
+  if (moneySupplyEl) moneySupplyEl.textContent = `${Math.round(world.money_supply ?? 0)}`
+  if (inflationEl) {
+    const infPct = (world.inflation_rate ?? 0) * 100
+    inflationEl.textContent = `${infPct.toFixed(1)}%`
+    inflationEl.style.color = infPct >= 20 ? '#e24b4b' : infPct >= 8 ? '#ef9f27' : '#5dcaa5'
+  }
+  if (totalPrintedEl) {
+    const tp = Math.round(world.total_money_printed ?? 0)
+    totalPrintedEl.textContent = `${tp}`
+    totalPrintedEl.style.color = tp > 500 ? '#e24b4b' : tp > 100 ? '#ef9f27' : '#aaa'
+  }
+  if (totalExportsEl) totalExportsEl.textContent = `${Math.round(world.total_exports ?? 0)}`
+  if (totalImportsEl) totalImportsEl.textContent = `${Math.round(world.total_imports ?? 0)}`
+  if (totalTradeRevEl) {
+    const ttr = Math.round(world.total_trade_revenue ?? 0)
+    totalTradeRevEl.textContent = `${ttr}`
+    totalTradeRevEl.style.color = ttr < 0 ? '#e24b4b' : '#5dcaa5'
+  }
+  if (peakGdpEl) peakGdpEl.textContent = `${Math.round(world.peak_gdp ?? 0)}`
+  if (researchEl) researchEl.textContent = `${Math.round(world.research_points ?? 0)}`
+  if (discoveriesEl) {
+    const count = world.discoveries?.length ?? 0
+    discoveriesEl.textContent = count === 0 ? '–' : `${count} / ${5}`
+    discoveriesEl.style.color = count >= 4 ? '#5dcaa5' : count >= 2 ? '#ef9f27' : '#aaa'
   }
 }
 
@@ -2464,6 +2500,24 @@ document.getElementById('chronicle-tabs')?.addEventListener('click', e => {
     if (chronicleLogEl)     chronicleLogEl.style.display = 'none'
     if (breakthroughLogEl)  breakthroughLogEl.style.display = ''
     if (chronicleFiltersEl) chronicleFiltersEl.style.display = 'none'
+  }
+})
+
+// ── Economics panel tab switching ─────────────────────────────────────────
+document.getElementById('econ-tabs')?.addEventListener('click', e => {
+  const btn = (e.target as HTMLElement).closest('.econ-tab') as HTMLElement | null
+  if (!btn) return
+  const tab = btn.dataset.tab
+  document.querySelectorAll('.econ-tab').forEach(b => b.classList.remove('active'))
+  btn.classList.add('active')
+  const dailyPane   = document.getElementById('econ-daily')
+  const alltimePane = document.getElementById('econ-alltime')
+  if (tab === 'econ-daily') {
+    if (dailyPane)   dailyPane.style.display = ''
+    if (alltimePane) alltimePane.style.display = 'none'
+  } else {
+    if (dailyPane)   dailyPane.style.display = 'none'
+    if (alltimePane) alltimePane.style.display = ''
   }
 })
 

@@ -4,6 +4,11 @@ import { buildNetwork } from '../sim/network'
 import { initInstitutions, clamp } from '../sim/constitution'
 import { computeMacroStats } from './macro'
 import { INFLUENCE_REFERENCE_DEGREE } from './network-dynamics'
+import {
+  GOVT_WAGE_GUARD_COINS,
+  GOVT_WAGE_LEADER_COINS,
+  GOVT_WAGE_INITIAL_TREASURY_PAYROLL_DAYS,
+} from '../constants/economy-tuning'
 
 // ── World Initialization ────────────────────────────────────────────────────
 
@@ -53,6 +58,12 @@ export async function initWorld(constitution: Constitution, npcCount: number = D
 
   // Natural resource pool: starts at 100k × (1 - scarcity)
   const naturalResourcesInit = clamp(100000 * (1 - constitution.resource_scarcity), 10000, 100000)
+  const guardsInit = npcs.filter(n => n.role === 'guard').length
+  const leadersInit = npcs.filter(n => n.role === 'leader').length
+  const dailyPayrollInit = guardsInit * GOVT_WAGE_GUARD_COINS + leadersInit * GOVT_WAGE_LEADER_COINS
+  const initialTaxPool = Math.round(dailyPayrollInit * GOVT_WAGE_INITIAL_TREASURY_PAYROLL_DAYS)
+  const initialPrivateMoney = npcs.reduce((sum, npc) => sum + npc.wealth, 0)
+  const initialMoneySupply = Math.round(initialPrivateMoney + initialTaxPool)
 
   // computeMacroStats calls computeProductivity, which reads state.macro.natural_resources
   const macroStub = {
@@ -84,7 +95,21 @@ export async function initWorld(constitution: Constitution, npcCount: number = D
     narrative_log: [],
     drift_score: 0,
     crisis_pending: false,
-    tax_pool: 0,
+    tax_pool: initialTaxPool,
+    money_supply: initialMoneySupply,
+    inflation_rate: 0,
+    trade_exports_last_day: 0,
+    trade_imports_last_day: 0,
+    trade_balance_last_day: 0,
+    trade_revenue_last_day: 0,
+    money_printed_last_day: 0,
+    tax_pool_critical_days: 0,
+    total_taxes_collected: 0,
+    total_money_printed: 0,
+    total_trade_revenue: 0,
+    total_exports: 0,
+    total_imports: 0,
+    peak_gdp: 0,
   } as unknown as WorldState)
 
   return {
@@ -114,7 +139,21 @@ export async function initWorld(constitution: Constitution, npcCount: number = D
     births_total: 0,
     immigration_total: 0,
     active_strikes: [],
-    tax_pool: 0,
+    tax_pool: initialTaxPool,
+    money_supply: initialMoneySupply,
+    inflation_rate: 0,
+    trade_exports_last_day: 0,
+    trade_imports_last_day: 0,
+    trade_balance_last_day: 0,
+    trade_revenue_last_day: 0,
+    money_printed_last_day: 0,
+    tax_pool_critical_days: 0,
+    total_taxes_collected: 0,
+    total_money_printed: 0,
+    total_trade_revenue: 0,
+    total_exports: 0,
+    total_imports: 0,
+    peak_gdp: 0,
     leader_id: null,
     last_election_day: -1,
     collapse_phase: 'normal',

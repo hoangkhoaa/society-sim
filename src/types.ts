@@ -627,6 +627,22 @@ export interface WorldState {
 
   // Economy
   tax_pool: number              // government treasury — collected from income tax, spent by regime
+  money_supply: number          // total nominal money in circulation (coins)
+  inflation_rate: number        // cumulative inflation pressure (0-1+), affects real purchasing power
+  trade_exports_last_day: number
+  trade_imports_last_day: number
+  trade_balance_last_day: number
+  trade_revenue_last_day: number
+  money_printed_last_day: number
+  tax_pool_critical_days: number
+
+  // Cumulative economic statistics (all-time since game start)
+  total_taxes_collected: number  // income tax + property tax + feud tribute ever collected
+  total_money_printed: number    // emergency money printed by the state (all-time)
+  total_trade_revenue: number    // net trade revenue (duties + tariffs, all-time)
+  total_exports: number          // cumulative export value
+  total_imports: number          // cumulative import value
+  peak_gdp: number               // highest daily GDP ever recorded
 
   // Public health infrastructure
   public_health: PublicHealth
