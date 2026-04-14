@@ -1,7 +1,6 @@
 import type { WorldState, Constitution, NPC, NPCIntervention, WorldDelta, InstitutionDelta, BreakthroughRecord, FormulaPatch, BreakthroughSource } from '../types'
 import { clamp } from '../sim/constitution'
-import { permanentRoleChange } from '../sim/npc'
-import { MAX_NPC_MEMORIES } from '../constants/engine-interventions'
+import { permanentRoleChange, addMemory } from '../sim/npc'
 import { patchFormula, getFormulaExpr } from '../formulas/registry'
 
 /** Default title used when a formula patch originates from a god-agent response. */
@@ -127,8 +126,7 @@ function applyInterventionToNPC(npc: NPC, iv: NPCIntervention, state: WorldState
 
   // Memory injection
   if (iv.memory) {
-    npc.memory.push({ event_id: 'intervention', type: iv.memory.type, emotional_weight: iv.memory.emotional_weight, tick: state.tick })
-    if (npc.memory.length > MAX_NPC_MEMORIES) npc.memory.shift()
+    addMemory(npc, { event_id: 'intervention', type: iv.memory.type, emotional_weight: iv.memory.emotional_weight, tick: state.tick })
   }
 }
 

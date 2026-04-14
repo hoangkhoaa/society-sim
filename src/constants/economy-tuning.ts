@@ -42,16 +42,16 @@ export const TRADE_RESOURCE_EXPORT_BONUS = 0.18
 export const TRADE_SCARCITY_IMPORT_PRESSURE = 0.22
 
 /** Number of consecutive critical-tax days before money printing is allowed. */
-export const MONEY_PRINT_CRITICAL_DAYS = 6
+export const MONEY_PRINT_CRITICAL_DAYS = 9
 
 /** Cooldown between two printing operations (in days). */
-export const MONEY_PRINT_COOLDOWN_DAYS = 7
+export const MONEY_PRINT_COOLDOWN_DAYS = 14
 
 /** Printed amount as a multiple of daily payroll once triggered. */
-export const MONEY_PRINT_PAYROLL_MULTIPLIER = 3.0
+export const MONEY_PRINT_PAYROLL_MULTIPLIER = 1.8
 
 /** Extra inflation pressure from money printing (scaled by printed/supply). */
-export const MONEY_PRINT_INFLATION_MULTIPLIER = 0.65
+export const MONEY_PRINT_INFLATION_MULTIPLIER = 1.2
 
 /** Minimum wealth to trigger investment behavior. */
 export const WEALTH_INVEST_THRESHOLD = 6000
@@ -70,13 +70,13 @@ export const WEALTH_INVEST_INTERVAL_TICKS = 24 * 7
  * 0.05 %/day ≈ ~18 %/year on accumulated wealth; mirrors historical land-tax
  * burdens across Rome, Tang China, Ottoman, and feudal Europe.
  */
-export const PROPERTY_TAX_RATE = 0.0005
+export const PROPERTY_TAX_RATE = 0.0008
 
 /**
  * Minimum wealth (coins) before property tax applies.
  * Protects subsistence-level NPCs; only taxable surplus above this floor.
  */
-export const PROPERTY_TAX_WEALTH_FLOOR = 100
+export const PROPERTY_TAX_WEALTH_FLOOR = 150
 
 // ── Consumption / VAT-style Tax ────────────────────────────────────────────
 

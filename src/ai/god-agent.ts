@@ -516,6 +516,39 @@ ${langDirective(getLang())}`
   return thought.trim()
 }
 
+// ── Background thought pre-generation (fire-and-forget) ───────────────────
+//
+// Called once per sim-day. Silently pre-warms daily_thought for the top-N
+// most-distressed living NPCs so the spotlight panel shows instantly on click.
+
+const BG_THOUGHT_MAX = 5
+const BG_THOUGHT_STALE_TICKS = 24  // refresh once per sim-day
+
+export function scheduleBackgroundThoughts(state: WorldState, config: AIConfig): void {
+  // Skip if no config or token mode would just return a fallback anyway
+  if (!config) return
+
+  const candidates = state.npcs
+    .filter(n =>
+      n.lifecycle.is_alive &&
+      (n.stress > 60 || n.grievance > 50) &&
+      (n.last_thought_tick == null || (state.tick - n.last_thought_tick) >= BG_THOUGHT_STALE_TICKS),
+    )
+    .sort((a, b) => (b.stress + b.grievance) - (a.stress + a.grievance))
+    .slice(0, BG_THOUGHT_MAX)
+
+  for (const npc of candidates) {
+    // Mark tick immediately so rapid day-changes don't double-schedule
+    npc.last_thought_tick = state.tick
+    generateNPCThought(npc, state, config).then(thought => {
+      npc.daily_thought = thought
+      npc.last_thought_tick = state.tick
+    }).catch(() => {
+      // Fire-and-forget: silently ignore errors so the sim loop is never interrupted
+    })
+  }
+}
+
 // ── World context builder (compressed ~400 tokens) ─────────────────────────
 
 function buildWorldContext(state: WorldState, config: AIConfig): string {

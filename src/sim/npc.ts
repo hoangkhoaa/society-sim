@@ -1,4 +1,4 @@
-import type { NPC, Constitution, WorldState, Role, TrustMap, ActionState, WorkMotivationType, WorkSchedule, NPCPersonality, NPCRelationEventType } from '../types'
+import type { NPC, Constitution, WorldState, Role, TrustMap, ActionState, WorkMotivationType, WorkSchedule, NPCPersonality, NPCRelationEventType, MemoryEntry } from '../types'
 import { faker } from '@faker-js/faker'
 import { clamp, gaussian, rand, randInt, weightedRandom, getSeason, getSeasonIncomeModifier, ZONE_ADJACENCY } from './constitution'
 import { t, tf, tOccVariant } from '../i18n'
@@ -229,7 +229,7 @@ export function inferWorkSchedule(c: Constitution): WorkSchedule {
   }
   // Feudal: near-constant labor, one day off
   if (c.gini_start >= 0.55 && c.individual_rights_floor < 0.20) {
-    return { work_days_per_week: 6, work_start_hour: 5, work_end_hour: 19 }
+    return { work_days_per_week: 6, work_start_hour: 5, work_end_hour: 18 }
   }
   // Theocratic: 6-day week with one religious rest day
   if (c.state_power >= 0.70 && c.base_trust >= 0.65 && c.network_cohesion >= 0.70) {
@@ -256,7 +256,7 @@ export function inferWorkSchedule(c: Constitution): WorkSchedule {
     return { work_days_per_week: 6, work_start_hour: 7, work_end_hour: 17 }
   }
   // Default / Moderate
-  return { work_days_per_week: 5, work_start_hour: 7, work_end_hour: 18 }
+  return { work_days_per_week: 5, work_start_hour: 7, work_end_hour: 17 }
 }
 
 // ── Work Motivation Inference ──────────────────────────────────────────────
@@ -364,6 +364,31 @@ export function generatePersonality(npcId: number, role: Role): NPCPersonality {
   }
 }
 
+
+// ── Memory helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Add a memory entry with priority eviction.
+ * If memory is full (≥ 10 entries), evict the entry with the lowest |emotional_weight|
+ * below 60. If all entries have |emotional_weight| >= 60, fall back to FIFO (oldest).
+ */
+export function addMemory(npc: NPC, entry: MemoryEntry): void {
+  npc.memory.push(entry)
+  if (npc.memory.length > 10) {
+    // Find lowest-|weight| entry below the trauma threshold
+    let evictIdx = -1
+    let lowestAbs = Infinity
+    for (let i = 0; i < npc.memory.length; i++) {
+      const abs = Math.abs(npc.memory[i].emotional_weight)
+      if (abs < 60 && abs < lowestAbs) {
+        lowestAbs = abs
+        evictIdx = i
+      }
+    }
+    // Fall back to FIFO if all memories are traumatic (|weight| >= 60)
+    npc.memory.splice(evictIdx >= 0 ? evictIdx : 0, 1)
+  }
+}
 
 // ── Enmity helpers ─────────────────────────────────────────────────────────
 // An NPC can hold grudges against up to 5 others.  When the list is full the
@@ -768,7 +793,16 @@ export function tickNPC(npc: NPC, state: WorldState, events: IndividualEvent[] |
     updateGrievance(npc, state)
     updateWorldview(npc, state)
   }
-  if (state.tick % 24 === npc.id % 24) decayDirectRelations(npc, state.tick)
+  if (state.tick % 24 === npc.id % 24) {
+    decayDirectRelations(npc, state.tick)
+    // Daily memory decay: minor memories fade ~3%/day; trauma (|weight|≥60) is permanent.
+    for (const entry of npc.memory) {
+      if (Math.abs(entry.emotional_weight) < 60) {
+        entry.emotional_weight *= 0.97
+      }
+    }
+    npc.memory = npc.memory.filter(entry => Math.abs(entry.emotional_weight) >= 2)
+  }
   applyResistanceBehavior(npc, state, eventFlags)
   npc.action_state = selectAction(npc, state)
   updateZone(npc, state)
@@ -916,11 +950,18 @@ function updateZone(npc: NPC, state: WorldState): void {
     }
   }
 
-  // Fleeing: move to a random adjacent zone every 6 ticks
+  // Fleeing: move to a random adjacent zone every 6 ticks, preferring zones
+  // away from active event zones.
   if (npc.action_state === 'fleeing') {
     if (state.tick % 6 === npc.id % 6) {
-      const adj = ZONE_ADJACENCY[npc.zone]
-      if (adj?.length) npc.zone = adj[Math.floor(Math.random() * adj.length)]
+      const adj = ZONE_ADJACENCY[npc.zone] ?? []
+      if (adj.length) {
+        const eventZones = new Set(state.active_events.flatMap(e => e.zones))
+        const safe = adj.filter(z => !eventZones.has(z))
+        npc.zone = safe.length > 0
+          ? safe[Math.floor(Math.random() * safe.length)]
+          : adj[Math.floor(Math.random() * adj.length)]
+      }
     }
     return
   }
@@ -932,10 +973,88 @@ function updateZone(npc: NPC, state: WorldState): void {
     return
   }
 
-  // Evening social: occasional drift to a hub (still staggered by tick % 12)
+  // CHANGE 4: Guard patrol — active zone drift during work hours
+  // Every 16-tick cycle: first 8 ticks = potential patrol; last 8 ticks = return to post.
+  if (npc.role === 'guard' && npc.action_state === 'working') {
+    const GUARD_PATROL_ZONES = ['market_square', 'workshop_district', 'underworld_quarter', 'north_farm', 'south_farm'] as const
+    const cyclePos = state.tick % 16
+    if (cyclePos < 8) {
+      // Patrol window: 30% chance drift to a patrol zone (stable per NPC per patrol cycle)
+      const patrolCycle = Math.floor(state.tick / 16)
+      const patrolRoll  = scheduleUnit(npc.id + patrolCycle * 31, 24)
+      if (patrolRoll < 0.30) {
+        const zoneIdx = Math.floor(scheduleUnit(npc.id + patrolCycle * 37, 25) * GUARD_PATROL_ZONES.length)
+        npc.zone = GUARD_PATROL_ZONES[zoneIdx]
+        return
+      }
+    }
+    // Return window (cyclePos 8–15) or no patrol roll: stay at home zone (guard_post/plaza)
+    npc.zone = npc.home_zone
+    return
+  }
+
+  // Socializing: staggered drift to role-appropriate social hubs (50% chance per 12-tick cycle)
   if (npc.action_state === 'socializing' && state.tick % 12 === npc.id % 12) {
-    if (Math.random() < 0.28) {
-      npc.zone = NPC_SOCIAL_HUB_ZONES[npc.id % NPC_SOCIAL_HUB_ZONES.length]
+    if (Math.random() < 0.50) {
+      if (npc.role === 'merchant') {
+        npc.zone = 'market_square'
+      } else if (npc.role === 'scholar' && Math.random() < 0.30) {
+        npc.zone = 'scholar_quarter'
+      } else if (npc.role === 'farmer' && Math.random() < 0.30) {
+        npc.zone = 'plaza'
+      } else {
+        npc.zone = NPC_SOCIAL_HUB_ZONES[npc.id % NPC_SOCIAL_HUB_ZONES.length]
+      }
+      return
+    }
+  }
+
+  // CHANGE 3: Children socializing → residential play zones or plaza for teens
+  if (npc.role === 'child' && npc.action_state === 'socializing') {
+    if (npc.age >= 15 && npc.age <= 17) {
+      npc.zone = 'plaza'
+    } else {
+      npc.zone = npc.id % 2 === 0 ? 'residential_east' : 'residential_west'
+    }
+    return
+  }
+
+  // CHANGE 1 (zone): Wealthy rest-day socializing → market_square
+  // Scholar rest-day study → scholar_quarter
+  {
+    const dayOfWeek2 = (state.day - 1) % 7
+    const c2         = state.constitution
+    const sched2     = c2.work_schedule ?? inferWorkSchedule(c2)
+    const isRestDay2 = dayOfWeek2 >= sched2.work_days_per_week
+    if (isRestDay2) {
+      if (npc.action_state === 'socializing' && npc.wealth > 200) {
+        const restSocRoll = scheduleUnit(npc.id + state.day * 7, 17)
+        if (restSocRoll < 0.35) {
+          npc.zone = 'market_square'
+          return
+        }
+      }
+      if (npc.action_state === 'working' && npc.role === 'scholar' && npc.stress < 50) {
+        npc.zone = 'scholar_quarter'
+        return
+      }
+      // Farmer winter maintenance stays at home_zone (falls through to default below)
+    }
+  }
+
+  // CHANGE 2 (zone): Risk-tolerant wealthy late-evening socializing → market_square
+  if (npc.action_state === 'socializing' && npc.worldview.risk_tolerance > 0.7 && npc.wealth > 300) {
+    const eveningRoll2 = scheduleUnit(npc.id + state.day * 17, 23)
+    if (eveningRoll2 < 0.20) {
+      npc.zone = 'market_square'
+      return
+    }
+  }
+
+  // Organizing: NPCs gathering support drift toward plaza (40% chance per 12-tick cycle)
+  if (npc.action_state === 'organizing' && state.tick % 12 === npc.id % 12) {
+    if (Math.random() < 0.40) {
+      npc.zone = 'plaza'
       return
     }
   }
@@ -1177,7 +1296,24 @@ function normalRoutine(npc: NPC, state: WorldState): ActionState {
     const wake  = 7 + Math.floor(scheduleUnit(npc.id, 15) * 2)   // 7–8
     const sleep = 20 + Math.floor(scheduleUnit(npc.id, 16) * 2)  // 20–21
     if (hour >= sleep || hour < wake) return 'resting'
-    if (isRestDay || hour >= 15) return 'family'  // children spend free time with family
+    // CHANGE 3: varied after-school / rest-day behavior by age
+    if (npc.age >= 15 && npc.age <= 17) {
+      // Teenagers: rest days → 50% chance drift to plaza (exploring)
+      if (isRestDay) {
+        const teenDriftRoll = scheduleUnit(npc.id + state.day * 3, 21)
+        return teenDriftRoll < 0.50 ? 'socializing' : 'family'
+      }
+      if (hour >= 15) return 'socializing'
+    } else if (npc.age >= 8 && npc.age <= 14) {
+      // Younger children: after 3pm — 50% socializing (play), 50% family
+      if (hour >= 15 || isRestDay) {
+        const childPlayRoll = scheduleUnit(npc.id + state.day * 5, 22)
+        return childPlayRoll < 0.50 ? 'socializing' : 'family'
+      }
+    } else {
+      // Default child behavior (under 8 or edge cases)
+      if (isRestDay || hour >= 15) return 'family'
+    }
     return 'working'
   }
 
@@ -1190,6 +1326,26 @@ function normalRoutine(npc: NPC, state: WorldState): ActionState {
     if (hasFamily) {
       if (hour >= wakeTime && hour < 13) return 'family'    // morning with family
       if (hour >= 17 && hour < 21) return 'family'          // evening meal / bedtime routines
+    }
+    // CHANGE 1: rest-day variety based on wealth / role / season
+    // Use a stable per-NPC-per-day roll so behavior doesn't flicker each tick
+    const restDayRoll = scheduleUnit(npc.id + state.day * 7, 17)
+    // Wealthy NPCs: 35% chance spend 2h socializing at market_square (14–16)
+    if (npc.wealth > 200 && hour >= 14 && hour < 16 && restDayRoll < 0.35) {
+      return 'socializing'
+    }
+    // Scholars: 40% chance study on rest day (10–12) if stress < 50
+    if (npc.role === 'scholar' && hour >= 10 && hour < 12 && npc.stress < 50) {
+      const scholarRoll = scheduleUnit(npc.id + state.day * 11, 18)
+      if (scholarRoll < 0.40) return 'working'
+    }
+    // Farmers: 50% chance maintenance work at home in winter (13–15)
+    if (npc.role === 'farmer' && hour >= 13 && hour < 15) {
+      const season = getSeason(state.day)
+      if (season === 'winter') {
+        const farmerRoll = scheduleUnit(npc.id + state.day * 13, 19)
+        if (farmerRoll < 0.50) return 'working'
+      }
     }
     if (hour >= 10) return 'socializing'
     return 'resting'
@@ -1212,6 +1368,12 @@ function normalRoutine(npc: NPC, state: WorldState): ActionState {
   const workStart = clamp(sched.work_start_hour + roleAdj.start + offset, 3, 12)
   const workEnd   = clamp(sched.work_end_hour   + roleAdj.end   + offset, 12, 22)
 
+  // ── Lunch break: 1-hour midday window 3–4 h after work starts ──────────
+  // Guards, leaders, and gang members skip this (handled above or exempt).
+  const lunchStart = workStart + 3
+  const lunchEnd   = workStart + 4
+  if (hour >= lunchStart && hour < lunchEnd) return 'socializing'
+
   // Evening window: 2–4 hours after work (was 1–3). Family NPCs spend first part with family.
   const eveningHours = 2 + Math.floor(scheduleUnit(npc.id, 1) * 3)    // 2–4 h total
   const sleepHour    = Math.min(workEnd + eveningHours, 23)
@@ -1220,6 +1382,22 @@ function normalRoutine(npc: NPC, state: WorldState): ActionState {
 
   if (hour >= sleepHour || hour < workStart) return 'resting'
   if (hasFamily && hour >= workEnd && hour < workEnd + familyHours) return 'family'
+  // CHANGE 2: personality-based evening variety (first hour after work, after family window)
+  if (hour >= workEnd + familyHours && hour < workEnd + familyHours + 1) {
+    const eveningRoll = scheduleUnit(npc.id + state.day * 17, 23)
+    // Greedy NPCs: 25% chance work overtime for 1h
+    if ((npc.personality?.greed ?? 0) > 0.6 && eveningRoll < 0.25) {
+      return 'working'
+    }
+    // Collectivist low-stress NPCs: 30% chance stay home with family instead of socializing
+    if ((npc.worldview.collectivism > 0.6) && npc.stress < 40 && eveningRoll < 0.30) {
+      return 'family'
+    }
+    // Risk-tolerant wealthy NPCs: 20% chance late-night market trade/gambling
+    if ((npc.worldview.risk_tolerance > 0.7) && npc.wealth > 300 && eveningRoll < 0.20) {
+      return 'socializing'
+    }
+  }
   if (hour >= workEnd) return 'socializing'
   return 'working'
 }
@@ -1957,13 +2135,7 @@ function wealthTick(npc: NPC, state: WorldState): void {
       borrower.wealth  = clamp(borrower.wealth + loan, 0, 50000)
       borrower.debt    = loan * 1.30   // 30% total interest
       borrower.debt_to = npc.id
-      borrower.memory.push({
-        event_id: 'loan_' + state.tick,
-        type: 'helped',
-        emotional_weight: 20,
-        tick: state.tick,
-      })
-      if (borrower.memory.length > 10) borrower.memory.shift()
+      addMemory(borrower, { event_id: 'loan_' + state.tick, type: 'helped', emotional_weight: 20, tick: state.tick })
       applyMutualRelation(
         borrower,
         npc,
@@ -2135,8 +2307,7 @@ function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[])
       npc.exhaustion = clamp(npc.exhaustion + 40, 0, 100)
       npc.fear       = clamp(npc.fear + 20, 0, 100)
       npc.wealth     = clamp(npc.wealth - npc.wealth * 0.15, 0, 5000)  // medical cost
-      npc.memory.push({ event_id: 'accident_' + state.tick, type: 'accident', emotional_weight: -40, tick: state.tick })
-      if (npc.memory.length > 10) npc.memory.shift()
+      addMemory(npc, { event_id: 'accident_' + state.tick, type: 'accident', emotional_weight: -40, tick: state.tick })
       events?.push({ type: 'accident', npc })
     }
   }
@@ -2157,8 +2328,7 @@ function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[])
       npc.trust_in.government.intention = clamp(npc.trust_in.government.intention - 0.10, 0, 1)
       npc.trust_in.community.intention  = clamp(npc.trust_in.community.intention  - 0.08, 0, 1)
       npc.grievance = clamp(npc.grievance - 15, 0, 100)
-      npc.memory.push({ event_id: 'crime_' + state.tick, type: 'crime', emotional_weight: -20, tick: state.tick })
-      if (npc.memory.length > 10) npc.memory.shift()
+      addMemory(npc, { event_id: 'crime_' + state.tick, type: 'crime', emotional_weight: -20, tick: state.tick })
       for (const tid of npc.strong_ties.slice(0, 3)) {
         const witness = state.npcs[tid]
         if (witness?.lifecycle.is_alive) {
@@ -2224,8 +2394,7 @@ function checkLifecycle(npc: NPC, state: WorldState, events?: IndividualEvent[])
       npc.wealth    = clamp(npc.wealth    - npc.wealth * fineFrac, 0, 50000)
       npc.isolation = clamp(npc.isolation + 25,                 0, 100)
       npc.trust_in.government.intention = clamp(npc.trust_in.government.intention - trustLoss, 0, 1)
-      npc.memory.push({ event_id: 'arrested_' + state.tick, type: 'harmed', emotional_weight: -60, tick: state.tick })
-      if (npc.memory.length > 10) npc.memory.shift()
+      addMemory(npc, { event_id: 'arrested_' + state.tick, type: 'harmed', emotional_weight: -60, tick: state.tick })
     }
   }
 

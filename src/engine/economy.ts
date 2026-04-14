@@ -1,6 +1,6 @@
 import type { WorldState, Role } from '../types'
 import { clamp } from '../sim/constitution'
-import { permanentRoleChange } from '../sim/npc'
+import { permanentRoleChange, addMemory } from '../sim/npc'
 import { addFeedRaw, addChronicle } from '../ui/feed'
 import { t, tf } from '../i18n'
 import {
@@ -151,6 +151,25 @@ export function applyExternalTradeBalance(state: WorldState): void {
   if (tradeRevenue > 0) state.total_trade_revenue = (state.total_trade_revenue ?? 0) + tradeRevenue
   state.total_exports = (state.total_exports ?? 0) + exportsValue
   state.total_imports = (state.total_imports ?? 0) + importsValue
+
+  // Phase 1c: Trade deficit accumulator
+  // Track consecutive deficit days and apply compounding drains to money_supply and food.
+  if (importsValue > exportsValue) {
+    state.macro.trade_deficit_days = (state.macro.trade_deficit_days ?? 0) + 1
+  } else {
+    state.macro.trade_deficit_days = 0
+  }
+
+  const deficitDays = state.macro.trade_deficit_days ?? 0
+  if (deficitDays >= 3) {
+    // 3+ consecutive deficit days: extra money_supply drain (capital flight / import payments)
+    const extraDrain = (importsValue - exportsValue) * 0.5
+    state.money_supply = clamp((state.money_supply ?? 0) - extraDrain, 1, 99_999_999)
+  }
+  if (deficitDays >= 5) {
+    // 5+ consecutive deficit days: food supply weakens as import-dependent supply chains strain
+    state.macro.food = clamp((state.macro.food ?? 0) - 1, 0, 100)
+  }
 }
 
 // ── Emergency money printing (critical treasury backstop) ──────────────────
@@ -673,13 +692,7 @@ export function processInheritance(state: WorldState): void {
       }
       // Memory: windfall from inheritance (emotional weight scales with amount)
       const emotionalWeight = clamp(share / 20, 2, 40)
-      child.memory.push({
-        event_id: 'inheritance_' + state.tick,
-        type: 'windfall',
-        emotional_weight: emotionalWeight,
-        tick: state.tick,
-      })
-      if (child.memory.length > 10) child.memory.shift()
+      addMemory(child, { event_id: 'inheritance_' + state.tick, type: 'windfall', emotional_weight: emotionalWeight, tick: state.tick })
     }
     npc.wealth  = 0   // mark as distributed
     npc.capital = 0

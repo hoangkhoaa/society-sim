@@ -1,7 +1,13 @@
 // ── Rich Narrative Events ──────────────────────────────────────────────────
-// Fires 0–2 vivid chronicle stories per sim-day drawn from real simulation data.
+// Fires 0–4 vivid chronicle stories per sim-day drawn from real simulation data.
 // Each story type has: a cooldown, a condition check, and a text generator.
 // This makes the Chronicle feel like a living newspaper rather than a system log.
+//
+// Severity cooldowns:
+//   critical/major  – per-story minTicks (long, as defined)
+//   minor           – per-story minTicks (long, as defined)
+//   micro           – 3 days (72 ticks); appear only in the event feed ticker,
+//                     never as chronicle cards, and don't count toward the daily cap.
 //
 // Also manages the rumor system: daily gossip spreads through info_ties and
 // nudges NPC trust/worldview over time.
@@ -26,10 +32,15 @@ function stamp(id: string, tick: number) { _cooldowns.set(id, tick) }
 
 // ── Story pool ────────────────────────────────────────────────────────────────
 
+// Micro-story cooldown: 3 sim-days (24 ticks/day × 3)
+const MICRO_COOLDOWN_TICKS = 72
+
 interface Story {
   id: string
   minTicks: number          // minimum ticks between repeats
   severity: 'minor' | 'major' | 'critical'
+  /** micro = feed-ticker only; never becomes a chronicle card or counts against daily cap */
+  micro?: true
   feedSeverity?: 'info' | 'warning' | 'political'
   check: (state: WorldState) => string | null  // returns text or null if conditions not met
 }
@@ -88,8 +99,9 @@ const STORIES: Story[] = [
 
   {
     id: 'scholar_debate',
-    minTicks: 288,
+    minTicks: MICRO_COOLDOWN_TICKS,
     severity: 'minor',
+    micro: true,
     check(state) {
       const scholars = state.npcs.filter(n => n.lifecycle.is_alive && n.role === 'scholar')
       for (const a of scholars) {
@@ -173,8 +185,9 @@ const STORIES: Story[] = [
 
   {
     id: 'midnight_laborer',
-    minTicks: 360,
+    minTicks: MICRO_COOLDOWN_TICKS,
     severity: 'minor',
+    micro: true,
     check(state) {
       const hour = state.tick % 24
       if (hour < 22 && hour > 5) return null  // only at night
@@ -201,8 +214,9 @@ const STORIES: Story[] = [
 
   {
     id: 'the_forgotten',
-    minTicks: 480,
+    minTicks: MICRO_COOLDOWN_TICKS,
     severity: 'minor',
+    micro: true,
     check(state) {
       const candidate = state.npcs.find(n =>
         n.lifecycle.is_alive && n.strong_ties.length === 0 && n.age > 30 && n.isolation > 75,
@@ -246,8 +260,9 @@ const STORIES: Story[] = [
 
   {
     id: 'good_times',
-    minTicks: 960,
+    minTicks: MICRO_COOLDOWN_TICKS,
     severity: 'minor',
+    micro: true,
     check(state) {
       if (state.macro.stability < 75 || state.macro.food < 68) return null
       if (getSeason(state.day) !== 'summer') return null
@@ -318,13 +333,21 @@ export function checkNarrativeEvents(state: WorldState): void {
 
   let fired = 0
   for (const story of shuffled) {
-    if (fired >= 2) break                            // max 2 narrative events per day
     if (cooldown(story.id, story.minTicks, state.tick)) continue
 
     const text = story.check(state)
     if (!text) continue
 
     stamp(story.id, state.tick)
+
+    if (story.micro) {
+      // Micro-stories: feed ticker only — no chronicle card, no story card, no cap cost
+      addFeedRaw(text, story.feedSeverity ?? 'info', state.year, state.day)
+      continue
+    }
+
+    if (fired >= 4) continue                         // max 4 narrative events per day
+
     fired++
 
     addChronicle(text, state.year, state.day, story.severity)

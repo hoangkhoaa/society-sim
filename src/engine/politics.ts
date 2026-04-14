@@ -1,5 +1,6 @@
 import type { WorldState } from '../types'
 import { clamp } from '../sim/constitution'
+import { addMemory } from '../sim/npc'
 import { addFeedRaw, addChronicle } from '../ui/feed'
 import { t, tf } from '../i18n'
 import { POLITICS_MAX_LEGENDARY_PER_DAY } from '../constants/engine-politics'
@@ -297,13 +298,7 @@ export function checkLegendaryNPCs(state: WorldState): void {
           const contact = state.npcs[tid]
           if (!contact?.lifecycle.is_alive) continue
           contact.grievance = clamp(contact.grievance + 12, 0, 100)
-          contact.memory.push({
-            event_id: `legendary_death_${npc.id}`,
-            type: 'loss',
-            emotional_weight: -35,
-            tick: state.tick,
-          })
-          if (contact.memory.length > 10) contact.memory.shift()
+          addMemory(contact, { event_id: `legendary_death_${npc.id}`, type: 'loss', emotional_weight: -35, tick: state.tick })
         }
       }
       continue

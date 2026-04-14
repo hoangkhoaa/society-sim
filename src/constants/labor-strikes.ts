@@ -19,3 +19,9 @@ export const STRIKE_WARN_GRIEVANCE = STRIKE_GRIEVANCE_THRESHOLD * 0.80
 
 /** Gini floor for strike-readiness feed warning (matches `checkStrikeReadiness`). */
 export const STRIKE_READINESS_GINI_FLOOR = 0.42
+
+/** Hard cap: a strike is force-ended after this many sim-days regardless of duration_ticks. */
+export const STRIKE_END_DAYS_MAX = 7
+
+/** Daily chance (0–1) of early settlement when the government has made a concession. */
+export const STRIKE_SETTLEMENT_DAILY_CHANCE = 0.15

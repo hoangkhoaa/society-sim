@@ -1,6 +1,6 @@
 import type { WorldState, NPC } from '../types'
 import { clamp } from '../sim/constitution'
-import { createNPC, RESIDENTIAL_ZONES } from '../sim/npc'
+import { createNPC, RESIDENTIAL_ZONES, addMemory } from '../sim/npc'
 import { MAX_STRONG_TIES, MAX_WEAK_TIES, MAX_INFO_TIES } from '../sim/network'
 import { addFeedRaw, addChronicle } from '../ui/feed'
 import { tf } from '../i18n'
@@ -12,6 +12,10 @@ import {
 import { computeBirthChance } from '../formulas/lifecycle'
 
 // ── Lifecycle Events (birth / marriage) ─────────────────────────────────────
+
+// Track whether an epidemic was active on the previous daily tick so we can
+// detect the moment it ends and award the post-epidemic birth-rate bonus.
+let _prevHadEpidemic = false
 
 // Maximum children per couple (varies with constitution safety net — wealthier / safer → fewer)
 function maxChildrenPerCouple(state: WorldState): number {
@@ -55,7 +59,12 @@ function computeBirthChancePerDay(a: NPC, b: NPC, state: WorldState): number {
   // producing ~1% annual growth (pre-modern realistic). Was 0.0008 which caused 16% growth.
   // With all factors maximally favorable the cap is 0.0006/day.
   // Spacing and max-children limits (maxChildrenPerCouple) ensure realistic lifetime family sizes.
-  return computeBirthChance(baseFertility, happinessFactor, stressFactor, fearFactor, needsFactor, wealthFactor, trustFactor, foodFactor)
+  let chance = computeBirthChance(baseFertility, happinessFactor, stressFactor, fearFactor, needsFactor, wealthFactor, trustFactor, foodFactor)
+  // Post-epidemic baby boom: 50% birth-rate boost for 30 days after an epidemic ends
+  if ((state.macro.post_epidemic_birth_bonus_days ?? 0) > 0) {
+    chance *= 1.5
+  }
+  return chance
 }
 
 // ── Romance / Marriage helpers ──────────────────────────────────────────────
@@ -92,8 +101,7 @@ function applyHeartbreak(npc: NPC, state: WorldState): void {
   npc.grievance  = clamp(npc.grievance  + 25, 0, 100)
   npc.isolation  = clamp(npc.isolation  + 20, 0, 100)
   // Memory entry for the heartbreak
-  npc.memory.push({ event_id: `heartbreak_${state.tick}`, type: 'trust_broken', emotional_weight: -35, tick: state.tick })
-  if (npc.memory.length > 10) npc.memory.shift()
+  addMemory(npc, { event_id: `heartbreak_${state.tick}`, type: 'trust_broken', emotional_weight: -35, tick: state.tick })
 }
 
 // Dissolve a marriage and apply consequences to both partners.
@@ -111,6 +119,18 @@ function dissolveMarriage(npc: NPC, spouse: NPC, state: WorldState, reason: 'div
 
 export function checkLifecycleEvents(state: WorldState): void {
   const living = state.npcs.filter(n => n.lifecycle.is_alive)
+
+  // ── 0a. Post-epidemic birth bonus tracking ────────────────────────────────
+  const epidemicNow = state.active_events.some(e => e.type === 'epidemic' && e.intensity >= 0.05)
+  if (_prevHadEpidemic && !epidemicNow) {
+    // Epidemic just ended — award 30-day birth-rate bonus
+    state.macro.post_epidemic_birth_bonus_days = 30
+  }
+  _prevHadEpidemic = epidemicNow
+  // Decrement the bonus counter each daily lifecycle tick
+  if ((state.macro.post_epidemic_birth_bonus_days ?? 0) > 0) {
+    state.macro.post_epidemic_birth_bonus_days = (state.macro.post_epidemic_birth_bonus_days as number) - 1
+  }
 
   // ── 0. Tick heartbreak cooldowns ──────────────────────────────────────────
   for (const npc of living) {

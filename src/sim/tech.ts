@@ -48,13 +48,13 @@ export const TECH_MILESTONES: Milestone[] = [
   {
     id: 'engineering',
     name: 'Engineering & Craftsmanship',
-    threshold: 9000,
+    threshold: 6000,
     description: 'Craftsmen master structural techniques — workshops produce more with less labour.',
   },
   {
     id: 'finance',
     name: 'Banking & Finance',
-    threshold: 14000,
+    threshold: 9000,
     description: 'Merchants develop credit and capital markets — investment accelerates growth.',
   },
 ]
@@ -64,7 +64,7 @@ export function accumulateResearch(state: WorldState): void {
   const scholars = state.npcs.filter(n => n.lifecycle.is_alive && n.role === 'scholar')
   if (scholars.length === 0) return
   // Each scholar contributes half their daily productivity to the research pool
-  const dailyGain = scholars.reduce((s, n) => s + computeProductivity(n, state), 0) * 0.5
+  const dailyGain = scholars.reduce((s, n) => s + computeProductivity(n, state), 0) * 0.7
   state.research_points += dailyGain
 }
 

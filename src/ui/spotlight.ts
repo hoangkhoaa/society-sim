@@ -647,8 +647,18 @@ export async function openSpotlight(npc: NPC, state: WorldState, config: AIConfi
     return
   }
 
+  // Use pre-generated background thought if it was produced this sim-day (within 24 ticks)
+  const thoughtAge = state.tick - (npc.last_thought_tick ?? -999)
+  if (npc.daily_thought && thoughtAge < 24) {
+    thoughtEl.textContent = `"${npc.daily_thought}"`
+    thoughtEl.className   = 'sp-thought'
+    return
+  }
+
   try {
     const thought = await generateNPCThought(npc, state, config)
+    npc.daily_thought     = thought
+    npc.last_thought_tick = state.tick
     thoughtEl.textContent = `"${thought}"`
     thoughtEl.className   = 'sp-thought'
   } catch (e) {

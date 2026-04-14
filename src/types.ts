@@ -559,6 +559,10 @@ export interface MacroStats {
   gdp: number                   // total daily income across all living NPCs (coins/day)
   extraction_rate: number       // 0–100: resource extraction efficiency relative to theoretical max
   economic_efficiency: number   // 0–100: actual economic output vs potential (productivity × roles)
+  /** Days remaining of post-epidemic birth-rate bonus (1.5× multiplier). Decremented daily. */
+  post_epidemic_birth_bonus_days?: number
+  /** Consecutive days where imports exceeded exports; resets to 0 on any trade surplus. */
+  trade_deficit_days?: number
 }
 
 // ── Labor Strike ───────────────────────────────────────────────────────────
@@ -659,6 +663,10 @@ export interface WorldState {
 
   // Gameplay statistics for achievements / end-of-run report
   stats: RunStats
+
+  // Emergency government cycle tracking
+  // Set to state.day when an emergency cycle fires; prevents re-triggering every single day.
+  last_emergency_govt_cycle_day?: number
 }
 
 export interface RunStats {

@@ -33,8 +33,22 @@ export function runElection(state: WorldState): NPC | null {
       const networkBonus   = voter.strong_ties.includes(c.id) ? 0.40
                            : voter.weak_ties.includes(c.id)   ? 0.10 : 0
       // Grieved voters prefer lower-wealth (anti-establishment) candidates
-      const antiEstab      = voter.grievance > 55 ? Math.max(0, 1 - c.wealth / 5000) * 0.20 : 0
-      const score = wvSim + factionBonus + networkBonus + antiEstab
+      let antiEstab = voter.grievance > 42 ? Math.max(0, 1 - c.wealth / 5000) * 0.20 : 0
+      // Polarization amplifier: high societal polarization strengthens anti-establishment sentiment
+      if (antiEstab > 0 && state.macro.polarization > 60) {
+        antiEstab *= 1 + (state.macro.polarization - 60) / 100
+      }
+      // Anti-dynasty penalty: candidates tied to the current leader (same faction or family) lose votes
+      const leader = state.leader_id != null ? state.npcs.find(n => n.id === state.leader_id) ?? null : null
+      const sharesLeaderFaction = leader != null && leader.faction_id != null && c.faction_id === leader.faction_id
+      const isLeaderFamily      = leader != null && (
+        leader.lifecycle.spouse_id === c.id ||
+        leader.lifecycle.children_ids.includes(c.id) ||
+        c.lifecycle.spouse_id === leader.id ||
+        c.lifecycle.children_ids.includes(leader.id)
+      )
+      const dynastyPenalty = (sharesLeaderFaction || isLeaderFamily) ? -0.15 : 0
+      const score = wvSim + factionBonus + networkBonus + antiEstab + dynastyPenalty
       if (score > bestScore) { bestScore = score; bestId = c.id }
     }
     votes[bestId] = (votes[bestId] ?? 0) + 1

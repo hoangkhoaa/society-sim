@@ -12,6 +12,10 @@ import {
   NPC_PERSUASION_MIN_WORLDVIEW_GAP,
   NPC_PERSUASION_MAX_SHIFT,
 } from '../constants/npc-social-limits'
+import {
+  STRIKE_END_DAYS_MAX,
+  STRIKE_SETTLEMENT_DAILY_CHANCE,
+} from '../constants/labor-strikes'
 import { applyMutualRelation } from '../sim/npc'
 
 // ── Network dynamics cooldowns ───────────────────────────────────────────
@@ -85,13 +89,23 @@ export function refreshInfoTies(state: WorldState): void {
           if (iid !== npc.id && !npc.info_ties.includes(iid)) candidates.add(iid)
         }
       }
+      // Phase 3c: Compute per-NPC info-tie formation threshold with bridge exceptions.
+      // Base threshold is 0.25; two conditions can raise it to allow cross-ideological ties.
+      // Crisis bridge: shared suffering (food shortage or active epidemic) relaxes barriers.
+      // Marketplace bridge: merchants connect ideological clusters through commerce.
+      const inCrisis = state.macro.food < 25
+        || state.active_events.some(ev => ev.type === 'epidemic')
+      const crisisBridge     = inCrisis ? 0.15 : 0
+      const merchantBridge   = npc.role === 'merchant' ? 0.15 : 0
+      const infoTieThreshold = 0.25 + crisisBridge + merchantBridge
+
       for (const cid of candidates) {
         if (npc.info_ties.length >= infoTarget) break
         const other = state.npcs[cid]
         if (!other?.lifecycle.is_alive || other.info_ties.length >= MAX_INFO_TIES) continue
         const collectivismDiff = Math.abs(npc.worldview.collectivism - other.worldview.collectivism)
         const authorityDiff    = Math.abs(npc.worldview.authority_trust - other.worldview.authority_trust)
-        if (collectivismDiff < 0.25 && authorityDiff < 0.25) {
+        if (collectivismDiff < infoTieThreshold && authorityDiff < infoTieThreshold) {
           npc.info_ties.push(cid)
           state.network.info.get(npc.id)?.add(cid)
           other.info_ties.push(npc.id)
@@ -271,16 +285,45 @@ export function checkLaborStrikes(state: WorldState): void {
   const living = state.npcs.filter(n => n.lifecycle.is_alive)
 
   // ── Advance active strikes ──────────────────────────────────────────────
+  // Government concession heuristic: safety_net above generous threshold signals
+  // willingness to address worker concerns — opens daily settlement window.
+  const govtConceded = state.constitution.safety_net > 0.45
+
   state.active_strikes = (state.active_strikes ?? []).filter(strike => {
-    const elapsed = state.tick - strike.start_tick
-    if (elapsed >= strike.duration_ticks) {
-      // Strike ends — exhaustion from sustained action drops solidarity
-      addFeedRaw(tf('engine.strike_end', { role: t(`role.${strike.role}`) as string }) as string, 'info', state.year, state.day)
-      addChronicle(tf('engine.strike_end', { role: t(`role.${strike.role}`) as string }) as string, state.year, state.day, 'major')
+    const elapsed     = state.tick - strike.start_tick
+    const daysActive  = elapsed / 24
+    const roleLabel   = t(`role.${strike.role}`) as string
+
+    // ── Hard cap: force-end after STRIKE_END_DAYS_MAX sim-days ────────────
+    const hardCapReached = daysActive >= STRIKE_END_DAYS_MAX
+    // ── Natural expiry via original duration_ticks ─────────────────────
+    const naturalExpiry  = elapsed >= strike.duration_ticks
+
+    if (hardCapReached || naturalExpiry) {
+      // Standard exhaustion end — solidarity drops, workers return
+      addFeedRaw(tf('engine.strike_end', { role: roleLabel }) as string, 'info', state.year, state.day)
+      addChronicle(tf('engine.strike_end', { role: roleLabel }) as string, state.year, state.day, 'major')
       for (const npc of living.filter(n => n.role === strike.role)) {
         npc.class_solidarity = clamp(npc.class_solidarity - 18, 0, 100)
-        npc.on_strike = false
+        npc.on_strike        = false
       }
+      return false
+    }
+
+    // ── Settlement chance: government concession present ────────────────
+    // Only check once per sim-day (when elapsed is a whole-day boundary ± 1 tick)
+    if (govtConceded && daysActive >= 1 && Math.random() < STRIKE_SETTLEMENT_DAILY_CHANCE) {
+      // Strike resolved by negotiated settlement — apply solidarity/grievance bonuses
+      addFeedRaw(tf('engine.strike_settlement', { role: roleLabel }) as string, 'political', state.year, state.day)
+      addChronicle(tf('engine.strike_settlement', { role: roleLabel }) as string, state.year, state.day, 'major')
+      for (const npc of living.filter(n => n.role === strike.role)) {
+        npc.class_solidarity = clamp(npc.class_solidarity - 30, 0, 100)
+        npc.grievance        = clamp(npc.grievance        - 20, 0, 100)
+        npc.on_strike        = false
+      }
+      // Boost government trust (institution legitimacy)
+      const govInst = state.institutions.find(i => i.id === 'government')
+      if (govInst) govInst.legitimacy = clamp(govInst.legitimacy + 0.05, 0, 1)
       return false
     }
 

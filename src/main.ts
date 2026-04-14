@@ -1,6 +1,6 @@
 import './css/main.css'
 import type { AIConfig, AIProvider, Constitution, NPC, WorldState } from './types'
-import { setupGreeting, setupChat, applyPreset, handlePlayerChat, resetInGameHistory, predictConsequences, generateConstitutionText } from './ai/god-agent'
+import { setupGreeting, setupChat, applyPreset, handlePlayerChat, resetInGameHistory, predictConsequences, generateConstitutionText, scheduleBackgroundThoughts } from './ai/god-agent'
 import { listAvailableModels, PROVIDER_MODELS, getAIUsage, getRemainingRPM, initKeyRing } from './ai/provider'
 import { addFeedRaw, addFeedThinking, setFeedFilter, setChronicleFilter, refreshChronicleTimestamps, addBreakthroughToLog } from './ui/feed'
 import { showConfirm, showInfo, showPolicyChoice, type PolicyDisplayCard } from './ui/modal'
@@ -1632,6 +1632,10 @@ function startSimLoop() {
       checkStrikeReadiness()
       checkAchievements(world)
       if (npcContactsVisible) updateNpcContactsPanel()
+      // Pre-warm daily thoughts for top distressed NPCs (fire-and-forget)
+      if (getSettings().enable_npc_thoughts && aiConfig) {
+        scheduleBackgroundThoughts(world, aiConfig)
+      }
     }
     // Free press: every 5 sim-days — generates headlines before government reads them
     // If RPM budget is tight, press runs in template-only mode (pass null config)
@@ -1650,6 +1654,23 @@ function startSimLoop() {
       } else if (world.last_election_day < 0 && world.day >= 10) {
         // First election on day 10 (enough time for network to form)
         runElection(world)
+      }
+    }
+    // Emergency government cycle: triggers immediately when a critical macro threshold is breached.
+    // Cooldown of 3 sim-days prevents re-triggering every single day during a prolonged crisis.
+    if (!govBusy) {
+      const m = world.macro
+      const isEmergency = m.food < 25 || m.stability < 28 || m.trust < 22
+      const lastEmergDay = world.last_emergency_govt_cycle_day ?? -999
+      if (isEmergency && (world.day - lastEmergDay) > 3) {
+        world.last_emergency_govt_cycle_day = world.day
+        const govConfig = (settings.enable_government_ai && aiConfig) ? aiConfig : null
+        govBusy = true
+        const _settings = getSettings()
+        const _leaderNpc = (_settings.enable_human_elections && world.leader_id != null)
+          ? world.npcs[world.leader_id] ?? undefined
+          : undefined
+        runGovernmentCycle(world, govConfig, govPolicyCallback, _leaderNpc).finally(() => { govBusy = false; updateGovCooldown() })
       }
     }
     // Government cycle: every GOVERNMENT_POLICY_PERIOD_DAYS sim-days

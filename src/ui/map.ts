@@ -1737,7 +1737,20 @@ function drawNPCs(world: WorldState, W: number, H: number) {
 
     // In selection mode: dim unrelated NPCs to near-invisible
     const isRelated = !hasSelection || relatedIds.has(npc.id)
-    ctx.globalAlpha = isRelated ? 1 : 0.06
+
+    // Action-state alpha modifier — conveys what the NPC is doing at a glance
+    const ACTION_ALPHA: Partial<Record<string, number>> = {
+      working:     1.0,
+      resting:     0.35,
+      family:      0.7,
+      socializing: 0.9,
+      organizing:  1.0,
+      fleeing:     0.85,
+      complying:   0.45,
+      confront:    1.0,
+    }
+    const actionAlpha = ACTION_ALPHA[npc.action_state] ?? 1.0
+    ctx.globalAlpha = isRelated ? actionAlpha : 0.06
 
     const color = roleColor(npc.role, light)
     const isHovered = npc.id === hoveredNPCId
@@ -1766,12 +1779,28 @@ function drawNPCs(world: WorldState, W: number, H: number) {
       ctx.stroke()
     }
 
-    // Stress ring
+    // Stress ring — fast-pulsing when fleeing, normal otherwise
     if (npc.stress > 60) {
+      const isFleeing = npc.action_state === 'fleeing'
+      const stressSpeed = isFleeing ? 0.38 : 0.09  // fast pulse for fleeing
+      const stressPulse = isFleeing
+        ? 0.5 + 0.5 * Math.sin(frameCount * stressSpeed + npc.id * 0.5)
+        : 1.0  // static intensity for normal stress
       ctx.beginPath()
       ctx.arc(px, py, radius + 2.5, 0, Math.PI * 2)
-      ctx.strokeStyle = `rgba(226,75,75,${(npc.stress - 60) / 40 * 0.6})`
-      ctx.lineWidth = 1.5
+      ctx.strokeStyle = `rgba(226,75,75,${(npc.stress - 60) / 40 * 0.6 * stressPulse})`
+      ctx.lineWidth = isFleeing ? 1.8 : 1.5
+      ctx.stroke()
+    }
+
+    // Organizing ring — dim blue/indigo pulsing ring, political tension signal.
+    // Only shown when not already overridden by sick/strike/stress rings.
+    if (npc.action_state === 'organizing' && !npc.sick && !npc.on_strike && npc.stress <= 60) {
+      const orgPulse = 0.5 + 0.5 * Math.sin(frameCount * 0.07 + npc.id * 0.53)
+      ctx.beginPath()
+      ctx.arc(px, py, radius + 3.5, 0, Math.PI * 2)
+      ctx.strokeStyle = `rgba(80,120,255,${0.35 + orgPulse * 0.30})`
+      ctx.lineWidth = 1.3
       ctx.stroke()
     }
 

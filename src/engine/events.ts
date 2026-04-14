@@ -14,7 +14,7 @@ export function tickEvents(state: WorldState): void {
 
     // Epidemic zone spread: every 48 ticks (2 sim-days), spread to adjacent zone
     if (ev.type === 'epidemic' && ev.elapsed_ticks % 48 === 0 && ev.zones.length < EVENT_ALL_ZONES.length) {
-      const spreadChance = ev.intensity * 0.6
+      const spreadChance = ev.intensity * 0.45
       if (Math.random() < spreadChance) {
         const neighbours = new Set<string>()
         for (const z of ev.zones) {
@@ -30,10 +30,10 @@ export function tickEvents(state: WorldState): void {
     }
 
     // Apply per-tick effects to NPCs in affected zones (scan npcs once per event, no filter alloc)
-    // Epidemic uses a higher mortality multiplier calibrated to give ~30% deaths at intensity=1
-    // over a default 7-day event (168 ticks): per-tick rate ≈ intensity * 0.0024
+    // Epidemic uses a higher mortality multiplier calibrated to give ~18% deaths at intensity=1
+    // over a default 7-day event (168 ticks): per-tick rate ≈ intensity * 0.0014
     let mortalityPerTick = ev.type === 'epidemic'
-      ? ev.effects_per_tick.displacement_chance * 0.006
+      ? ev.effects_per_tick.displacement_chance * 0.0035
       : ev.effects_per_tick.displacement_chance * 0.002
 
     // Public health: hospital_capacity > 0 reduces epidemic per-tick mortality by 30%
