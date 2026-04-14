@@ -72,7 +72,7 @@ const QUICK_ACTIONS = [
     id: 'qa-aid',
     cost: 80,
     cooldownDays: 5,
-    label: '🍞 Cứu trợ',
+    labelKey: 'qa.aid.label',
     confirm: false,
     apply(w: WorldState) {
       const living = w.npcs.filter(n => n.lifecycle.is_alive)
@@ -85,7 +85,7 @@ const QUICK_ACTIONS = [
     id: 'qa-hospital',
     cost: 300,
     cooldownDays: 30,
-    label: '🏥 Bệnh viện',
+    labelKey: 'qa.hospital.label',
     confirm: false,
     apply(w: WorldState) {
       w.tax_pool -= 300
@@ -97,7 +97,7 @@ const QUICK_ACTIONS = [
     id: 'qa-harvest',
     cost: 120,
     cooldownDays: 7,
-    label: '🌾 Trợ cấp',
+    labelKey: 'qa.harvest.label',
     confirm: false,
     apply(w: WorldState) {
       w.tax_pool -= 120
@@ -109,7 +109,7 @@ const QUICK_ACTIONS = [
     id: 'qa-martial',
     cost: 0,
     cooldownDays: 14,
-    label: '⚔️ Martial',
+    labelKey: 'qa.martial.label',
     confirm: true,
     apply(w: WorldState) {
       w.npcs.filter(n => n.lifecycle.is_alive).forEach(n => { n.fear = Math.min(100, n.fear + 15) })
@@ -121,7 +121,7 @@ const QUICK_ACTIONS = [
     id: 'qa-propa',
     cost: 60,
     cooldownDays: 7,
-    label: '📢 Tuyên truyền',
+    labelKey: 'qa.propa.label',
     confirm: false,
     apply(w: WorldState) {
       w.tax_pool -= 60
@@ -136,7 +136,7 @@ const QUICK_ACTIONS = [
     id: 'qa-tax',
     cost: 0,
     cooldownDays: 10,
-    label: '💰 Giảm thuế',
+    labelKey: 'qa.tax.label',
     confirm: false,
     apply(w: WorldState) {
       qaReducedTaxDays.active = true
@@ -677,7 +677,7 @@ async function startGame(constitution: Constitution) {
 
   // In no-API mode keep the chatbar enabled but use a hint placeholder
   if (noApiKeyMode) {
-    chatInput.placeholder = 'Thử: epidemic, drought, storm, festival...'
+    chatInput.placeholder = t('chat.ph_no_api') as string
   }
 
   // ── AI-generated founding proclamation ────────────────────────────────────
@@ -1158,7 +1158,7 @@ function updateQuickActions() {
     let bar = btn.querySelector('.qa-cd') as HTMLElement | null
     if (!bar) { bar = document.createElement('div'); bar.className = 'qa-cd'; btn.appendChild(bar) }
     bar.style.width = daysLeft > 0 ? `${(daysLeft / qa.cooldownDays) * 100}%` : '0%'
-    btn.title = `${qa.label}${qa.cost > 0 ? ` (${qa.cost} coins)` : ''}${daysLeft > 0 ? ` — cooldown ${daysLeft}d` : !canAfford ? ' — không đủ tiền' : ''}`
+    btn.title = `${t(qa.labelKey)}${qa.cost > 0 ? ` (${qa.cost} coins)` : ''}${daysLeft > 0 ? ` — cooldown ${daysLeft}d` : !canAfford ? ` ${t('qa.not_enough')}` : ''}`
   })
 }
 
@@ -1176,7 +1176,7 @@ QUICK_ACTIONS.forEach(qa => {
     }
     qaCooldowns[qa.id] = world.day
     updateQuickActions()
-    addFeedRaw(`Hành động: ${qa.label}`, 'player', world.year, world.day)
+    addFeedRaw(tf('qa.feed', { label: t(qa.labelKey) as string }), 'player', world.year, world.day)
   })
 })
 
@@ -1187,7 +1187,7 @@ function renderFactionsList() {
   const container = document.getElementById('factions-list')
   if (!container) return
   if (!world.factions || world.factions.length === 0) {
-    container.innerHTML = '<div style="font-size:10px;color:#444">Chưa có phe phái</div>'
+    container.innerHTML = `<div style="font-size:10px;color:#444">${t('factions.none')}</div>`
     return
   }
   container.innerHTML = world.factions.map(f => {
@@ -1197,8 +1197,8 @@ function renderFactionsList() {
     return `<div style="margin-bottom:5px;">
       <div style="font-size:10px;color:#ccc;">${icon} ${f.name} <span style="color:#666">(${memberCount})</span></div>
       <div style="display:flex;gap:3px;margin-top:2px;">
-        <button class="qa-btn" style="width:auto;padding:2px 6px;font-size:9px;" onclick="factionSupport(${f.id})" ${canSupport ? '' : 'disabled'}>Hỗ trợ 80💰</button>
-        <button class="qa-btn" style="width:auto;padding:2px 6px;font-size:9px;" onclick="factionSuppress(${f.id})">Trấn áp</button>
+        <button class="qa-btn" style="width:auto;padding:2px 6px;font-size:9px;" onclick="factionSupport(${f.id})" ${canSupport ? '' : 'disabled'}>${t('factions.support')}</button>
+        <button class="qa-btn" style="width:auto;padding:2px 6px;font-size:9px;" onclick="factionSuppress(${f.id})">${t('factions.suppress')}</button>
       </div>
     </div>`
   }).join('')
@@ -1217,7 +1217,7 @@ function renderFactionsList() {
       n.trust_in.government.intention = Math.min(1, (n.trust_in.government.intention || 0.5) + 0.05)
     }
   })
-  addFeedRaw(`Hỗ trợ phe ${faction.name} (${memberNpcs.length} thành viên)`, 'player', world.year, world.day)
+  addFeedRaw(tf('factions.feed_support', { name: faction.name, count: memberNpcs.length }), 'player', world.year, world.day)
   renderFactionsList()
 }
 
@@ -1232,7 +1232,7 @@ function renderFactionsList() {
   })
   const guard = world.institutions.find(i => i.id === 'guard')
   if (guard) guard.resources = Math.max(0, (guard.resources || 0) - 20)
-  addFeedRaw(`Trấn áp phe ${faction.name}`, 'player', world.year, world.day)
+  addFeedRaw(tf('factions.feed_suppress', { name: faction.name }), 'player', world.year, world.day)
   renderFactionsList()
 }
 
@@ -1741,7 +1741,7 @@ function renderGoalsPanel() {
   const display = [...active, ...recent]
 
   if (display.length === 0) {
-    container.innerHTML = '<div style="font-size:10px;color:#444">Đang tạo mục tiêu...</div>'
+    container.innerHTML = `<div style="font-size:10px;color:#444">${t('goals.loading')}</div>`
     return
   }
 
@@ -1765,7 +1765,7 @@ function renderGoalsPanel() {
       <div class="obj-bar-bg"><div class="obj-bar-fill" style="width:${progress}%"></div></div>
       <div style="display:flex;justify-content:space-between;">
         <span class="obj-reward">${escapeHtml(obj.reward_desc)}</span>
-        <span class="obj-deadline">${obj.completed || obj.failed ? '' : `còn ${daysLeft}d`}</span>
+        <span class="obj-deadline">${obj.completed || obj.failed ? '' : tf('goals.days_left', { n: daysLeft })}</span>
       </div>
     </div>`
   }).join('')
@@ -1809,14 +1809,14 @@ function buildCrisisCards(w: WorldState): CrisisCardDef | null {
   // Food crisis
   if (m.food < 22 && check('food')) return {
     id: 'food',
-    title: '⚠️ Nạn đói cận kề',
-    body: `Lương thực chỉ còn ${m.food.toFixed(0)}%. Người dân bắt đầu tuyệt vọng.`,
+    title: tf('crisis.food.title', {}),
+    body: tf('crisis.food.body', { food: m.food.toFixed(0) }),
     options: [
-      { label: '🍞 Phân phối khẩu phần (food +10, grievance −)',
+      { label: tf('crisis.food.opt_a', {}),
         apply: ww => { applyWorldDelta(ww, { food_stock_delta: ww.npcs.filter(n => n.lifecycle.is_alive).length * 10 }); applyInterventions(ww, [{ target: 'all', grievance_delta: -8 }]) } },
-      { label: '🛒 Mua lương thực khẩn (−200 coins, food +20)',
+      { label: tf('crisis.food.opt_b', {}),
         apply: ww => { if (ww.tax_pool >= 200) { ww.tax_pool -= 200; applyWorldDelta(ww, { food_stock_delta: ww.npcs.filter(n => n.lifecycle.is_alive).length * 20 }) } } },
-      { label: '😐 Bỏ mặc (grievance +15)',
+      { label: tf('crisis.food.opt_c', {}),
         apply: ww => applyInterventions(ww, [{ target: 'all', grievance_delta: 15 }]) },
     ],
   }
@@ -1825,14 +1825,14 @@ function buildCrisisCards(w: WorldState): CrisisCardDef | null {
   const epidemicActive = w.active_events.filter(e => e.type === 'epidemic' && e.elapsed_ticks > 72)
   if (epidemicActive.length > 0 && check('epidemic')) return {
     id: 'epidemic',
-    title: '🦠 Dịch bệnh lan rộng',
-    body: 'Dịch bệnh đã kéo dài hơn 3 ngày. Cần hành động ngay.',
+    title: tf('crisis.epidemic.title', {}),
+    body: tf('crisis.epidemic.body', {}),
     options: [
-      { label: '🚧 Cách ly khu vực (quarantine)',
+      { label: tf('crisis.epidemic.opt_a', {}),
         apply: ww => applyWorldDelta(ww, { quarantine_add: epidemicActive[0].zones.length ? epidemicActive[0].zones : ['clinic_district'] }) },
-      { label: '🏥 Đầu tư y tế (−200 coins, mở bệnh viện)',
+      { label: tf('crisis.epidemic.opt_b', {}),
         apply: ww => { if (ww.tax_pool >= 200) { ww.tax_pool -= 200; ww.public_health.hospital_capacity = 1; ww.public_health.funded_tick = ww.tick } } },
-      { label: '🙏 Bỏ qua (fear tăng)',
+      { label: tf('crisis.epidemic.opt_c', {}),
         apply: ww => applyInterventions(ww, [{ target: 'all', fear_delta: 10 }]) },
     ],
   }
@@ -1843,14 +1843,14 @@ function buildCrisisCards(w: WorldState): CrisisCardDef | null {
     const avgGrievance = aliveNpcs.reduce((s, n) => s + n.grievance, 0) / Math.max(1, aliveNpcs.length)
     if (avgGrievance > 50) return {
       id: 'strike',
-      title: '✊ Đình công sắp nổ',
-      body: `Đoàn kết lao động ${m.labor_unrest.toFixed(0)}%, bất bình ${avgGrievance.toFixed(0)}%. Công nhân chuẩn bị đình công.`,
+      title: tf('crisis.strike.title', {}),
+      body: tf('crisis.strike.body', { unrest: m.labor_unrest.toFixed(0), griev: avgGrievance.toFixed(0) }),
       options: [
-        { label: '🤝 Đàm phán (safety_net +0.05, solidarity −20)',
+        { label: tf('crisis.strike.opt_a', {}),
           apply: ww => { ww.constitution.safety_net = Math.min(1, ww.constitution.safety_net + 0.05); applyInterventions(ww, [{ target: 'all', solidarity_delta: -20 }]) } },
-        { label: '⚔️ Trấn áp (fear +20, solidarity −30)',
+        { label: tf('crisis.strike.opt_b', {}),
           apply: ww => applyInterventions(ww, [{ target: 'all', fear_delta: 20, solidarity_delta: -30 }]) },
-        { label: '🤷 Bỏ mặc (đình công tự xảy ra)',
+        { label: tf('crisis.strike.opt_c', {}),
           apply: _ww => {} },
       ],
     }
@@ -1859,23 +1859,23 @@ function buildCrisisCards(w: WorldState): CrisisCardDef | null {
   // Class unrest
   if (m.gini > 0.65 && m.stability < 40 && check('class')) return {
     id: 'class',
-    title: '⚖️ Bất ổn giai cấp',
-    body: `Bất bình đẳng Gini ${m.gini.toFixed(2)}, ổn định ${m.stability.toFixed(0)}%. Xã hội đang rạn nứt.`,
+    title: tf('crisis.class.title', {}),
+    body: tf('crisis.class.body', { gini: m.gini.toFixed(2), stability: m.stability.toFixed(0) }),
     options: [
-      { label: '💸 Tái phân phối (đánh thuế nhà giàu, trao cho nghèo)',
+      { label: tf('crisis.class.opt_a', {}),
         apply: ww => {
           const alive = ww.npcs.filter(n => n.lifecycle.is_alive)
           const rich = [...alive].sort((a, b) => b.wealth - a.wealth).slice(0, Math.floor(alive.length * 0.2))
           rich.forEach(n => { const take = n.wealth * 0.05; n.wealth -= take; ww.tax_pool += take })
           applyInterventions(ww, [{ target: 'all', grievance_delta: -12 }])
         } },
-      { label: '📣 Tuyên truyền (grievance −15, legitimacy +8%)',
+      { label: tf('crisis.class.opt_b', {}),
         apply: ww => {
           applyInterventions(ww, [{ target: 'all', grievance_delta: -15 }])
           const gi = ww.institutions.find(i => i.id === 'government')
           if (gi) gi.legitimacy = Math.min(1, gi.legitimacy + 0.08)
         } },
-      { label: '🛡️ Tăng cường kiểm soát (guard power +0.2)',
+      { label: tf('crisis.class.opt_c', {}),
         apply: ww => { const g = ww.institutions.find(i => i.id === 'guard'); if (g) g.power = Math.min(1, g.power + 0.2) } },
     ],
   }
@@ -1883,15 +1883,15 @@ function buildCrisisCards(w: WorldState): CrisisCardDef | null {
   // Trust crisis
   if (m.trust < 20 && check('trust')) return {
     id: 'trust',
-    title: '😤 Khủng hoảng niềm tin',
-    body: `Tin tưởng vào chính phủ chỉ còn ${m.trust.toFixed(0)}%. Chính quyền đang mất tính hợp pháp.`,
+    title: tf('crisis.trust.title', {}),
+    body: tf('crisis.trust.body', { trust: m.trust.toFixed(0) }),
     options: [
-      { label: '📜 Cải cách minh bạch (legitimacy +15%)',
+      { label: tf('crisis.trust.opt_a', {}),
         apply: ww => { const gi = ww.institutions.find(i => i.id === 'government'); if (gi) gi.legitimacy = Math.min(1, gi.legitimacy + 0.15) } },
-      { label: '📺 Truyền thông nhà nước (seed rumor trust_up)',
-        apply: ww => applyWorldDelta(ww, { seed_rumor: { content: 'Chính phủ đang nỗ lực vì nhân dân', subject: 'government', effect: 'trust_up', duration_days: 10 } }) },
-      { label: '🗳️ Bầu cử sớm (trigger referendum)',
-        apply: ww => applyWorldDelta(ww, { trigger_referendum: { field: 'safety_net', proposed_value: Math.min(1, ww.constitution.safety_net + 0.1), proposal_text: 'Tăng phúc lợi để khôi phục niềm tin' } }) },
+      { label: tf('crisis.trust.opt_b', {}),
+        apply: ww => applyWorldDelta(ww, { seed_rumor: { content: t('crisis.trust.rumor') as string, subject: 'government', effect: 'trust_up', duration_days: 10 } }) },
+      { label: tf('crisis.trust.opt_c', {}),
+        apply: ww => applyWorldDelta(ww, { trigger_referendum: { field: 'safety_net', proposed_value: Math.min(1, ww.constitution.safety_net + 0.1), proposal_text: t('crisis.trust.referendum') as string } }) },
     ],
   }
 
@@ -2655,7 +2655,7 @@ document.getElementById('btn-speed')!.addEventListener('click', function () {
     const thoughtsRpm = settings.enable_npc_thoughts  ? simDaysPerMin * 5  : 0
     const pressRpm   = settings.enable_press_ai       ? simDaysPerMin / 5  : 0
     const totalRpm   = Math.round(govRpm + thoughtsRpm + pressRpm)
-    addFeedRaw(`⚡ Tốc độ ${newSpeed}× — AI sẽ gọi ~${totalRpm} req/min. Cân nhắc tắt bớt tính năng AI trong Settings.`, 'warning', world?.year ?? 1, world?.day ?? 1)
+    addFeedRaw(tf('speed.ai_warning', { speed: newSpeed, rpm: totalRpm }), 'warning', world?.year ?? 1, world?.day ?? 1)
   }
 })
 
@@ -2669,38 +2669,38 @@ function handleNoApiChat(input: string, w: WorldState): string {
 
   if (lower.includes('epidemic') || lower.includes('dịch') || lower.includes('bệnh')) {
     spawnEvent(w, { type: 'epidemic', intensity: 0.4, zones: [], duration_ticks: 240, source: 'player' })
-    return 'Dịch bệnh bùng phát ở nhiều khu vực.'
+    return t('noapi.epidemic') as string
   }
   if (lower.includes('drought') || lower.includes('hạn') || lower.includes('hán')) {
     spawnEvent(w, { type: 'drought', intensity: 0.5, zones: [], duration_ticks: 120, source: 'player' })
-    return 'Hạn hán kéo dài làm giảm mùa màng.'
+    return t('noapi.drought') as string
   }
   if (lower.includes('storm') || lower.includes('bão')) {
     spawnEvent(w, { type: 'storm', intensity: 0.5, zones: [], duration_ticks: 72, source: 'player' })
-    return 'Bão lớn đổ bộ vào vùng đất.'
+    return t('noapi.storm') as string
   }
   if (lower.includes('festival') || lower.includes('lễ hội') || lower.includes('hội')) {
     spawnEvent(w, { type: 'festival', intensity: 0.6, zones: [], duration_ticks: 48, source: 'player' })
-    return 'Lễ hội bắt đầu, tinh thần người dân lên cao.'
+    return t('noapi.festival') as string
   }
   if (lower.includes('harvest') || lower.includes('mùa bội') || lower.includes('bội thu')) {
     spawnEvent(w, { type: 'golden_harvest', intensity: 0.7, zones: [], duration_ticks: 72, source: 'player' })
-    return 'Mùa bội thu — kho lương thực đầy ắp.'
+    return t('noapi.harvest') as string
   }
   if (lower.includes('scandal') || lower.includes('tham nhũng') || lower.includes('bê bối')) {
     spawnEvent(w, { type: 'scandal_leak', intensity: 0.5, zones: [], duration_ticks: 120, source: 'player' })
-    return 'Tin tức về tham nhũng lan rộng, niềm tin giảm mạnh.'
+    return t('noapi.scandal') as string
   }
   if (lower.includes('refugee') || lower.includes('tị nạn') || lower.includes('dân di cư')) {
     spawnEvent(w, { type: 'refugee_wave', intensity: 0.4, zones: [], duration_ticks: 96, source: 'player' })
-    return 'Làn sóng người di cư tràn vào vùng đất.'
+    return t('noapi.refugee') as string
   }
   if (lower.includes('boom') || lower.includes('tài nguyên') || lower.includes('mỏ')) {
     spawnEvent(w, { type: 'resource_boom', intensity: 0.5, zones: [], duration_ticks: 120, source: 'player' })
-    return 'Phát hiện mỏ tài nguyên mới — kinh tế khởi sắc.'
+    return t('noapi.resource_boom') as string
   }
 
-  return '[Chế độ không AI] Thử gõ: "epidemic", "drought", "storm", "festival", "harvest", "scandal", "refugee", "resource boom"'
+  return t('noapi.fallback') as string
 }
 
 async function sendChatMessage() {

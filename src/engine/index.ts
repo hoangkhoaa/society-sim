@@ -213,8 +213,8 @@ export function generateObjectives(state: WorldState): void {
     id: `food_${day}`, type: 'sustain_above', stat: 'food', target: 50,
     duration_days: 20, progress_days: 0,
     deadline_day: day + 40,
-    label: 'Giữ lương thực > 50% trong 20 ngày',
-    reward_desc: '+150 coins kho bạc',
+    label: tf('obj.food.label', {}),
+    reward_desc: tf('obj.food.reward', {}),
     completed: false, failed: false,
   })
 
@@ -223,8 +223,8 @@ export function generateObjectives(state: WorldState): void {
     id: `trust_${day}`, type: 'stat_above', stat: 'trust', target: 40,
     duration_days: 0, progress_days: 0,
     deadline_day: day + 30,
-    label: `Nâng niềm tin lên 40% (hiện ${m.trust.toFixed(0)}%)`,
-    reward_desc: 'Legitimacy chính phủ +10%',
+    label: tf('obj.trust.label', { val: m.trust.toFixed(0) }),
+    reward_desc: tf('obj.trust.reward', {}),
     completed: false, failed: false,
   })
 
@@ -233,8 +233,8 @@ export function generateObjectives(state: WorldState): void {
     id: `gini_${day}`, type: 'avoid_above', stat: 'gini', target: 0.70,
     duration_days: 15, progress_days: 0,
     deadline_day: day + 20,
-    label: 'Không để Gini vượt 0.70 trong 15 ngày',
-    reward_desc: 'Market trust +10%',
+    label: tf('obj.gini.label', {}),
+    reward_desc: tf('obj.gini.reward', {}),
     completed: false, failed: false,
   })
 
@@ -243,8 +243,8 @@ export function generateObjectives(state: WorldState): void {
     id: `pressure_${day}`, type: 'stat_below', stat: 'political_pressure', target: 30,
     duration_days: 0, progress_days: 0,
     deadline_day: day + 25,
-    label: `Giảm bất ổn chính trị xuống 30% (hiện ${m.political_pressure.toFixed(0)}%)`,
-    reward_desc: 'Stability +5',
+    label: tf('obj.pressure.label', { val: m.political_pressure.toFixed(0) }),
+    reward_desc: tf('obj.pressure.reward', {}),
     completed: false, failed: false,
   })
 
@@ -254,8 +254,8 @@ export function generateObjectives(state: WorldState): void {
     id: `tech_${day}`, type: 'stat_above', stat: 'literacy', target: 20,
     duration_days: 0, progress_days: 0,
     deadline_day: day + 60,
-    label: 'Đạt literacy 20 (thêm học giả)',
-    reward_desc: 'Research +200 điểm',
+    label: tf('obj.literacy.label', {}),
+    reward_desc: tf('obj.literacy.reward', {}),
     completed: false, failed: false,
   })
 
