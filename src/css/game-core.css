@@ -254,45 +254,58 @@ body[data-theme='light'] .map-note-btn {
   color: #3b4e67;
 }
 
-/* Demographics overlay — bottom-left of map */
-#demographics {
+/* ── Dashboard panel — unified tabbed bottom-left overlay ─── */
+#dashboard-panel {
   position: absolute;
   bottom: 8px;
   left: 8px;
-  width: 164px;
+  width: 220px;
   background: #0f0f0f;
   border: 1px solid #1e1e1e;
   border-radius: 6px;
-  padding: 8px 10px;
-  font-size: 11px;
   z-index: 5;
+  font-size: 11px;
+  overflow: hidden;
+}
+#dashboard-tabs {
+  display: flex;
+  border-bottom: 1px solid #1e1e1e;
+}
+.dash-tab {
+  flex: 1;
+  padding: 4px 2px;
+  font-size: 10px;
+  background: transparent;
+  color: #666;
+  border: none;
+  cursor: pointer;
+  border-radius: 0;
+  border-bottom: 1px solid transparent;
+  transition: color 0.15s, background 0.15s;
+  font-family: inherit;
+}
+.dash-tab:hover { color: #999; background: #111; }
+.dash-tab.active {
+  color: #ccc;
+  background: #161616;
+  border-bottom: 1px solid #4a9eff;
 }
 
-#rumors-panel {
-  position: absolute;
-  bottom: 8px;
-  left: 180px;
-  width: 236px;
-  background: #0f0f0f;
-  border: 1px solid #1e1e1e;
-  border-radius: 6px;
+/* Each panel is a static tab pane inside dashboard-panel */
+#demographics,
+#rumors-panel,
+#econ-panel,
+#npc-contacts-panel {
+  position: static;
+  display: none;
   padding: 8px 10px;
-  font-size: 11px;
-  z-index: 5;
+  width: auto;
+  background: transparent;
+  border: none;
+  border-radius: 0;
 }
-
-#econ-panel {
-  position: absolute;
-  bottom: 8px;
-  left: 424px;
-  width: 210px;
-  background: #0f0f0f;
-  border: 1px solid #1e1e1e;
-  border-radius: 6px;
-  padding: 8px 10px;
-  font-size: 11px;
-  z-index: 5;
-}
+/* Demographics is the default visible tab */
+#demographics { display: block; }
 
 #econ-tabs {
   display: flex;
@@ -319,19 +332,9 @@ body[data-theme='light'] .map-note-btn {
 .econ-tab.active { color: #5d9eca; border-bottom-color: #5d9eca; }
 .econ-pane .demo-grid { margin-bottom: 0; }
 
+/* #npc-contacts-panel layout overrides inside dashboard */
 #npc-contacts-panel {
-  position: absolute;
-  bottom: 8px;
-  left: 632px;
-  width: 200px;
   max-height: 168px;
-  background: #0f0f0f;
-  border: 1px solid #1e1e1e;
-  border-radius: 6px;
-  padding: 8px 10px;
-  font-size: 11px;
-  z-index: 5;
-  display: flex;
   flex-direction: column;
   min-height: 0;
 }
@@ -725,6 +728,32 @@ body[data-theme='light'] .press-censored-note { color: #a22; }
   font-style: italic;
 }
 
+/* Quick action bar */
+#quick-actions {
+  display: flex;
+  gap: 4px;
+  padding: 0 8px 0 4px;
+  align-items: center;
+  flex-shrink: 0;
+}
+.qa-btn {
+  width: 28px; height: 28px;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 5px;
+  font-size: 14px;
+  cursor: pointer;
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+}
+.qa-btn:hover:not(:disabled) { background: #252525; border-color: #444; }
+.qa-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.qa-btn .qa-cd {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  height: 3px; background: #4a9eff; border-radius: 0 0 4px 4px;
+  transition: width 1s linear;
+}
+
 /* Chat bar */
 #chatbar {
   height: 52px;
@@ -755,3 +784,44 @@ body[data-theme='light'] .press-censored-note { color: #a22; }
   font-size: 13px;
 }
 #chat-input::placeholder { color: #444; }
+
+/* ── Objectives (Goals panel) ─────────────────────── */
+.obj-item { margin-bottom: 8px; }
+.obj-label { font-size: 10px; color: #ccc; margin-bottom: 3px; }
+.obj-reward { font-size: 9px; color: #888; }
+.obj-bar-bg { height: 4px; background: #222; border-radius: 2px; margin: 3px 0; }
+.obj-bar-fill { height: 100%; background: #4a9eff; border-radius: 2px; }
+.obj-deadline { font-size: 9px; color: #666; }
+.obj-failed { opacity: 0.5; }
+.obj-completed .obj-label { color: #4caf50 !important; }
+
+/* ── Crisis Decision Card ──────────────────────────── */
+#crisis-card {
+  position: fixed;
+  bottom: 64px; /* above chatbar */
+  right: 292px; /* left of right sidebar */
+  width: 300px;
+  background: #1a1208;
+  border: 1px solid #5a3a00;
+  border-radius: 8px;
+  padding: 10px 12px;
+  z-index: 50;
+  animation: crisisSlideIn 0.3s ease-out;
+}
+@keyframes crisisSlideIn {
+  from { transform: translateY(20px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+#crisis-card-header { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+#crisis-card-title  { font-size: 12px; font-weight: 600; color: #ffb347; }
+#crisis-card-timer-bar  { height: 3px; background: #333; border-radius: 2px; overflow: hidden; }
+#crisis-card-timer-fill { height: 100%; background: #e05; border-radius: 2px; width: 100%; transition: width linear; }
+#crisis-card-body   { font-size: 11px; color: #aaa; margin-bottom: 8px; line-height: 1.4; }
+#crisis-card-options { display: flex; flex-direction: column; gap: 4px; }
+.crisis-opt {
+  width: 100%; padding: 5px 8px; font-size: 11px; text-align: left;
+  background: #1e1e1e; border: 1px solid #333; border-radius: 4px;
+  color: #ccc; cursor: pointer;
+}
+.crisis-opt:hover { background: #2a2a2a; border-color: #555; }
+.crisis-opt-c { color: #888 !important; } /* "ignore" option dimmer */

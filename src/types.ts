@@ -583,6 +583,22 @@ export interface NetworkGraph {
   clusters: Map<number, number>  // npcId → clusterId
 }
 
+// ── Objective ──────────────────────────────────────────────────────────────
+
+export interface Objective {
+  id: string             // unique e.g. 'food_target_1'
+  type: 'stat_above' | 'stat_below' | 'sustain_above' | 'avoid_above'
+  stat: keyof MacroStats // e.g. 'food', 'trust', 'gini'
+  target: number         // threshold value
+  duration_days: number  // how many days to sustain (for sustain/avoid types), or 0 for instant
+  progress_days: number  // days already meeting condition
+  deadline_day: number   // world.day + window to achieve it
+  label: string          // e.g. "Giữ food > 50 trong 20 ngày"
+  reward_desc: string    // e.g. "+150 coins"
+  completed: boolean
+  failed: boolean
+}
+
 // ── World State ────────────────────────────────────────────────────────────
 
 export interface PublicHealth {
@@ -667,6 +683,10 @@ export interface WorldState {
   // Emergency government cycle tracking
   // Set to state.day when an emergency cycle fires; prevents re-triggering every single day.
   last_emergency_govt_cycle_day?: number
+
+  // Player objectives (short-term goals with rewards)
+  objectives?: Objective[]
+  objectives_next_gen_day?: number
 }
 
 export interface RunStats {

@@ -9,11 +9,11 @@ import type { GameSettings, MapBackgroundMode } from '../types'
 export const GAME_SETTINGS_DEFAULTS: GameSettings = {
   enable_human_elections:        false,
   election_cycle_days:           90,
-  enable_government_ai:          true,
-  enable_npc_thoughts:           true,
-  enable_press_ai:               true,
-  enable_science_ai:             true,
-  enable_consequence_prediction: true,
+  enable_government_ai:          false,
+  enable_npc_thoughts:           false,
+  enable_press_ai:               false,
+  enable_science_ai:             false,
+  enable_consequence_prediction: false,
   map_background_mode:           'background_only',
 }
 

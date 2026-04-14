@@ -286,14 +286,54 @@ function clampNum(v: number, lo: number, hi: number): number {
   return isNaN(v) ? lo : Math.max(lo, Math.min(hi, v))
 }
 
+/** RPM estimates per AI feature at a given speed multiplier (sim-days/min = S × 60 / 24). */
+function estimateRpm(featureKey: string, speedMultiplier: number): number {
+  const daysPerMin = (speedMultiplier * 60) / 24
+  switch (featureKey) {
+    case 'enable_government_ai':          return daysPerMin / 15
+    case 'enable_npc_thoughts':           return daysPerMin * 5
+    case 'enable_press_ai':               return daysPerMin / 5
+    case 'enable_science_ai':             return daysPerMin / 60
+    case 'enable_consequence_prediction': return daysPerMin / 30
+    default:                              return 0
+  }
+}
+
+/** Read the current speed multiplier from the DOM speed button (e.g. "3×" → 3). */
+function getCurrentSpeedMultiplier(): number {
+  const btn = document.getElementById('btn-speed')
+  if (!btn) return 1
+  const text = btn.textContent ?? '1×'
+  const n = parseInt(text, 10)
+  return isNaN(n) ? 1 : n
+}
+
+const AI_FEATURE_KEYS = new Set([
+  'enable_government_ai',
+  'enable_npc_thoughts',
+  'enable_press_ai',
+  'enable_science_ai',
+  'enable_consequence_prediction',
+])
+
 function renderToggleRow(key: string, label: string, desc: string, value: boolean, locked = false): string {
   const lockIcon  = locked ? ' 🔒' : ''
   const lockLabel = locked ? t('settings.regime_locked') as string : ''
   const stateLabel = value ? t('settings.enabled') as string : t('settings.disabled') as string
+
+  let rpmBadge = ''
+  if (AI_FEATURE_KEYS.has(key) && value) {
+    const speedMult = getCurrentSpeedMultiplier()
+    const rpm = Math.round(estimateRpm(key, speedMult) * 10) / 10
+    const rpmDisplay = rpm < 1 ? rpm.toFixed(1) : String(Math.round(rpm))
+    const warnClass = rpm > 20 ? 'rpm-warn' : 'rpm-ok'
+    rpmBadge = `<span class="ai-rpm-badge ${warnClass}">~${rpmDisplay} req/min</span>`
+  }
+
   return `
     <div class="stg-row${locked ? ' stg-row-locked' : ''}">
       <div class="stg-row-info">
-        <div class="stg-row-label">${label}${lockIcon}</div>
+        <div class="stg-row-label">${label}${lockIcon}${rpmBadge}</div>
         <div class="stg-row-desc">${desc}${locked ? `<br><em style="color:#553;font-style:normal">${lockLabel}</em>` : ''}</div>
       </div>
       <div class="stg-toggle ${value ? 'on' : 'off'}${locked ? ' stg-toggle-locked' : ''}"

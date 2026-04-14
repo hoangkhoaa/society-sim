@@ -32,13 +32,11 @@ import { setActiveSimRestrictions } from './sim/npc'
 import { isMarxistPresetEnabled } from './build-features'
 import {
   THEME_STORAGE_KEY,
-  UI_DEMOGRAPHICS_VISIBLE_KEY,
-  UI_RUMORS_VISIBLE_KEY,
   UI_LEGEND_VISIBLE_KEY,
   UI_NETWORK_VISIBLE_KEY,
-  UI_ECON_VISIBLE_KEY,
-  UI_NPC_CONTACTS_VISIBLE_KEY,
   UI_CONFLICT_OVERLAY_KEY,
+  UI_DASHBOARD_TAB_KEY,
+  UI_DASHBOARD_VISIBLE_KEY,
 } from './constants/storage-keys'
 import { ACHIEVEMENT_DEFINITIONS, type AchievementDef } from './constants/achievements'
 import { DEMOGRAPHICS_AGE_GROUPS } from './constants/demographics-age-groups'
@@ -64,6 +62,92 @@ import { SPOTLIGHT_NPC_CONTACTS_CHANGED_EVENT } from './constants/spotlight-even
 let aiConfig: AIConfig | null = null
 let world: WorldState | null = null
 let noApiKeyMode = false
+
+// Quick action cooldowns (day when last used)
+const qaCooldowns: Record<string, number> = {}
+const qaReducedTaxDays: { active: boolean; end_day: number } = { active: false, end_day: 0 }
+
+const QUICK_ACTIONS = [
+  {
+    id: 'qa-aid',
+    cost: 80,
+    cooldownDays: 5,
+    labelKey: 'qa.aid.label',
+    confirm: false,
+    apply(w: WorldState) {
+      const living = w.npcs.filter(n => n.lifecycle.is_alive)
+      const poor = [...living].sort((a, b) => a.wealth - b.wealth).slice(0, Math.floor(living.length * 0.30))
+      poor.forEach(n => { n.hunger = Math.max(0, n.hunger - 25) })
+      w.tax_pool -= 80
+    }
+  },
+  {
+    id: 'qa-hospital',
+    cost: 300,
+    cooldownDays: 30,
+    labelKey: 'qa.hospital.label',
+    confirm: false,
+    apply(w: WorldState) {
+      w.tax_pool -= 300
+      w.public_health.hospital_capacity = 1
+      w.public_health.funded_tick = w.tick + 720
+    }
+  },
+  {
+    id: 'qa-harvest',
+    cost: 120,
+    cooldownDays: 7,
+    labelKey: 'qa.harvest.label',
+    confirm: false,
+    apply(w: WorldState) {
+      w.tax_pool -= 120
+      w.food_stock = Math.min(w.food_stock * 1.15, w.npcs.filter(n => n.lifecycle.is_alive).length * 60)
+      w.npcs.filter(n => n.lifecycle.is_alive && n.role === 'farmer').forEach(n => { n.happiness = Math.min(100, (n.happiness || 50) + 10) })
+    }
+  },
+  {
+    id: 'qa-martial',
+    cost: 0,
+    cooldownDays: 14,
+    labelKey: 'qa.martial.label',
+    confirm: true,
+    apply(w: WorldState) {
+      w.npcs.filter(n => n.lifecycle.is_alive).forEach(n => { n.fear = Math.min(100, n.fear + 15) })
+      const guard = w.institutions.find(i => i.id === 'guard')
+      if (guard) guard.power = Math.min(1, guard.power + 0.20)
+    }
+  },
+  {
+    id: 'qa-propa',
+    cost: 60,
+    cooldownDays: 7,
+    labelKey: 'qa.propa.label',
+    confirm: false,
+    apply(w: WorldState) {
+      w.tax_pool -= 60
+      const living = w.npcs.filter(n => n.lifecycle.is_alive)
+      const half = [...living].sort(() => Math.random() - 0.5).slice(0, Math.floor(living.length * 0.5))
+      half.forEach(n => { n.grievance = Math.max(0, n.grievance - 10) })
+      const gi = w.institutions.find(i => i.id === 'government')
+      if (gi) gi.legitimacy = Math.min(1, gi.legitimacy + 0.08)
+    }
+  },
+  {
+    id: 'qa-tax',
+    cost: 0,
+    cooldownDays: 10,
+    labelKey: 'qa.tax.label',
+    confirm: false,
+    apply(w: WorldState) {
+      qaReducedTaxDays.active = true
+      qaReducedTaxDays.end_day = w.day + 5
+      const merchants = w.npcs.filter(n => n.lifecycle.is_alive && n.role === 'merchant')
+      merchants.forEach(n => { n.wealth += n.wealth * 0.05 })
+      const market = w.institutions.find(i => i.id === 'market')
+      if (market) market.legitimacy = Math.min(1, market.legitimacy + 0.10)
+    }
+  },
+]
 
 type ThemeMode = 'dark' | 'light'
 
@@ -312,7 +396,7 @@ function initLanguageSelect() {
     setLang(v)
     updateProviderFieldLabels()
     refreshChronicleTimestamps()
-    if (npcContactsVisible) updateNpcContactsPanel()
+    if ((localStorage.getItem(UI_DASHBOARD_TAB_KEY) ?? 'demographics') === 'contacts' && !dashboardPanel?.classList.contains('hidden')) updateNpcContactsPanel()
   })
 }
 
@@ -568,6 +652,7 @@ async function startGame(constitution: Constitution) {
   peakPopulation = updateDemographics()
   updateEconomicsPanel()
   updateNpcContactsPanel()
+  updateQuickActions()
 
   // Initialize the canvas map
   const mapCanvas = document.getElementById('map-canvas') as HTMLCanvasElement
@@ -590,11 +675,9 @@ async function startGame(constitution: Constitution) {
 
   startSimLoop()
 
-  // Disable chatbar when running without an API key
+  // In no-API mode keep the chatbar enabled but use a hint placeholder
   if (noApiKeyMode) {
-    chatInput.disabled = true
-    chatInput.placeholder = t('chat.disabled') as string
-    btnChatSend.setAttribute('disabled', 'true')
+    chatInput.placeholder = t('chat.ph_no_api') as string
   }
 
   // ── AI-generated founding proclamation ────────────────────────────────────
@@ -1005,6 +1088,7 @@ function updateDemographics(): number {
   }
 
   updateLaborTension()
+  renderFactionsList()
   return pop
 }
 
@@ -1057,6 +1141,99 @@ function updateLaborTension() {
     <div class="labor-section-title">${t('labor.title') as string}</div>
     <div class="labor-legend">${t('labor.legend') as string}</div>
     ${rows}`
+}
+
+// ── Quick Actions ──────────────────────────────────────────────────────────
+
+function updateQuickActions() {
+  if (!world) return
+  QUICK_ACTIONS.forEach(qa => {
+    const btn = document.getElementById(qa.id) as HTMLButtonElement | null
+    if (!btn) return
+    const lastUsed = qaCooldowns[qa.id] ?? -999
+    const daysLeft = Math.max(0, qa.cooldownDays - (world!.day - lastUsed))
+    const canAfford = world!.tax_pool >= qa.cost
+    btn.disabled = daysLeft > 0 || !canAfford
+    // Update or create cooldown bar
+    let bar = btn.querySelector('.qa-cd') as HTMLElement | null
+    if (!bar) { bar = document.createElement('div'); bar.className = 'qa-cd'; btn.appendChild(bar) }
+    bar.style.width = daysLeft > 0 ? `${(daysLeft / qa.cooldownDays) * 100}%` : '0%'
+    btn.title = `${t(qa.labelKey)}${qa.cost > 0 ? ` (${qa.cost} coins)` : ''}${daysLeft > 0 ? ` — cooldown ${daysLeft}d` : !canAfford ? ` ${t('qa.not_enough')}` : ''}`
+  })
+}
+
+// Wire quick action click handlers
+QUICK_ACTIONS.forEach(qa => {
+  document.getElementById(qa.id)?.addEventListener('click', () => {
+    if (!world) return
+    const lastUsed = qaCooldowns[qa.id] ?? -999
+    if (world.day - lastUsed < qa.cooldownDays) return
+    if (world.tax_pool < qa.cost) return
+    if (qa.confirm) {
+      qa.apply(world)
+    } else {
+      qa.apply(world)
+    }
+    qaCooldowns[qa.id] = world.day
+    updateQuickActions()
+    addFeedRaw(tf('qa.feed', { label: t(qa.labelKey) as string }), 'player', world.year, world.day)
+  })
+})
+
+// ── Factions list ──────────────────────────────────────────────────────────
+
+function renderFactionsList() {
+  if (!world) return
+  const container = document.getElementById('factions-list')
+  if (!container) return
+  if (!world.factions || world.factions.length === 0) {
+    container.innerHTML = `<div style="font-size:10px;color:#444">${t('factions.none')}</div>`
+    return
+  }
+  container.innerHTML = world.factions.map(f => {
+    const icon = ({ security: '🛡️', equality: '⚖️', freedom: '🗽', growth: '📈' } as Record<string, string>)[f.dominant_value] ?? '🔵'
+    const canSupport = world!.tax_pool >= 80
+    const memberCount = f.member_ids.filter(id => world!.npcs.find(n => n.id === id)?.lifecycle.is_alive).length
+    return `<div style="margin-bottom:5px;">
+      <div style="font-size:10px;color:#ccc;">${icon} ${f.name} <span style="color:#666">(${memberCount})</span></div>
+      <div style="display:flex;gap:3px;margin-top:2px;">
+        <button class="qa-btn" style="width:auto;padding:2px 6px;font-size:9px;" onclick="factionSupport(${f.id})" ${canSupport ? '' : 'disabled'}>${t('factions.support')}</button>
+        <button class="qa-btn" style="width:auto;padding:2px 6px;font-size:9px;" onclick="factionSuppress(${f.id})">${t('factions.suppress')}</button>
+      </div>
+    </div>`
+  }).join('')
+}
+
+;(window as any).factionSupport = (factionId: number) => {
+  if (!world || world.tax_pool < 80) return
+  const faction = world.factions.find(f => f.id === factionId)
+  if (!faction) return
+  world.tax_pool -= 80
+  faction.power = Math.min(1, faction.power * 1.2)
+  const memberNpcs = world.npcs.filter(n => n.lifecycle.is_alive && faction.member_ids.includes(n.id))
+  memberNpcs.forEach(n => {
+    n.happiness = Math.min(100, (n.happiness || 50) + 10)
+    if (n.trust_in?.government) {
+      n.trust_in.government.intention = Math.min(1, (n.trust_in.government.intention || 0.5) + 0.05)
+    }
+  })
+  addFeedRaw(tf('factions.feed_support', { name: faction.name, count: memberNpcs.length }), 'player', world.year, world.day)
+  renderFactionsList()
+}
+
+;(window as any).factionSuppress = (factionId: number) => {
+  if (!world) return
+  const faction = world.factions.find(f => f.id === factionId)
+  if (!faction) return
+  faction.power = Math.max(0, faction.power * 0.7)
+  const memberNpcs = world.npcs.filter(n => n.lifecycle.is_alive && faction.member_ids.includes(n.id))
+  memberNpcs.forEach(n => {
+    n.fear = Math.min(100, n.fear + 15)
+  })
+  const guard = world.institutions.find(i => i.id === 'guard')
+  if (guard) guard.resources = Math.max(0, (guard.resources || 0) - 20)
+  addFeedRaw(tf('factions.feed_suppress', { name: faction.name }), 'player', world.year, world.day)
+  renderFactionsList()
 }
 
 // ── Active rumors display ──────────────────────────────────────────────────
@@ -1267,44 +1444,101 @@ const demographicsPanel = document.getElementById('demographics') as HTMLElement
 const rumorsPanel = document.getElementById('rumors-panel') as HTMLElement
 const econPanel = document.getElementById('econ-panel') as HTMLElement
 const npcContactsPanel = document.getElementById('npc-contacts-panel') as HTMLElement
+const goalsPanel = document.getElementById('goals-panel') as HTMLElement
 
-let demographicsVisible = localStorage.getItem(UI_DEMOGRAPHICS_VISIBLE_KEY) !== '0'
-let rumorsVisible = localStorage.getItem(UI_RUMORS_VISIBLE_KEY) !== '0'
 /** Map legend off by default; set localStorage to '1' to opt in. */
 let legendVisible = localStorage.getItem(UI_LEGEND_VISIBLE_KEY) === '1'
 let networkVisible = localStorage.getItem(UI_NETWORK_VISIBLE_KEY) !== '0'
-let econVisible = localStorage.getItem(UI_ECON_VISIBLE_KEY) === '1'
-let npcContactsVisible = localStorage.getItem(UI_NPC_CONTACTS_VISIBLE_KEY) === '1'
 let conflictOverlayVisible = localStorage.getItem(UI_CONFLICT_OVERLAY_KEY) === '1'
 
+// ── Dashboard tab switching ────────────────────────────────────────────────
+const dashboardTabPanes: Record<string, HTMLElement> = {
+  demographics: demographicsPanel,
+  rumors: rumorsPanel,
+  econ: econPanel,
+  contacts: npcContactsPanel,
+  goals: goalsPanel,
+}
+const dashboardPanel = document.getElementById('dashboard-panel') as HTMLElement | null
+
+function switchDashboardTab(tabId: string) {
+  // Hide all panes
+  for (const pane of Object.values(dashboardTabPanes)) {
+    pane.style.display = 'none'
+  }
+  // Show selected pane
+  const active = dashboardTabPanes[tabId]
+  if (active) active.style.display = 'block'
+
+  // Update tab button active state
+  document.querySelectorAll<HTMLButtonElement>('.dash-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tabId)
+  })
+
+  // Trigger data refresh for panels that need it
+  if (tabId === 'econ') updateEconomicsPanel()
+  if (tabId === 'contacts') updateNpcContactsPanel()
+  if (tabId === 'goals') renderGoalsPanel()
+
+  localStorage.setItem(UI_DASHBOARD_TAB_KEY, tabId)
+}
+
+// Wire up dash-tab buttons
+document.querySelectorAll<HTMLButtonElement>('.dash-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tabId = btn.dataset.tab
+    if (tabId) switchDashboardTab(tabId)
+  })
+})
+
+// Restore last active tab (default: demographics)
+const savedDashboardTab = localStorage.getItem(UI_DASHBOARD_TAB_KEY) ?? 'demographics'
+switchDashboardTab(savedDashboardTab)
+
+// Dashboard toggle visibility (whole panel shown/hidden)
+let dashboardVisible = localStorage.getItem(UI_DASHBOARD_VISIBLE_KEY) !== '0'
+function applyDashboardVisibility() {
+  if (dashboardPanel) dashboardPanel.classList.toggle('hidden', !dashboardVisible)
+}
+applyDashboardVisibility()
+
 function applyOverlayVisibility() {
-  demographicsPanel.classList.toggle('hidden', !demographicsVisible)
-  rumorsPanel.classList.toggle('hidden', !rumorsVisible)
-  econPanel.classList.toggle('hidden', !econVisible)
-  npcContactsPanel.classList.toggle('hidden', !npcContactsVisible)
   setMapLegendVisible(legendVisible)
   setMapNetworkVisible(networkVisible)
 
-  btnToggleDemo.classList.toggle('active', demographicsVisible)
-  btnToggleRumors.classList.toggle('active', rumorsVisible)
   btnToggleNetwork.classList.toggle('active', networkVisible)
   btnToggleLegend.classList.toggle('active', legendVisible)
-  btnToggleEcon.classList.toggle('active', econVisible)
-  btnToggleNpcContacts.classList.toggle('active', npcContactsVisible)
   setMapConflictOverlayVisible(conflictOverlayVisible)
   btnToggleConflict.classList.toggle('active', conflictOverlayVisible)
 }
 
+// Dropdown buttons for demographics/rumors/econ/contacts now switch the dashboard tab
 btnToggleDemo.addEventListener('click', () => {
-  demographicsVisible = !demographicsVisible
-  localStorage.setItem(UI_DEMOGRAPHICS_VISIBLE_KEY, demographicsVisible ? '1' : '0')
-  applyOverlayVisibility()
+  dashboardVisible = true
+  localStorage.setItem(UI_DASHBOARD_VISIBLE_KEY, '1')
+  applyDashboardVisibility()
+  switchDashboardTab('demographics')
 })
 
 btnToggleRumors.addEventListener('click', () => {
-  rumorsVisible = !rumorsVisible
-  localStorage.setItem(UI_RUMORS_VISIBLE_KEY, rumorsVisible ? '1' : '0')
-  applyOverlayVisibility()
+  dashboardVisible = true
+  localStorage.setItem(UI_DASHBOARD_VISIBLE_KEY, '1')
+  applyDashboardVisibility()
+  switchDashboardTab('rumors')
+})
+
+btnToggleEcon.addEventListener('click', () => {
+  dashboardVisible = true
+  localStorage.setItem(UI_DASHBOARD_VISIBLE_KEY, '1')
+  applyDashboardVisibility()
+  switchDashboardTab('econ')
+})
+
+btnToggleNpcContacts.addEventListener('click', () => {
+  dashboardVisible = true
+  localStorage.setItem(UI_DASHBOARD_VISIBLE_KEY, '1')
+  applyDashboardVisibility()
+  switchDashboardTab('contacts')
 })
 
 btnToggleNetwork.addEventListener('click', () => {
@@ -1319,20 +1553,6 @@ btnToggleLegend.addEventListener('click', () => {
   applyOverlayVisibility()
 })
 
-btnToggleEcon.addEventListener('click', () => {
-  econVisible = !econVisible
-  localStorage.setItem(UI_ECON_VISIBLE_KEY, econVisible ? '1' : '0')
-  applyOverlayVisibility()
-  if (econVisible) updateEconomicsPanel()
-})
-
-btnToggleNpcContacts.addEventListener('click', () => {
-  npcContactsVisible = !npcContactsVisible
-  localStorage.setItem(UI_NPC_CONTACTS_VISIBLE_KEY, npcContactsVisible ? '1' : '0')
-  applyOverlayVisibility()
-  if (npcContactsVisible) updateNpcContactsPanel()
-})
-
 btnToggleConflict.addEventListener('click', () => {
   conflictOverlayVisible = !conflictOverlayVisible
   localStorage.setItem(UI_CONFLICT_OVERLAY_KEY, conflictOverlayVisible ? '1' : '0')
@@ -1340,7 +1560,8 @@ btnToggleConflict.addEventListener('click', () => {
 })
 
 document.addEventListener(SPOTLIGHT_NPC_CONTACTS_CHANGED_EVENT, () => {
-  if (npcContactsVisible) updateNpcContactsPanel()
+  const activeTab = localStorage.getItem(UI_DASHBOARD_TAB_KEY) ?? 'demographics'
+  if (activeTab === 'contacts' && !dashboardPanel?.classList.contains('hidden')) updateNpcContactsPanel()
 })
 
 applyOverlayVisibility()
@@ -1509,6 +1730,67 @@ function updateEconomicsPanel() {
   }
 }
 
+// ── Goals Panel ─────────────────────────────────────────────────────────────
+
+function renderGoalsPanel() {
+  const container = document.getElementById('goals-list')
+  if (!container || !world) return
+  const objs = world.objectives ?? []
+  const active = objs.filter(o => !o.completed && !o.failed)
+  const recent = objs.filter(o => o.completed || o.failed).slice(-2)
+  const display = [...active, ...recent]
+
+  if (display.length === 0) {
+    container.innerHTML = `<div style="font-size:10px;color:#444">${t('goals.loading')}</div>`
+    return
+  }
+
+  container.innerHTML = display.map(obj => {
+    const daysLeft = Math.max(0, obj.deadline_day - world!.day)
+    let progress = 0
+    if (obj.type === 'sustain_above' || obj.type === 'avoid_above') {
+      progress = obj.duration_days > 0 ? Math.round((obj.progress_days / obj.duration_days) * 100) : 0
+    } else {
+      const val = world!.macro[obj.stat] as number
+      if (obj.type === 'stat_above') {
+        progress = Math.min(100, Math.round((val / obj.target) * 100))
+      } else {
+        progress = Math.min(100, Math.round(((obj.target - val) / obj.target) * 100 + 50))
+      }
+    }
+    const statusClass = obj.completed ? 'obj-completed' : obj.failed ? 'obj-failed' : ''
+    const statusLabel = obj.completed ? '✓ ' : obj.failed ? '✗ ' : ''
+    return `<div class="obj-item ${statusClass}">
+      <div class="obj-label">${statusLabel}${escapeHtml(obj.label)}</div>
+      <div class="obj-bar-bg"><div class="obj-bar-fill" style="width:${progress}%"></div></div>
+      <div style="display:flex;justify-content:space-between;">
+        <span class="obj-reward">${escapeHtml(obj.reward_desc)}</span>
+        <span class="obj-deadline">${obj.completed || obj.failed ? '' : tf('goals.days_left', { n: daysLeft })}</span>
+      </div>
+    </div>`
+  }).join('')
+}
+
+// ── Crisis card types ──────────────────────────────────────────────────────
+
+interface CrisisOption {
+  label: string
+  apply: (world: WorldState) => void
+}
+interface CrisisCardDef {
+  id: string
+  title: string
+  body: string
+  options: [CrisisOption, CrisisOption, CrisisOption]
+}
+
+// Crisis card state
+let activeCrisisCard: CrisisCardDef | null = null
+let crisisCardTimerInterval: ReturnType<typeof setInterval> | null = null
+let crisisCardTimeLeft = 45
+const crisisCardCooldowns: Record<string, number> = {} // crisisType → last fired day
+const CRISIS_CARD_COOLDOWN_DAYS = 30
+
 // Government cycle: runs once every 15 sim-days.
 // Tracks which 15-day period has already been processed to avoid double-firing at high speeds.
 let lastGovernmentPeriod = -1
@@ -1516,6 +1798,148 @@ let govBusy = false
 
 const govCdEl = document.getElementById('gov-cd')!
 const btnGov  = document.getElementById('btn-gov')!
+
+// ── Crisis card logic ──────────────────────────────────────────────────────
+
+function buildCrisisCards(w: WorldState): CrisisCardDef | null {
+  const m = w.macro
+  const day = w.day
+  const check = (id: string) => !crisisCardCooldowns[id] || day - crisisCardCooldowns[id] >= CRISIS_CARD_COOLDOWN_DAYS
+
+  // Food crisis
+  if (m.food < 22 && check('food')) return {
+    id: 'food',
+    title: tf('crisis.food.title', {}),
+    body: tf('crisis.food.body', { food: m.food.toFixed(0) }),
+    options: [
+      { label: tf('crisis.food.opt_a', {}),
+        apply: ww => { applyWorldDelta(ww, { food_stock_delta: ww.npcs.filter(n => n.lifecycle.is_alive).length * 10 }); applyInterventions(ww, [{ target: 'all', grievance_delta: -8 }]) } },
+      { label: tf('crisis.food.opt_b', {}),
+        apply: ww => { if (ww.tax_pool >= 200) { ww.tax_pool -= 200; applyWorldDelta(ww, { food_stock_delta: ww.npcs.filter(n => n.lifecycle.is_alive).length * 20 }) } } },
+      { label: tf('crisis.food.opt_c', {}),
+        apply: ww => applyInterventions(ww, [{ target: 'all', grievance_delta: 15 }]) },
+    ],
+  }
+
+  // Epidemic crisis
+  const epidemicActive = w.active_events.filter(e => e.type === 'epidemic' && e.elapsed_ticks > 72)
+  if (epidemicActive.length > 0 && check('epidemic')) return {
+    id: 'epidemic',
+    title: tf('crisis.epidemic.title', {}),
+    body: tf('crisis.epidemic.body', {}),
+    options: [
+      { label: tf('crisis.epidemic.opt_a', {}),
+        apply: ww => applyWorldDelta(ww, { quarantine_add: epidemicActive[0].zones.length ? epidemicActive[0].zones : ['clinic_district'] }) },
+      { label: tf('crisis.epidemic.opt_b', {}),
+        apply: ww => { if (ww.tax_pool >= 200) { ww.tax_pool -= 200; ww.public_health.hospital_capacity = 1; ww.public_health.funded_tick = ww.tick } } },
+      { label: tf('crisis.epidemic.opt_c', {}),
+        apply: ww => applyInterventions(ww, [{ target: 'all', fear_delta: 10 }]) },
+    ],
+  }
+
+  // Strike imminent
+  if (m.labor_unrest > 65 && check('strike')) {
+    const aliveNpcs = w.npcs.filter(n => n.lifecycle.is_alive)
+    const avgGrievance = aliveNpcs.reduce((s, n) => s + n.grievance, 0) / Math.max(1, aliveNpcs.length)
+    if (avgGrievance > 50) return {
+      id: 'strike',
+      title: tf('crisis.strike.title', {}),
+      body: tf('crisis.strike.body', { unrest: m.labor_unrest.toFixed(0), griev: avgGrievance.toFixed(0) }),
+      options: [
+        { label: tf('crisis.strike.opt_a', {}),
+          apply: ww => { ww.constitution.safety_net = Math.min(1, ww.constitution.safety_net + 0.05); applyInterventions(ww, [{ target: 'all', solidarity_delta: -20 }]) } },
+        { label: tf('crisis.strike.opt_b', {}),
+          apply: ww => applyInterventions(ww, [{ target: 'all', fear_delta: 20, solidarity_delta: -30 }]) },
+        { label: tf('crisis.strike.opt_c', {}),
+          apply: _ww => {} },
+      ],
+    }
+  }
+
+  // Class unrest
+  if (m.gini > 0.65 && m.stability < 40 && check('class')) return {
+    id: 'class',
+    title: tf('crisis.class.title', {}),
+    body: tf('crisis.class.body', { gini: m.gini.toFixed(2), stability: m.stability.toFixed(0) }),
+    options: [
+      { label: tf('crisis.class.opt_a', {}),
+        apply: ww => {
+          const alive = ww.npcs.filter(n => n.lifecycle.is_alive)
+          const rich = [...alive].sort((a, b) => b.wealth - a.wealth).slice(0, Math.floor(alive.length * 0.2))
+          rich.forEach(n => { const take = n.wealth * 0.05; n.wealth -= take; ww.tax_pool += take })
+          applyInterventions(ww, [{ target: 'all', grievance_delta: -12 }])
+        } },
+      { label: tf('crisis.class.opt_b', {}),
+        apply: ww => {
+          applyInterventions(ww, [{ target: 'all', grievance_delta: -15 }])
+          const gi = ww.institutions.find(i => i.id === 'government')
+          if (gi) gi.legitimacy = Math.min(1, gi.legitimacy + 0.08)
+        } },
+      { label: tf('crisis.class.opt_c', {}),
+        apply: ww => { const g = ww.institutions.find(i => i.id === 'guard'); if (g) g.power = Math.min(1, g.power + 0.2) } },
+    ],
+  }
+
+  // Trust crisis
+  if (m.trust < 20 && check('trust')) return {
+    id: 'trust',
+    title: tf('crisis.trust.title', {}),
+    body: tf('crisis.trust.body', { trust: m.trust.toFixed(0) }),
+    options: [
+      { label: tf('crisis.trust.opt_a', {}),
+        apply: ww => { const gi = ww.institutions.find(i => i.id === 'government'); if (gi) gi.legitimacy = Math.min(1, gi.legitimacy + 0.15) } },
+      { label: tf('crisis.trust.opt_b', {}),
+        apply: ww => applyWorldDelta(ww, { seed_rumor: { content: t('crisis.trust.rumor') as string, subject: 'government', effect: 'trust_up', duration_days: 10 } }) },
+      { label: tf('crisis.trust.opt_c', {}),
+        apply: ww => applyWorldDelta(ww, { trigger_referendum: { field: 'safety_net', proposed_value: Math.min(1, ww.constitution.safety_net + 0.1), proposal_text: t('crisis.trust.referendum') as string } }) },
+    ],
+  }
+
+  return null
+}
+
+function showCrisisCard(def: CrisisCardDef) {
+  activeCrisisCard = def
+  crisisCardTimeLeft = 45
+  const card = document.getElementById('crisis-card')!
+  document.getElementById('crisis-card-title')!.textContent = def.title
+  document.getElementById('crisis-card-body')!.textContent = def.body
+  const fill = document.getElementById('crisis-card-timer-fill')!
+  fill.style.transition = 'none'
+  fill.style.width = '100%'
+
+  const opts = ['a', 'b', 'c'] as const
+  opts.forEach((k, i) => {
+    const btn = document.getElementById(`crisis-opt-${k}`)!
+    btn.textContent = def.options[i].label
+    btn.className = 'crisis-opt' + (i === 2 ? ' crisis-opt-c' : '')
+    btn.onclick = () => { def.options[i].apply(world!); dismissCrisisCard() }
+  })
+
+  card.classList.remove('hidden')
+  // Animate timer bar shrinking over 45 seconds
+  requestAnimationFrame(() => {
+    fill.style.transition = `width ${crisisCardTimeLeft}s linear`
+    fill.style.width = '0%'
+  })
+
+  crisisCardTimerInterval = setInterval(() => {
+    crisisCardTimeLeft--
+    if (crisisCardTimeLeft <= 0) {
+      // Auto-select option C (ignore)
+      def.options[2].apply(world!)
+      dismissCrisisCard()
+    }
+  }, 1000)
+}
+
+function dismissCrisisCard() {
+  if (!activeCrisisCard) return
+  crisisCardCooldowns[activeCrisisCard.id] = world?.day ?? 0
+  activeCrisisCard = null
+  if (crisisCardTimerInterval) { clearInterval(crisisCardTimerInterval); crisisCardTimerInterval = null }
+  document.getElementById('crisis-card')!.classList.add('hidden')
+}
 
 function updateGovCooldown() {
   if (!world) { govCdEl.textContent = '–'; return }
@@ -1627,14 +2051,27 @@ function startSimLoop() {
       _lastSimDay = currentDay
       updateRumors()
       updateEconomicsPanel()
+      if ((localStorage.getItem(UI_DASHBOARD_TAB_KEY) ?? 'demographics') === 'goals' && !dashboardPanel?.classList.contains('hidden')) renderGoalsPanel()
       flushConsequences()
       checkStatDeltas(world.macro)
       checkStrikeReadiness()
       checkAchievements(world)
-      if (npcContactsVisible) updateNpcContactsPanel()
+      updateQuickActions()
+      if ((localStorage.getItem(UI_DASHBOARD_TAB_KEY) ?? 'demographics') === 'contacts' && !dashboardPanel?.classList.contains('hidden')) updateNpcContactsPanel()
       // Pre-warm daily thoughts for top distressed NPCs (fire-and-forget)
       if (getSettings().enable_npc_thoughts && aiConfig) {
         scheduleBackgroundThoughts(world, aiConfig)
+      }
+      // Crisis card check (once per day, only if no card active)
+      if (!activeCrisisCard && !paused) {
+        const cardDef = buildCrisisCards(world)
+        if (cardDef) showCrisisCard(cardDef)
+      }
+      // Reduced-tax drain
+      if (qaReducedTaxDays.active && world.day <= qaReducedTaxDays.end_day) {
+        world.tax_pool = Math.max(0, world.tax_pool - 50)
+      } else if (qaReducedTaxDays.active && world.day > qaReducedTaxDays.end_day) {
+        qaReducedTaxDays.active = false
       }
     }
     // Free press: every 5 sim-days — generates headlines before government reads them
@@ -2207,6 +2644,19 @@ document.getElementById('btn-speed')!.addEventListener('click', function () {
       }
     }
   }
+
+  // AI features + high speed warning
+  const newSpeed = speed
+  const settings = getSettings()
+  const aiEnabled = settings.enable_government_ai || settings.enable_npc_thoughts || settings.enable_press_ai
+  if (aiEnabled && newSpeed > 3) {
+    const simDaysPerMin = newSpeed * 60 / 24
+    const govRpm     = settings.enable_government_ai ? simDaysPerMin / 15 : 0
+    const thoughtsRpm = settings.enable_npc_thoughts  ? simDaysPerMin * 5  : 0
+    const pressRpm   = settings.enable_press_ai       ? simDaysPerMin / 5  : 0
+    const totalRpm   = Math.round(govRpm + thoughtsRpm + pressRpm)
+    addFeedRaw(tf('speed.ai_warning', { speed: newSpeed, rpm: totalRpm }), 'warning', world?.year ?? 1, world?.day ?? 1)
+  }
 })
 
 // ── In-game chat ───────────────────────────────────────────────────────────
@@ -2214,9 +2664,59 @@ document.getElementById('btn-speed')!.addEventListener('click', function () {
 const chatInput   = document.getElementById('chat-input') as HTMLInputElement
 const btnChatSend = document.getElementById('btn-chat-send')!
 
+function handleNoApiChat(input: string, w: WorldState): string {
+  const lower = input.toLowerCase()
+
+  if (lower.includes('epidemic') || lower.includes('dịch') || lower.includes('bệnh')) {
+    spawnEvent(w, { type: 'epidemic', intensity: 0.4, zones: [], duration_ticks: 240, source: 'player' })
+    return t('noapi.epidemic') as string
+  }
+  if (lower.includes('drought') || lower.includes('hạn') || lower.includes('hán')) {
+    spawnEvent(w, { type: 'drought', intensity: 0.5, zones: [], duration_ticks: 120, source: 'player' })
+    return t('noapi.drought') as string
+  }
+  if (lower.includes('storm') || lower.includes('bão')) {
+    spawnEvent(w, { type: 'storm', intensity: 0.5, zones: [], duration_ticks: 72, source: 'player' })
+    return t('noapi.storm') as string
+  }
+  if (lower.includes('festival') || lower.includes('lễ hội') || lower.includes('hội')) {
+    spawnEvent(w, { type: 'festival', intensity: 0.6, zones: [], duration_ticks: 48, source: 'player' })
+    return t('noapi.festival') as string
+  }
+  if (lower.includes('harvest') || lower.includes('mùa bội') || lower.includes('bội thu')) {
+    spawnEvent(w, { type: 'golden_harvest', intensity: 0.7, zones: [], duration_ticks: 72, source: 'player' })
+    return t('noapi.harvest') as string
+  }
+  if (lower.includes('scandal') || lower.includes('tham nhũng') || lower.includes('bê bối')) {
+    spawnEvent(w, { type: 'scandal_leak', intensity: 0.5, zones: [], duration_ticks: 120, source: 'player' })
+    return t('noapi.scandal') as string
+  }
+  if (lower.includes('refugee') || lower.includes('tị nạn') || lower.includes('dân di cư')) {
+    spawnEvent(w, { type: 'refugee_wave', intensity: 0.4, zones: [], duration_ticks: 96, source: 'player' })
+    return t('noapi.refugee') as string
+  }
+  if (lower.includes('boom') || lower.includes('tài nguyên') || lower.includes('mỏ')) {
+    spawnEvent(w, { type: 'resource_boom', intensity: 0.5, zones: [], duration_ticks: 120, source: 'player' })
+    return t('noapi.resource_boom') as string
+  }
+
+  return t('noapi.fallback') as string
+}
+
 async function sendChatMessage() {
   const msg = chatInput.value.trim()
-  if (!msg || !aiConfig || !world) return
+  if (!msg || !world) return
+
+  // No-API mode: route to local keyword handler
+  if (noApiKeyMode) {
+    chatInput.value = ''
+    addFeedRaw(`"${msg}"`, 'player', world.year, world.day)
+    const response = handleNoApiChat(msg, world)
+    addFeedRaw(response, 'info', world.year, world.day)
+    return
+  }
+
+  if (!aiConfig) return
   chatInput.value = ''
   btnChatSend.setAttribute('disabled', 'true')
 

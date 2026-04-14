@@ -181,72 +181,93 @@
         <!-- Crisis banner — top overlay, shown when 3+ stats critical -->
         <div id="crisis-banner" class="hidden"></div>
 
-        <!-- Demographics panel — bottom-left overlay -->
-        <div id="demographics">
-          <div class="demo-title" data-i18n="demo.title">📊 Population</div>
-          <div class="demo-grid">
-            <span class="demo-label" data-i18n="demo.pop">Total</span><b id="d-pop">–</b>
-            <span class="demo-label" data-i18n="demo.male">♂ Male</span><b id="d-male">–</b>
-            <span class="demo-label" data-i18n="demo.female">♀ Female</span><b id="d-female">–</b>
-            <span class="demo-label" data-i18n="demo.deaths">Deaths</span><b id="d-deaths">–</b>
-            <span class="demo-label" data-i18n="demo.leaving">Leaving</span><b id="d-leaving">–</b>
-            <span class="demo-label" data-i18n="demo.born">Born</span><b id="d-born">–</b>
-            <span class="demo-label" data-i18n="demo.immigrants">Immigrants</span><b id="d-immigrants">–</b>
+        <!-- Dashboard panel — unified tabbed bottom-left overlay -->
+        <div id="dashboard-panel">
+          <div id="dashboard-tabs">
+            <button class="dash-tab active" data-tab="demographics" data-i18n="panels.population">Pop</button>
+            <button class="dash-tab" data-tab="rumors" data-i18n="panels.rumors">Rumors</button>
+            <button class="dash-tab" data-tab="econ" data-i18n="panels.economics">Econ</button>
+            <button class="dash-tab" data-tab="contacts" data-i18n="panels.npc_contacts">Contacts</button>
+            <button class="dash-tab" data-tab="goals" data-i18n="goals.tab">Goals</button>
           </div>
-          <div class="demo-ages" id="d-ages"></div>
-          <div id="d-labor"></div>
-        </div>
 
-        <!-- Rumors panel — bottom-left overlay, next to demographics -->
-        <div id="rumors-panel">
-          <div class="demo-title" data-i18n="rumors.panel_title">🗣 Rumors</div>
-          <div id="rumors-overlay-log"></div>
-        </div>
-
-        <!-- Economics panel — bottom-left overlay, collapsible -->
-        <div id="econ-panel" class="hidden">
-          <div class="demo-title" data-i18n="econ.title">💰 Economics</div>
-          <div id="econ-tabs">
-            <button class="econ-tab active" data-tab="econ-daily" data-i18n="econ.tab_daily">📅 Daily</button>
-            <button class="econ-tab" data-tab="econ-alltime" data-i18n="econ.tab_alltime">📊 All-Time</button>
-          </div>
-          <!-- Tab 1: daily snapshot -->
-          <div id="econ-daily" class="econ-pane">
+          <!-- Demographics tab pane -->
+          <div id="demographics">
+            <div class="demo-title" data-i18n="demo.title">📊 Population</div>
             <div class="demo-grid">
-              <span class="demo-label" data-i18n="econ.gdp" data-i18n-title="econ.tip_gdp" title="Total daily income of all living citizens (coins/day)">GDP</span><b id="ep-gdp">–</b>
-              <span class="demo-label" data-i18n="econ.extraction" data-i18n-title="econ.tip_extraction" title="Resource extraction efficiency (% of theoretical max by producers)">Extraction</span><b id="ep-extraction">–</b>
-              <span class="demo-label" data-i18n="econ.efficiency" data-i18n-title="econ.tip_efficiency" title="Economic output as % of potential (all workers at full capacity)">Efficiency</span><b id="ep-efficiency">–</b>
-              <span class="demo-label" data-i18n="econ.tax_rate" data-i18n-title="econ.tip_tax_rate" title="Income tax rate applied to market workers">Tax Rate</span><b id="ep-tax-rate">–</b>
-              <span class="demo-label" data-i18n="econ.exports" data-i18n-title="econ.tip_exports" title="Daily export value generated from domestic production">Exports</span><b id="ep-exports">–</b>
-              <span class="demo-label" data-i18n="econ.imports" data-i18n-title="econ.tip_imports" title="Daily import value paid to external markets">Imports</span><b id="ep-imports">–</b>
-              <span class="demo-label" data-i18n="econ.trade_balance" data-i18n-title="econ.tip_trade_balance" title="Exports minus imports (daily external balance)">Trade Balance</span><b id="ep-trade-balance">–</b>
-              <span class="demo-label" data-i18n="econ.trade_revenue" data-i18n-title="econ.tip_trade_revenue" title="Government revenue from duties/tariffs and trade settlement">Trade Revenue</span><b id="ep-trade-revenue">–</b>
-              <span class="demo-label" data-i18n="econ.money_printed" data-i18n-title="econ.tip_money_printed" title="Emergency money printed by the state today">Printed Today</span><b id="ep-money-printed">–</b>
-              <span class="demo-label" data-i18n="econ.sanitation" data-i18n-title="econ.tip_sanitation" title="Public sanitation quality (0–100). Reduces sickness.">Sanitation</span><b id="ep-sanitation">–</b>
-              <span class="demo-label" data-i18n="econ.hospital" data-i18n-title="econ.tip_hospital" title="Hospital capacity: Active only while funded via health_investment policy.">Hospital</span><b id="ep-hospital">–</b>
+              <span class="demo-label" data-i18n="demo.pop">Total</span><b id="d-pop">–</b>
+              <span class="demo-label" data-i18n="demo.male">♂ Male</span><b id="d-male">–</b>
+              <span class="demo-label" data-i18n="demo.female">♀ Female</span><b id="d-female">–</b>
+              <span class="demo-label" data-i18n="demo.deaths">Deaths</span><b id="d-deaths">–</b>
+              <span class="demo-label" data-i18n="demo.leaving">Leaving</span><b id="d-leaving">–</b>
+              <span class="demo-label" data-i18n="demo.born">Born</span><b id="d-born">–</b>
+              <span class="demo-label" data-i18n="demo.immigrants">Immigrants</span><b id="d-immigrants">–</b>
+            </div>
+            <div class="demo-ages" id="d-ages"></div>
+            <div id="d-labor"></div>
+            <div id="factions-section" style="margin-top:8px; border-top:1px solid #222; padding-top:6px;">
+              <div style="font-size:10px; color:#666; margin-bottom:4px;" data-i18n="factions.section">FACTIONS</div>
+              <div id="factions-list"></div>
             </div>
           </div>
-          <!-- Tab 2: all-time cumulative -->
-          <div id="econ-alltime" class="econ-pane" style="display:none">
-            <div class="demo-grid">
-              <span class="demo-label" data-i18n="econ.tax_pool" data-i18n-title="econ.tip_tax_pool" title="Current government treasury balance">Tax Pool</span><b id="ep-tax-pool">–</b>
-              <span class="demo-label" data-i18n="econ.total_taxes" data-i18n-title="econ.tip_total_taxes" title="Total taxes collected since game start (income + property + tribute)">Total Taxes</span><b id="ep-total-taxes">–</b>
-              <span class="demo-label" data-i18n="econ.money_supply" data-i18n-title="econ.tip_money_supply" title="Total nominal money in circulation">Money Supply</span><b id="ep-money-supply">–</b>
-              <span class="demo-label" data-i18n="econ.inflation" data-i18n-title="econ.tip_inflation" title="Cumulative inflation pressure; increases cost of living">Inflation</span><b id="ep-inflation">–</b>
-              <span class="demo-label" data-i18n="econ.total_printed" data-i18n-title="econ.tip_total_printed" title="Total emergency money ever printed by the state">Total Printed</span><b id="ep-total-printed">–</b>
-              <span class="demo-label" data-i18n="econ.total_exports" data-i18n-title="econ.tip_total_exports" title="Cumulative export value since game start">Total Exports</span><b id="ep-total-exports">–</b>
-              <span class="demo-label" data-i18n="econ.total_imports" data-i18n-title="econ.tip_total_imports" title="Cumulative import value since game start">Total Imports</span><b id="ep-total-imports">–</b>
-              <span class="demo-label" data-i18n="econ.total_trade_rev" data-i18n-title="econ.tip_total_trade_rev" title="Cumulative net trade revenue (duties + tariffs) since game start">Trade Revenue Σ</span><b id="ep-total-trade-rev">–</b>
-              <span class="demo-label" data-i18n="econ.peak_gdp" data-i18n-title="econ.tip_peak_gdp" title="Highest daily GDP ever recorded in this run">Peak GDP</span><b id="ep-peak-gdp">–</b>
-              <span class="demo-label" data-i18n="econ.research" data-i18n-title="econ.tip_research" title="Accumulated research points from scholars">Research</span><b id="ep-research">–</b>
-              <span class="demo-label" data-i18n="econ.discoveries" data-i18n-title="econ.tip_discoveries" title="Technologies discovered so far">Discoveries</span><b id="ep-discoveries">–</b>
+
+          <!-- Rumors tab pane -->
+          <div id="rumors-panel" class="hidden">
+            <div class="demo-title" data-i18n="rumors.panel_title">🗣 Rumors</div>
+            <div id="rumors-overlay-log"></div>
+          </div>
+
+          <!-- Economics tab pane -->
+          <div id="econ-panel" class="hidden">
+            <div class="demo-title" data-i18n="econ.title">💰 Economics</div>
+            <div id="econ-tabs">
+              <button class="econ-tab active" data-tab="econ-daily" data-i18n="econ.tab_daily">📅 Daily</button>
+              <button class="econ-tab" data-tab="econ-alltime" data-i18n="econ.tab_alltime">📊 All-Time</button>
+            </div>
+            <!-- Tab 1: daily snapshot -->
+            <div id="econ-daily" class="econ-pane">
+              <div class="demo-grid">
+                <span class="demo-label" data-i18n="econ.gdp" data-i18n-title="econ.tip_gdp" title="Total daily income of all living citizens (coins/day)">GDP</span><b id="ep-gdp">–</b>
+                <span class="demo-label" data-i18n="econ.extraction" data-i18n-title="econ.tip_extraction" title="Resource extraction efficiency (% of theoretical max by producers)">Extraction</span><b id="ep-extraction">–</b>
+                <span class="demo-label" data-i18n="econ.efficiency" data-i18n-title="econ.tip_efficiency" title="Economic output as % of potential (all workers at full capacity)">Efficiency</span><b id="ep-efficiency">–</b>
+                <span class="demo-label" data-i18n="econ.tax_rate" data-i18n-title="econ.tip_tax_rate" title="Income tax rate applied to market workers">Tax Rate</span><b id="ep-tax-rate">–</b>
+                <span class="demo-label" data-i18n="econ.exports" data-i18n-title="econ.tip_exports" title="Daily export value generated from domestic production">Exports</span><b id="ep-exports">–</b>
+                <span class="demo-label" data-i18n="econ.imports" data-i18n-title="econ.tip_imports" title="Daily import value paid to external markets">Imports</span><b id="ep-imports">–</b>
+                <span class="demo-label" data-i18n="econ.trade_balance" data-i18n-title="econ.tip_trade_balance" title="Exports minus imports (daily external balance)">Trade Balance</span><b id="ep-trade-balance">–</b>
+                <span class="demo-label" data-i18n="econ.trade_revenue" data-i18n-title="econ.tip_trade_revenue" title="Government revenue from duties/tariffs and trade settlement">Trade Revenue</span><b id="ep-trade-revenue">–</b>
+                <span class="demo-label" data-i18n="econ.money_printed" data-i18n-title="econ.tip_money_printed" title="Emergency money printed by the state today">Printed Today</span><b id="ep-money-printed">–</b>
+                <span class="demo-label" data-i18n="econ.sanitation" data-i18n-title="econ.tip_sanitation" title="Public sanitation quality (0–100). Reduces sickness.">Sanitation</span><b id="ep-sanitation">–</b>
+                <span class="demo-label" data-i18n="econ.hospital" data-i18n-title="econ.tip_hospital" title="Hospital capacity: Active only while funded via health_investment policy.">Hospital</span><b id="ep-hospital">–</b>
+              </div>
+            </div>
+            <!-- Tab 2: all-time cumulative -->
+            <div id="econ-alltime" class="econ-pane" style="display:none">
+              <div class="demo-grid">
+                <span class="demo-label" data-i18n="econ.tax_pool" data-i18n-title="econ.tip_tax_pool" title="Current government treasury balance">Tax Pool</span><b id="ep-tax-pool">–</b>
+                <span class="demo-label" data-i18n="econ.total_taxes" data-i18n-title="econ.tip_total_taxes" title="Total taxes collected since game start (income + property + tribute)">Total Taxes</span><b id="ep-total-taxes">–</b>
+                <span class="demo-label" data-i18n="econ.money_supply" data-i18n-title="econ.tip_money_supply" title="Total nominal money in circulation">Money Supply</span><b id="ep-money-supply">–</b>
+                <span class="demo-label" data-i18n="econ.inflation" data-i18n-title="econ.tip_inflation" title="Cumulative inflation pressure; increases cost of living">Inflation</span><b id="ep-inflation">–</b>
+                <span class="demo-label" data-i18n="econ.total_printed" data-i18n-title="econ.tip_total_printed" title="Total emergency money ever printed by the state">Total Printed</span><b id="ep-total-printed">–</b>
+                <span class="demo-label" data-i18n="econ.total_exports" data-i18n-title="econ.tip_total_exports" title="Cumulative export value since game start">Total Exports</span><b id="ep-total-exports">–</b>
+                <span class="demo-label" data-i18n="econ.total_imports" data-i18n-title="econ.tip_total_imports" title="Cumulative import value since game start">Total Imports</span><b id="ep-total-imports">–</b>
+                <span class="demo-label" data-i18n="econ.total_trade_rev" data-i18n-title="econ.tip_total_trade_rev" title="Cumulative net trade revenue (duties + tariffs) since game start">Trade Revenue Σ</span><b id="ep-total-trade-rev">–</b>
+                <span class="demo-label" data-i18n="econ.peak_gdp" data-i18n-title="econ.tip_peak_gdp" title="Highest daily GDP ever recorded in this run">Peak GDP</span><b id="ep-peak-gdp">–</b>
+                <span class="demo-label" data-i18n="econ.research" data-i18n-title="econ.tip_research" title="Accumulated research points from scholars">Research</span><b id="ep-research">–</b>
+                <span class="demo-label" data-i18n="econ.discoveries" data-i18n-title="econ.tip_discoveries" title="Technologies discovered so far">Discoveries</span><b id="ep-discoveries">–</b>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div id="npc-contacts-panel" class="hidden">
-          <div class="demo-title" data-i18n="panels.npc_contacts">📇 Contacts</div>
-          <div id="npc-contacts-list" class="npc-contacts-list"></div>
+          <!-- Contacts tab pane -->
+          <div id="npc-contacts-panel" class="hidden">
+            <div class="demo-title" data-i18n="panels.npc_contacts">📇 Contacts</div>
+            <div id="npc-contacts-list" class="npc-contacts-list"></div>
+          </div>
+
+          <!-- Goals tab pane -->
+          <div id="goals-panel" style="display:none; padding:8px 10px;">
+            <div id="goals-list"></div>
+          </div>
         </div>
 
         <!-- NPC Spotlight Panel — opened on NPC click -->
@@ -324,6 +345,14 @@
 
     <!-- Chat bar -->
     <div id="chatbar">
+      <div id="quick-actions">
+        <button class="qa-btn" id="qa-aid"      data-i18n-title="qa.aid.title"      title="Aid the poor">🍞</button>
+        <button class="qa-btn" id="qa-hospital" data-i18n-title="qa.hospital.title" title="Build hospital">🏥</button>
+        <button class="qa-btn" id="qa-harvest"  data-i18n-title="qa.harvest.title"  title="Farm subsidy">🌾</button>
+        <button class="qa-btn" id="qa-martial"  data-i18n-title="qa.martial.title"  title="Martial law">⚔️</button>
+        <button class="qa-btn" id="qa-propa"    data-i18n-title="qa.propa.title"    title="Propaganda">📢</button>
+        <button class="qa-btn" id="qa-tax"      data-i18n-title="qa.tax.title"      title="Tax cut">💰</button>
+      </div>
       <div id="chatbar-inner">
         <span class="chat-icon">🌐</span>
         <input type="text" id="chat-input"
@@ -366,6 +395,19 @@
         <button id="modal-confirm" class="btn-primary" data-i18n="modal.confirm_btn">Confirm</button>
         <button id="modal-cancel" class="btn-ghost" data-i18n="modal.cancel_btn">Cancel</button>
       </div>
+    </div>
+  </div>
+
+  <div id="crisis-card" class="hidden">
+    <div id="crisis-card-header">
+      <span id="crisis-card-title"></span>
+      <div id="crisis-card-timer-bar"><div id="crisis-card-timer-fill"></div></div>
+    </div>
+    <div id="crisis-card-body"></div>
+    <div id="crisis-card-options">
+      <button class="crisis-opt" id="crisis-opt-a"></button>
+      <button class="crisis-opt" id="crisis-opt-b"></button>
+      <button class="crisis-opt" id="crisis-opt-c"></button>
     </div>
   </div>
 

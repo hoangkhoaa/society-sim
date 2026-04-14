@@ -27,6 +27,12 @@ export const UI_NPC_CONTACTS_VISIBLE_KEY = 'ui_npc_contacts_visible'
 /** Conflict / enmity overlay on the map canvas. */
 export const UI_CONFLICT_OVERLAY_KEY = 'ui_conflict_overlay_visible'
 
+/** Active tab in the unified dashboard panel (`demographics` | `rumors` | `econ` | `contacts`). */
+export const UI_DASHBOARD_TAB_KEY = 'ui_dashboard_tab'
+
+/** Visibility of the unified dashboard panel. */
+export const UI_DASHBOARD_VISIBLE_KEY = 'ui_dashboard_visible'
+
 /** Serialized `GameSettings` JSON (see `game-settings-defaults.ts`). */
 export const GAME_SETTINGS_STORAGE_KEY = 'game_settings_v1'
 

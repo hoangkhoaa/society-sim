@@ -1,4 +1,4 @@
-import type { WorldState } from '../types'
+import type { WorldState, Objective } from '../types'
 import type { IndividualEvent, TickEventFlags } from '../sim/npc'
 import { tickNPC } from '../sim/npc'
 import { checkEmergencyRoleReassignment, checkAdaptiveRoleSwitching } from '../sim/roles'
@@ -190,5 +190,129 @@ export function tick(state: WorldState): void {
 
     // Update per-run statistics used for achievement medals
     updateRunStats(state)
+
+    // Objectives: check progress then generate new ones if needed
+    checkObjectives(state)
+    generateObjectives(state)
+  }
+}
+
+// ── Objectives ──────────────────────────────────────────────────────────────
+
+export function generateObjectives(state: WorldState): void {
+  if (!state.objectives) state.objectives = []
+  const active = state.objectives.filter(o => !o.completed && !o.failed)
+  if (active.length >= 3) return
+
+  const m = state.macro
+  const day = state.day
+  const candidates: Objective[] = []
+
+  // Food objective
+  if (m.food < 60) candidates.push({
+    id: `food_${day}`, type: 'sustain_above', stat: 'food', target: 50,
+    duration_days: 20, progress_days: 0,
+    deadline_day: day + 40,
+    label: tf('obj.food.label', {}),
+    reward_desc: tf('obj.food.reward', {}),
+    completed: false, failed: false,
+  })
+
+  // Trust objective
+  if (m.trust < 50) candidates.push({
+    id: `trust_${day}`, type: 'stat_above', stat: 'trust', target: 40,
+    duration_days: 0, progress_days: 0,
+    deadline_day: day + 30,
+    label: tf('obj.trust.label', { val: m.trust.toFixed(0) }),
+    reward_desc: tf('obj.trust.reward', {}),
+    completed: false, failed: false,
+  })
+
+  // Gini objective
+  if (m.gini > 0.55) candidates.push({
+    id: `gini_${day}`, type: 'avoid_above', stat: 'gini', target: 0.70,
+    duration_days: 15, progress_days: 0,
+    deadline_day: day + 20,
+    label: tf('obj.gini.label', {}),
+    reward_desc: tf('obj.gini.reward', {}),
+    completed: false, failed: false,
+  })
+
+  // Political pressure objective
+  if (m.political_pressure > 40) candidates.push({
+    id: `pressure_${day}`, type: 'stat_below', stat: 'political_pressure', target: 30,
+    duration_days: 0, progress_days: 0,
+    deadline_day: day + 25,
+    label: tf('obj.pressure.label', { val: m.political_pressure.toFixed(0) }),
+    reward_desc: tf('obj.pressure.reward', {}),
+    completed: false, failed: false,
+  })
+
+  // Tech objective (if few discoveries)
+  const discovered = state.discoveries?.length ?? 0
+  if (discovered < 3) candidates.push({
+    id: `tech_${day}`, type: 'stat_above', stat: 'literacy', target: 20,
+    duration_days: 0, progress_days: 0,
+    deadline_day: day + 60,
+    label: tf('obj.literacy.label', {}),
+    reward_desc: tf('obj.literacy.reward', {}),
+    completed: false, failed: false,
+  })
+
+  // Pick candidates not already active (deduplicate by stat+type)
+  const activeIds = new Set(active.map(o => o.stat + o.type))
+  const newOnes = candidates.filter(c => !activeIds.has(c.stat + c.type)).slice(0, 3 - active.length)
+  state.objectives.push(...newOnes)
+}
+
+export function checkObjectives(state: WorldState): void {
+  if (!state.objectives) return
+  const m = state.macro
+
+  for (const obj of state.objectives) {
+    if (obj.completed || obj.failed) continue
+
+    const val = m[obj.stat] as number
+
+    // Check failure: deadline passed without completion
+    if (state.day > obj.deadline_day) { obj.failed = true; continue }
+
+    if (obj.type === 'stat_above') {
+      if (val >= obj.target) { obj.completed = true; applyObjectiveReward(state, obj) }
+    } else if (obj.type === 'stat_below') {
+      if (val <= obj.target) { obj.completed = true; applyObjectiveReward(state, obj) }
+    } else if (obj.type === 'sustain_above') {
+      if (val >= obj.target) {
+        obj.progress_days++
+        if (obj.progress_days >= obj.duration_days) { obj.completed = true; applyObjectiveReward(state, obj) }
+      } else {
+        obj.progress_days = Math.max(0, obj.progress_days - 1)
+      }
+    } else if (obj.type === 'avoid_above') {
+      if (val > obj.target) { obj.failed = true; continue }
+      obj.progress_days++
+      if (obj.progress_days >= obj.duration_days) { obj.completed = true; applyObjectiveReward(state, obj) }
+    }
+  }
+
+  // Keep only active + recently resolved (completed/failed within last 3 days)
+  state.objectives = state.objectives.filter(o =>
+    !o.completed && !o.failed || (state.day - o.deadline_day < 3)
+  )
+}
+
+function applyObjectiveReward(state: WorldState, obj: Objective): void {
+  if (obj.stat === 'food') {
+    state.tax_pool = (state.tax_pool || 0) + 150
+  } else if (obj.stat === 'trust') {
+    const gi = state.institutions?.find(i => i.id === 'government')
+    if (gi) gi.legitimacy = Math.min(1, gi.legitimacy + 0.10)
+  } else if (obj.stat === 'gini') {
+    const mi = state.institutions?.find(i => i.id === 'market')
+    if (mi) mi.legitimacy = Math.min(1, mi.legitimacy + 0.10)
+  } else if (obj.stat === 'political_pressure') {
+    state.macro.stability = Math.min(100, state.macro.stability + 5)
+  } else if (obj.stat === 'literacy') {
+    state.research_points = (state.research_points || 0) + 200
   }
 }
