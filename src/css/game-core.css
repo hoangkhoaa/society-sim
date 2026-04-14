@@ -260,6 +260,9 @@ body[data-theme='light'] .map-note-btn {
   bottom: 8px;
   left: 8px;
   width: 220px;
+  max-height: calc(100% - 16px);
+  display: flex;
+  flex-direction: column;
   background: #0f0f0f;
   border: 1px solid #1e1e1e;
   border-radius: 6px;
@@ -269,6 +272,7 @@ body[data-theme='light'] .map-note-btn {
 }
 #dashboard-tabs {
   display: flex;
+  flex-shrink: 0;
   border-bottom: 1px solid #1e1e1e;
 }
 .dash-tab {
@@ -280,7 +284,7 @@ body[data-theme='light'] .map-note-btn {
   border: none;
   cursor: pointer;
   border-radius: 0;
-  border-bottom: 1px solid transparent;
+  border-bottom: 2px solid transparent;
   transition: color 0.15s, background 0.15s;
   font-family: inherit;
 }
@@ -288,14 +292,18 @@ body[data-theme='light'] .map-note-btn {
 .dash-tab.active {
   color: #ccc;
   background: #161616;
-  border-bottom: 1px solid #4a9eff;
+  border-bottom: 2px solid #4a9eff;
+  position: relative;
+  z-index: 1;
+  margin-bottom: -1px;
 }
 
 /* Each panel is a static tab pane inside dashboard-panel */
 #demographics,
 #rumors-panel,
 #econ-panel,
-#npc-contacts-panel {
+#npc-contacts-panel,
+#goals-panel {
   position: static;
   display: none;
   padding: 8px 10px;
@@ -303,6 +311,9 @@ body[data-theme='light'] .map-note-btn {
   background: transparent;
   border: none;
   border-radius: 0;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 /* Demographics is the default visible tab */
 #demographics { display: block; }
@@ -333,14 +344,8 @@ body[data-theme='light'] .map-note-btn {
 .econ-pane .demo-grid { margin-bottom: 0; }
 
 /* #npc-contacts-panel layout overrides inside dashboard */
-#npc-contacts-panel {
-  max-height: 168px;
-  flex-direction: column;
-  min-height: 0;
-}
 .npc-contacts-list {
   overflow-y: auto;
-  max-height: 132px;
   display: flex;
   flex-direction: column;
   gap: 4px;
