@@ -188,7 +188,7 @@
             <button class="dash-tab" data-tab="rumors" data-i18n="panels.rumors">Rumors</button>
             <button class="dash-tab" data-tab="econ" data-i18n="panels.economics">Econ</button>
             <button class="dash-tab" data-tab="contacts" data-i18n="panels.npc_contacts">Contacts</button>
-            <button class="dash-tab" data-tab="goals">Goals</button>
+            <button class="dash-tab" data-tab="goals" data-i18n="goals.tab">Goals</button>
           </div>
 
           <!-- Demographics tab pane -->
@@ -206,7 +206,7 @@
             <div class="demo-ages" id="d-ages"></div>
             <div id="d-labor"></div>
             <div id="factions-section" style="margin-top:8px; border-top:1px solid #222; padding-top:6px;">
-              <div style="font-size:10px; color:#666; margin-bottom:4px;">PPHÁI</div>
+              <div style="font-size:10px; color:#666; margin-bottom:4px;" data-i18n="factions.section">FACTIONS</div>
               <div id="factions-list"></div>
             </div>
           </div>
@@ -346,12 +346,12 @@
     <!-- Chat bar -->
     <div id="chatbar">
       <div id="quick-actions">
-        <button class="qa-btn" id="qa-aid"      title="Cứu trợ người nghèo">🍞</button>
-        <button class="qa-btn" id="qa-hospital" title="Xây bệnh viện">🏥</button>
-        <button class="qa-btn" id="qa-harvest"  title="Trợ cấp nông nghiệp">🌾</button>
-        <button class="qa-btn" id="qa-martial"  title="Thiết quân luật">⚔️</button>
-        <button class="qa-btn" id="qa-propa"    title="Tuyên truyền">📢</button>
-        <button class="qa-btn" id="qa-tax"      title="Giảm thuế">💰</button>
+        <button class="qa-btn" id="qa-aid"      data-i18n-title="qa.aid.title"      title="Aid the poor">🍞</button>
+        <button class="qa-btn" id="qa-hospital" data-i18n-title="qa.hospital.title" title="Build hospital">🏥</button>
+        <button class="qa-btn" id="qa-harvest"  data-i18n-title="qa.harvest.title"  title="Farm subsidy">🌾</button>
+        <button class="qa-btn" id="qa-martial"  data-i18n-title="qa.martial.title"  title="Martial law">⚔️</button>
+        <button class="qa-btn" id="qa-propa"    data-i18n-title="qa.propa.title"    title="Propaganda">📢</button>
+        <button class="qa-btn" id="qa-tax"      data-i18n-title="qa.tax.title"      title="Tax cut">💰</button>
       </div>
       <div id="chatbar-inner">
         <span class="chat-icon">🌐</span>
