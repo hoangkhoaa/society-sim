@@ -245,7 +245,7 @@ const translations = {
     'qa.aid.label':      '🍞 Aid',
     'qa.hospital.label': '🏥 Hospital',
     'qa.harvest.label':  '🌾 Subsidy',
-    'qa.martial.label':  '⚔️ Martial',
+    'qa.martial.label':  '⚔️ Martial Law',
     'qa.propa.label':    '📢 Propaganda',
     'qa.tax.label':      '💰 Tax Cut',
     'qa.aid.title':      'Aid the poor',
