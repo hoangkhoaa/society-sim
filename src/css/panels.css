@@ -2,7 +2,7 @@
 .panel {
   position: absolute;
   top: 12px;
-  left: 12px;
+  right: 288px;
   width: 240px;
   max-height: calc(100% - 24px);
   display: flex;
@@ -44,7 +44,7 @@
   color: #eee;
 }
 .sp-side-panel {
-  left: 264px;
+  right: 536px;
   width: 300px;
   min-height: 340px;
 }
@@ -109,6 +109,7 @@
   padding: 10px 12px;
 }
 .sp-thought.loading { color: #444; }
+.sp-thought.sp-thought-local { color: #777; font-style: italic; opacity: 0.85; }
 
 /* ── NPC Stats Editor ─────────────────────────────────────────────────────── */
 .sp-edit-toggle {

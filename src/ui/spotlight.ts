@@ -1,6 +1,6 @@
 import type { NPC, WorldState, AIConfig, NPCChatTurn, PlayerChatPersona, Role } from '../types'
 import { generateNPCThought } from '../ai/god-agent'
-import { applyNPCChatEffect, handleNPCChat } from '../ai/npc-agent'
+import { applyNPCChatEffect, handleNPCChat, generateLocalThought } from '../ai/npc-agent'
 import { callAI } from '../ai/provider'
 import { t, tf, getLang } from '../i18n'
 import { getSettings } from './settings-panel'
@@ -642,8 +642,10 @@ export async function openSpotlight(npc: NPC, state: WorldState, config: AIConfi
   thoughtEl.className   = 'sp-thought loading'
 
   if (!config || !getSettings().enable_npc_thoughts) {
-    thoughtEl.textContent = t('sp.thought_fail') as string
-    thoughtEl.className = 'sp-thought'
+    const localThought = generateLocalThought(npc, state)
+    thoughtEl.textContent = `"${localThought}"`
+    thoughtEl.className = 'sp-thought sp-thought-local'
+    thoughtEl.title = 'Generated locally (AI off)'
     return
   }
 

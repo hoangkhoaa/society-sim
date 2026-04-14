@@ -190,6 +190,11 @@ body[data-theme='light'] .stg-divider { background: #dde5ef; }
 }
 body[data-theme='light'] .stg-regime-badge { color: #6677aa; border-bottom-color: #dde5ef; }
 
+/* ── AI RPM badge ───────────────────────────────── */
+.ai-rpm-badge { font-size: 9px; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; }
+.rpm-ok   { background: #1a2a1a; color: #4caf50; border: 1px solid #2a4a2a; }
+.rpm-warn { background: #2a1a0a; color: #ff9800; border: 1px solid #4a3a1a; }
+
 /* ── Modal ─────────────────────────────────────── */
 #modal-overlay {
   position: fixed;
@@ -745,24 +750,8 @@ body[data-theme='light'] .chronicle-subheader {
 }
 
 @media (max-width: 1100px) {
-  #rumors-panel {
-    width: 164px;
-    left: 8px;
-    bottom: 232px;
-  }
-  #econ-panel {
-    width: 160px;
-    left: 8px;
-    bottom: 420px;
-  }
-  #npc-contacts-panel {
-    width: 160px;
-    left: 8px;
-    bottom: 608px;
-    max-height: 120px;
-  }
-  #npc-contacts-panel .npc-contacts-list {
-    max-height: 88px;
+  #dashboard-panel {
+    width: 200px;
   }
 }
 
@@ -936,16 +925,8 @@ body[data-theme='light'] .btn-ref-details:hover { background: #fff0b0; }
   #feed-panel { flex: 1; min-height: 0; }
 
   /* ── Map overlay panels ────────────────────────────────────────────────── */
-  /* Demographics: compact size and position */
-  #demographics {
-    width: 120px;
-    padding: 6px 8px;
-    font-size: 10px;
-    bottom: 4px;
-    left: 4px;
-  }
-  /* Hide rumors and econ overlays (too cramped) */
-  #rumors-panel, #econ-panel, #npc-contacts-panel { display: none; }
+  /* Hide the unified dashboard panel on mobile (too cramped) */
+  #dashboard-panel { display: none; }
 
   /* ── Floating panels (NPC spotlight, institution, settings) ────────────── */
   .panel {
