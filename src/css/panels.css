@@ -2,7 +2,7 @@
 .panel {
   position: absolute;
   top: 12px;
-  right: 288px;
+  left: 12px;
   width: 240px;
   max-height: calc(100% - 24px);
   display: flex;
@@ -44,7 +44,7 @@
   color: #eee;
 }
 .sp-side-panel {
-  right: 536px;
+  left: 264px;
   width: 300px;
   min-height: 340px;
 }
