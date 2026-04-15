@@ -2,7 +2,7 @@
 .stg-panel {
   left: auto;
   right: 12px;
-  width: 280px;
+  width: 340px;
   z-index: 20;
 }
 body[data-theme='light'] .stg-panel { background: #f5f8fc; border-color: #cdd7e4; }
@@ -191,9 +191,18 @@ body[data-theme='light'] .stg-divider { background: #dde5ef; }
 body[data-theme='light'] .stg-regime-badge { color: #6677aa; border-bottom-color: #dde5ef; }
 
 /* ── AI RPM badge ───────────────────────────────── */
-.ai-rpm-badge { font-size: 9px; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; }
+.ai-rpm-badge { font-size: 9px; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; white-space: nowrap; }
 .rpm-ok   { background: #1a2a1a; color: #4caf50; border: 1px solid #2a4a2a; }
 .rpm-warn { background: #2a1a0a; color: #ff9800; border: 1px solid #4a3a1a; }
+.rpm-dim  { background: #1a1a1a; color: #444; border: 1px solid #2a2a2a; }
+
+/* ── No-API key nudge ───────────────────────────── */
+.stg-api-nudge {
+  font-size: 10px;
+  color: #665500;
+  margin-top: 3px;
+}
+body[data-theme='light'] .stg-api-nudge { color: #997700; }
 
 /* ── Modal ─────────────────────────────────────── */
 #modal-overlay {
