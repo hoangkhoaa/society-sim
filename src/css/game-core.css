@@ -35,6 +35,11 @@
 .btn-top.off {
   opacity: 0.5;
 }
+.btn-top.active {
+  border-color: #4a9eff;
+  color: #7aabff;
+  background: rgba(74, 158, 255, 0.08);
+}
 
 #active-events {
   font-size: 10px;
@@ -259,7 +264,7 @@ body[data-theme='light'] .map-note-btn {
   position: absolute;
   bottom: 8px;
   left: 8px;
-  width: 220px;
+  width: 250px;
   max-height: calc(100% - 16px);
   display: flex;
   flex-direction: column;
@@ -274,24 +279,28 @@ body[data-theme='light'] .map-note-btn {
   display: flex;
   flex-shrink: 0;
   border-bottom: 1px solid #1e1e1e;
+  background: #0a0a0a;
 }
 .dash-tab {
   flex: 1;
-  padding: 4px 2px;
+  padding: 6px 4px;
   font-size: 10px;
   background: transparent;
-  color: #666;
+  color: #555;
   border: none;
   cursor: pointer;
   border-radius: 0;
   border-bottom: 2px solid transparent;
   transition: color 0.15s, background 0.15s;
   font-family: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .dash-tab:hover { color: #999; background: #111; }
 .dash-tab.active {
   color: #ccc;
-  background: #161616;
+  background: #0f0f0f;
   border-bottom: 2px solid #4a9eff;
   position: relative;
   z-index: 1;
