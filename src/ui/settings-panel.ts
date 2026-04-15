@@ -36,6 +36,7 @@ function normalizeMapBackgroundMode(v: unknown): MapBackgroundMode {
 
 let _settings: GameSettings = { ...GAME_SETTINGS_DEFAULTS }
 let _lockedFeatures: Set<keyof GameSettings> = new Set()
+let _apiLockedFeatures: Set<keyof GameSettings> = new Set()
 let _regimeVariant: string = 'default'
 let _simRestrictions: SimRestrictions | null = null
 
@@ -64,6 +65,11 @@ export function applyRegimeDefaults(profile: RegimeProfile): void {
   _regimeVariant     = profile.variant
   _simRestrictions   = profile.simRestrictions
 
+  // Re-apply any existing API locks on top of regime locks
+  for (const key of _apiLockedFeatures) {
+    _lockedFeatures.add(key)
+  }
+
   // Apply feature defaults (locked features are always forced to their locked value)
   const s = _settings as unknown as Record<string, unknown>
   for (const [key, val] of Object.entries(profile.featureDefaults)) {
@@ -73,6 +79,10 @@ export function applyRegimeDefaults(profile: RegimeProfile): void {
   for (const key of profile.lockedFeatures) {
     const forced = profile.featureDefaults[key]
     if (forced !== undefined) (_settings as unknown as Record<string, unknown>)[key] = forced
+  }
+  // Ensure API-locked features stay off
+  for (const key of _apiLockedFeatures) {
+    ;(_settings as unknown as Record<string, unknown>)[key] = false
   }
   saveSettings()
   renderPanel()
@@ -91,6 +101,7 @@ const API_FEATURE_KEYS: ReadonlyArray<keyof GameSettings> = [
 export function lockApiFeatures(): void {
   for (const key of API_FEATURE_KEYS) {
     _lockedFeatures.add(key)
+    _apiLockedFeatures.add(key)
     ;(_settings as unknown as Record<string, unknown>)[key] = false
   }
   saveSettings()
@@ -103,6 +114,7 @@ export function lockApiFeatures(): void {
 export function unlockApiFeatures(): void {
   for (const key of API_FEATURE_KEYS) {
     _lockedFeatures.delete(key)
+    _apiLockedFeatures.delete(key)
   }
   renderPanel()
 }
@@ -351,19 +363,28 @@ function renderToggleRow(key: string, label: string, desc: string, value: boolea
   const stateLabel = value ? t('settings.enabled') as string : t('settings.disabled') as string
 
   let rpmBadge = ''
-  if (AI_FEATURE_KEYS.has(key) && value) {
+  if (AI_FEATURE_KEYS.has(key)) {
     const speedMult = getCurrentSpeedMultiplier()
     const rpm = Math.round(estimateRpm(key, speedMult) * 10) / 10
     const rpmDisplay = rpm < 1 ? rpm.toFixed(1) : String(Math.round(rpm))
-    const warnClass = rpm > 20 ? 'rpm-warn' : 'rpm-ok'
-    rpmBadge = `<span class="ai-rpm-badge ${warnClass}">~${rpmDisplay} req/min</span>`
+    if (value) {
+      const warnClass = rpm > 20 ? 'rpm-warn' : 'rpm-ok'
+      rpmBadge = `<span class="ai-rpm-badge ${warnClass}">~${rpmDisplay} req/min</span>`
+    } else {
+      rpmBadge = `<span class="ai-rpm-badge rpm-dim">~${rpmDisplay} req/min</span>`
+    }
   }
+
+  const isApiLocked = _apiLockedFeatures.has(key as keyof GameSettings)
+  const apiNudge = isApiLocked
+    ? `<div class="stg-api-nudge">${t('settings.api_locked_nudge') as string}</div>`
+    : ''
 
   return `
     <div class="stg-row${locked ? ' stg-row-locked' : ''}">
       <div class="stg-row-info">
         <div class="stg-row-label">${label}${lockIcon}${rpmBadge}</div>
-        <div class="stg-row-desc">${desc}${locked ? `<br><em style="color:#553;font-style:normal">${lockLabel}</em>` : ''}</div>
+        <div class="stg-row-desc">${desc}${locked && !isApiLocked ? `<br><em style="color:#553;font-style:normal">${lockLabel}</em>` : ''}${apiNudge}</div>
       </div>
       <div class="stg-toggle ${value ? 'on' : 'off'}${locked ? ' stg-toggle-locked' : ''}"
            data-toggle="${key}" data-locked="${locked ? '1' : '0'}"
