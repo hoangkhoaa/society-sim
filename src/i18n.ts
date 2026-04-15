@@ -58,12 +58,12 @@ const translations = {
     'topbar.constitution': '📜 Constitution',
     'topbar.init':         'Initializing society...',
 
-    // Panels dropdown
-    'panels.toggle':       'Panels ▾',
-    'panels.population':   '👥 Population',
-    'panels.rumors':       '🗣 Rumors',
-    'panels.economics':    '💰 Economics',
-    'panels.npc_contacts': '📇 NPC contacts',
+    // Panels dropdown / dashboard tab labels
+    'panels.toggle':       'Overlays ▾',
+    'panels.population':   'Pop',
+    'panels.rumors':       'Rumors',
+    'panels.economics':    'Econ',
+    'panels.npc_contacts': 'NPCs',
     'panels.network':      '🕸 Social ties',
     'panels.conflict':     '⚔️ Conflict',
     'panels.map_legend':   '📋 Map legend',
@@ -114,7 +114,7 @@ const translations = {
     'feed.header':             'Event Log',
     'chronicle.header':        'Chronicle',
     'chronicle.tab_events':    'Events',
-    'chronicle.tab_breakthroughs': '⚗️ Breakthroughs',
+    'chronicle.tab_breakthroughs': 'Breakthroughs',
     'filter.all':              'All',
     'filter.important':        'Important',
     'filter.critical':         'Critical',
@@ -139,14 +139,14 @@ const translations = {
     'labor.legend': 'solidarity / grievance',
 
     // Rumors panel
-    'rumors.panel_title': '🗣 Rumors',
-    'rumors.title': '💬 Rumors ({count})',
+    'rumors.panel_title': 'Rumors',
+    'rumors.title': 'Rumors ({count})',
     'rumors.empty': 'No active rumors right now.',
 
     // Economics panel
-    'econ.title':       '💰 Economics',
-    'econ.tab_daily':   '📅 Daily',
-    'econ.tab_alltime': '📊 All-Time',
+    'econ.title':       'Economics',
+    'econ.tab_daily':   'Daily',
+    'econ.tab_alltime': 'All-Time',
     'econ.gdp':         'GDP',
     'econ.extraction':  'Extraction',
     'econ.efficiency':  'Efficiency',
@@ -266,7 +266,7 @@ const translations = {
     'factions.feed_suppress': 'Suppressed faction {name}',
 
     // Goals / objectives panel
-    'goals.tab':     '🎯 Goals',
+    'goals.tab':     'Goals',
     'goals.loading': 'Generating objectives...',
     'goals.days_left': '{n}d left',
 
@@ -935,12 +935,12 @@ const translations = {
     'topbar.constitution': '📜 Hiến pháp',
     'topbar.init':         'Đang khởi tạo xã hội...',
 
-    // Panels dropdown
-    'panels.toggle':       'Bảng điều khiển ▾',
-    'panels.population':   '👥 Dân số',
-    'panels.rumors':       '🗣 Tin đồn',
-    'panels.economics':    '💰 Kinh tế',
-    'panels.npc_contacts': '📇 NPC đã gặp',
+    // Panels dropdown / dashboard tab labels
+    'panels.toggle':       'Lớp phủ ▾',
+    'panels.population':   'Dân số',
+    'panels.rumors':       'Đồn',
+    'panels.economics':    'Kinh tế',
+    'panels.npc_contacts': 'NPCs',
     'panels.network':      '🕸 Quan hệ (đường nối)',
     'panels.conflict':     '⚔️ Xung đột',
     'panels.map_legend':   '📋 Chú thích bản đồ',
@@ -991,7 +991,7 @@ const translations = {
     'feed.header':             'Nhật ký sự kiện',
     'chronicle.header':        'Biên niên',
     'chronicle.tab_events':    'Sự kiện',
-    'chronicle.tab_breakthroughs': '⚗️ Đột phá',
+    'chronicle.tab_breakthroughs': 'Đột phá',
     'filter.all':              'Tất cả',
     'filter.important':        'Quan trọng',
     'filter.critical':         'Khẩn cấp',
@@ -1016,14 +1016,14 @@ const translations = {
     'labor.legend': 'đoàn kết / bức xúc',
 
     // Rumors panel
-    'rumors.panel_title': '🗣 Tin đồn',
-    'rumors.title': '💬 Tin đồn ({count})',
+    'rumors.panel_title': 'Tin đồn',
+    'rumors.title': 'Tin đồn ({count})',
     'rumors.empty': 'Hiện chưa có tin đồn nào đang hoạt động.',
 
     // Economics panel
-    'econ.title':       '💰 Kinh tế',
-    'econ.tab_daily':   '📅 Theo ngày',
-    'econ.tab_alltime': '📊 Toàn kỳ',
+    'econ.title':       'Kinh tế',
+    'econ.tab_daily':   'Theo ngày',
+    'econ.tab_alltime': 'Toàn kỳ',
     'econ.gdp':         'GDP',
     'econ.extraction':  'Khai thác',
     'econ.efficiency':  'Hiệu quả',
@@ -1143,7 +1143,7 @@ const translations = {
     'factions.feed_suppress': 'Trấn áp phe {name}',
 
     // Goals / objectives panel
-    'goals.tab':     '🎯 Mục tiêu',
+    'goals.tab':     'Mục tiêu',
     'goals.loading': 'Đang tạo mục tiêu...',
     'goals.days_left': 'còn {n}d',
 

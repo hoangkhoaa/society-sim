@@ -1417,12 +1417,8 @@ registerSpotlightCallbacks(
   () => { if (world) world.stats.npc_edits++ },
 )
 const btnPause = document.getElementById('btn-pause')!
-const btnToggleDemo = document.getElementById('btn-toggle-demo') as HTMLButtonElement
-const btnToggleRumors = document.getElementById('btn-toggle-rumors') as HTMLButtonElement
 const btnToggleNetwork = document.getElementById('btn-toggle-network') as HTMLButtonElement
 const btnToggleLegend = document.getElementById('btn-toggle-legend') as HTMLButtonElement
-const btnToggleEcon = document.getElementById('btn-toggle-econ') as HTMLButtonElement
-const btnToggleNpcContacts = document.getElementById('btn-toggle-npc-contacts') as HTMLButtonElement
 const btnToggleConflict = document.getElementById('btn-toggle-conflict') as HTMLButtonElement
 const panelsDropdown = document.getElementById('panels-dropdown') as HTMLElement | null
 const btnPanelsToggle = document.getElementById('btn-panels-toggle') as HTMLButtonElement | null
@@ -1499,8 +1495,17 @@ switchDashboardTab(savedDashboardTab)
 let dashboardVisible = localStorage.getItem(UI_DASHBOARD_VISIBLE_KEY) !== '0'
 function applyDashboardVisibility() {
   if (dashboardPanel) dashboardPanel.classList.toggle('hidden', !dashboardVisible)
+  const btnDashToggle = document.getElementById('btn-dashboard-toggle') as HTMLButtonElement | null
+  if (btnDashToggle) btnDashToggle.classList.toggle('active', dashboardVisible)
 }
 applyDashboardVisibility()
+
+// Dashboard toggle button in topbar
+document.getElementById('btn-dashboard-toggle')?.addEventListener('click', () => {
+  dashboardVisible = !dashboardVisible
+  localStorage.setItem(UI_DASHBOARD_VISIBLE_KEY, dashboardVisible ? '1' : '0')
+  applyDashboardVisibility()
+})
 
 function applyOverlayVisibility() {
   setMapLegendVisible(legendVisible)
@@ -1511,35 +1516,6 @@ function applyOverlayVisibility() {
   setMapConflictOverlayVisible(conflictOverlayVisible)
   btnToggleConflict.classList.toggle('active', conflictOverlayVisible)
 }
-
-// Dropdown buttons for demographics/rumors/econ/contacts now switch the dashboard tab
-btnToggleDemo.addEventListener('click', () => {
-  dashboardVisible = true
-  localStorage.setItem(UI_DASHBOARD_VISIBLE_KEY, '1')
-  applyDashboardVisibility()
-  switchDashboardTab('demographics')
-})
-
-btnToggleRumors.addEventListener('click', () => {
-  dashboardVisible = true
-  localStorage.setItem(UI_DASHBOARD_VISIBLE_KEY, '1')
-  applyDashboardVisibility()
-  switchDashboardTab('rumors')
-})
-
-btnToggleEcon.addEventListener('click', () => {
-  dashboardVisible = true
-  localStorage.setItem(UI_DASHBOARD_VISIBLE_KEY, '1')
-  applyDashboardVisibility()
-  switchDashboardTab('econ')
-})
-
-btnToggleNpcContacts.addEventListener('click', () => {
-  dashboardVisible = true
-  localStorage.setItem(UI_DASHBOARD_VISIBLE_KEY, '1')
-  applyDashboardVisibility()
-  switchDashboardTab('contacts')
-})
 
 btnToggleNetwork.addEventListener('click', () => {
   networkVisible = !networkVisible

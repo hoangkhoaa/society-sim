@@ -133,21 +133,19 @@
       <button class="btn-top" id="btn-pause">⏸</button>
       <button class="btn-top" id="btn-speed">1×</button>
       <div class="top-divider"></div>
-      <!-- Panels dropdown -->
+      <!-- Map overlays dropdown -->
       <div class="top-dropdown" id="panels-dropdown">
-        <button class="btn-top" id="btn-panels-toggle" data-i18n="panels.toggle">Panels ▾</button>
+        <button class="btn-top" id="btn-panels-toggle" data-i18n="panels.toggle">Overlays ▾</button>
         <div class="top-dropdown-menu" id="panels-menu">
-          <button class="top-dropdown-item" id="btn-toggle-demo"   data-i18n="panels.population">👥 Population</button>
-          <button class="top-dropdown-item" id="btn-toggle-rumors" data-i18n="panels.rumors">🗣 Rumors</button>
-          <button class="top-dropdown-item" id="btn-toggle-econ"   data-i18n="panels.economics">💰 Economics</button>
-          <button class="top-dropdown-item" id="btn-toggle-npc-contacts" data-i18n="panels.npc_contacts">📇 Contacts</button>
-          <button class="top-dropdown-item" id="btn-toggle-network" data-i18n="panels.network">🕸 Network</button>
+          <button class="top-dropdown-item" id="btn-toggle-network" data-i18n="panels.network">🕸 Social ties</button>
           <button class="top-dropdown-item" id="btn-toggle-conflict" data-i18n="panels.conflict">⚔️ Conflict</button>
           <button class="top-dropdown-item" id="btn-toggle-legend" data-i18n="panels.map_legend">📋 Map legend</button>
           <div class="top-dropdown-divider"></div>
           <button class="top-dropdown-item top-dropdown-danger" id="btn-end-game" data-i18n="endgame.btn">☄️ End Game</button>
         </div>
       </div>
+      <div class="top-divider"></div>
+      <button class="btn-top" id="btn-dashboard-toggle" title="Toggle dashboard panel">Dashboard</button>
       <div class="top-divider"></div>
       <button class="btn-top" id="btn-theme" title="Toggle light/dark mode">🌙</button>
       <button class="btn-top" id="btn-constitution" data-i18n="topbar.constitution">📜 Constitution</button>
@@ -193,7 +191,6 @@
 
           <!-- Demographics tab pane -->
           <div id="demographics">
-            <div class="demo-title" data-i18n="demo.title">📊 Population</div>
             <div class="demo-grid">
               <span class="demo-label" data-i18n="demo.pop">Total</span><b id="d-pop">–</b>
               <span class="demo-label" data-i18n="demo.male">♂ Male</span><b id="d-male">–</b>
@@ -213,16 +210,14 @@
 
           <!-- Rumors tab pane -->
           <div id="rumors-panel">
-            <div class="demo-title" data-i18n="rumors.panel_title">🗣 Rumors</div>
             <div id="rumors-overlay-log"></div>
           </div>
 
           <!-- Economics tab pane -->
           <div id="econ-panel">
-            <div class="demo-title" data-i18n="econ.title">💰 Economics</div>
             <div id="econ-tabs">
-              <button class="econ-tab active" data-tab="econ-daily" data-i18n="econ.tab_daily">📅 Daily</button>
-              <button class="econ-tab" data-tab="econ-alltime" data-i18n="econ.tab_alltime">📊 All-Time</button>
+              <button class="econ-tab active" data-tab="econ-daily" data-i18n="econ.tab_daily">Daily</button>
+              <button class="econ-tab" data-tab="econ-alltime" data-i18n="econ.tab_alltime">All-Time</button>
             </div>
             <!-- Tab 1: daily snapshot -->
             <div id="econ-daily" class="econ-pane">
@@ -260,7 +255,6 @@
 
           <!-- Contacts tab pane -->
           <div id="npc-contacts-panel">
-            <div class="demo-title" data-i18n="panels.npc_contacts">📇 Contacts</div>
             <div id="npc-contacts-list" class="npc-contacts-list"></div>
           </div>
 
