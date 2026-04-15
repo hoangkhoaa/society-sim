@@ -377,7 +377,7 @@ function renderToggleRow(key: string, label: string, desc: string, value: boolea
 
   const isApiLocked = _apiLockedFeatures.has(key as keyof GameSettings)
   const apiNudge = isApiLocked
-    ? `<div class="stg-api-nudge">⚡ ${getLang() === 'vi' ? 'Thêm API key để kích hoạt tính năng này' : 'Add an API key to unlock this feature'}</div>`
+    ? `<div class="stg-api-nudge">${t('settings.api_locked_nudge') as string}</div>`
     : ''
 
   return `
