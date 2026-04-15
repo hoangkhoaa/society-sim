@@ -25,7 +25,7 @@ import { runGovernmentCycle, detectRegime, type GovernmentPolicyAI } from './sim
 import { checkPressTrigger, resetPressRuntimeState } from './sim/press'
 import { checkScienceTrigger, resetScienceRuntimeState } from './sim/science'
 import { resetNarrativeRuntimeState } from './sim/narratives'
-import { getSettings, openSettingsPanel, applyRegimeDefaults } from './ui/settings-panel'
+import { getSettings, openSettingsPanel, applyRegimeDefaults, lockApiFeatures, unlockApiFeatures } from './ui/settings-panel'
 import { runElection } from './engine'
 import { getRegimeProfile } from './sim/regime-config'
 import { setActiveSimRestrictions } from './sim/npc'
@@ -382,6 +382,19 @@ function syncProviderFields() {
 
 providerSelect.addEventListener('change', syncProviderFields)
 
+function applyLangChange(lang: string): void {
+  if (!isSupportedLang(lang)) return
+  setLang(lang)
+  updateProviderFieldLabels()
+  refreshChronicleTimestamps()
+  // Keep both language selects in sync
+  const onboarding = document.getElementById('lang-select') as HTMLSelectElement | null
+  const inGame     = document.getElementById('lang-select-game') as HTMLSelectElement | null
+  if (onboarding && onboarding.value !== lang) onboarding.value = lang
+  if (inGame     && inGame.value     !== lang) inGame.value = lang
+  if ((localStorage.getItem(UI_DASHBOARD_TAB_KEY) ?? 'demographics') === 'contacts' && !dashboardPanel?.classList.contains('hidden')) updateNpcContactsPanel()
+}
+
 function initLanguageSelect() {
   const langSelect = document.getElementById('lang-select') as HTMLSelectElement | null
   if (!langSelect) return
@@ -390,17 +403,19 @@ function initLanguageSelect() {
   langSelect.value = initial
   setLang(initial)
   updateProviderFieldLabels()
-  langSelect.addEventListener('change', () => {
-    const v = langSelect.value
-    if (!isSupportedLang(v)) return
-    setLang(v)
-    updateProviderFieldLabels()
-    refreshChronicleTimestamps()
-    if ((localStorage.getItem(UI_DASHBOARD_TAB_KEY) ?? 'demographics') === 'contacts' && !dashboardPanel?.classList.contains('hidden')) updateNpcContactsPanel()
-  })
+  langSelect.addEventListener('change', () => applyLangChange(langSelect.value))
+}
+
+function initGameLanguageSelect() {
+  const langSelectGame = document.getElementById('lang-select-game') as HTMLSelectElement | null
+  if (!langSelectGame) return
+  populateLanguageSelect(langSelectGame)
+  langSelectGame.value = getStoredLangPreference()
+  langSelectGame.addEventListener('change', () => applyLangChange(langSelectGame.value))
 }
 
 initLanguageSelect()
+initGameLanguageSelect()
 syncProviderFields()
 
 // ── API Key Rows ────────────────────────────────────────────────────────────
@@ -506,6 +521,8 @@ btnStart.addEventListener('click', async () => {
 
   // Initialize the API key ring for health-aware round-robin
   initKeyRing(keys)
+  noApiKeyMode = false
+  unlockApiFeatures()
 
   btnStart.textContent = t('onboarding.connecting') as string
   btnStart.setAttribute('disabled', 'true')
@@ -534,6 +551,7 @@ function showError(msg: string) {
 document.getElementById('btn-start-no-api')!.addEventListener('click', () => {
   noApiKeyMode = true
   aiConfig = null
+  lockApiFeatures()
   clearOnboardingError()
   setupMessages.innerHTML = ''
   // Hide text input row — only presets available without AI
@@ -2220,6 +2238,7 @@ function triggerGameOver(reason: 'extinction' | 'collapse' = 'extinction') {
 
 document.getElementById('btn-restart')!.addEventListener('click', () => {
   noApiKeyMode = false
+  unlockApiFeatures()
   peakPopulation = 0
   world = null
   // Restore chatbar in case it was disabled in no-API mode

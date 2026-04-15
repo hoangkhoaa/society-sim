@@ -78,6 +78,35 @@ export function applyRegimeDefaults(profile: RegimeProfile): void {
   renderPanel()
 }
 
+const API_FEATURE_KEYS: ReadonlyArray<keyof GameSettings> = [
+  'enable_government_ai',
+  'enable_npc_thoughts',
+  'enable_press_ai',
+  'enable_science_ai',
+]
+
+/**
+ * Lock all AI-API-dependent features to off (called when running without an API key).
+ */
+export function lockApiFeatures(): void {
+  for (const key of API_FEATURE_KEYS) {
+    _lockedFeatures.add(key)
+    ;(_settings as unknown as Record<string, unknown>)[key] = false
+  }
+  saveSettings()
+  renderPanel()
+}
+
+/**
+ * Unlock all AI-API-dependent features (called when an API key becomes available).
+ */
+export function unlockApiFeatures(): void {
+  for (const key of API_FEATURE_KEYS) {
+    _lockedFeatures.delete(key)
+  }
+  renderPanel()
+}
+
 function saveSettings(): void {
   localStorage.setItem(GAME_SETTINGS_STORAGE_KEY, JSON.stringify(_settings))
 }

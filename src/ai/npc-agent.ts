@@ -7,7 +7,7 @@
 
 import { callAI, extractJSON } from './provider'
 import type { AIConfig, NPC, NPCAppearance, NPCChatTurn, PlayerChatPersona, WorldState } from '../types'
-import { getLang } from '../i18n'
+import { getLang, t } from '../i18n'
 import { langDirective } from '../local/ai'
 import { getRegimeProfile } from '../sim/regime-config'
 import { clamp } from '../sim/constitution'
@@ -315,86 +315,44 @@ function buildHistoryCtx(turns: NPCChatTurn[], npcName: string): string {
 
 // ── Local thought generation (no AI required) ─────────────────────────────
 
-function _pickRandom(arr: string[]): string {
-  return arr[Math.floor(Math.random() * arr.length)]
+function _pickI18n(key: string): string {
+  const val = t(key)
+  if (Array.isArray(val)) return val[Math.floor(Math.random() * val.length)] as string
+  return String(val)
 }
 
 function _getSeasonLabel(day: number): string {
   const d = day % 360
-  if (d < 90) return 'xuân'
-  if (d < 180) return 'hạ'
-  if (d < 270) return 'thu'
-  return 'đông'
+  if (d < 90)  return t('sp.thought.season.spring') as string
+  if (d < 180) return t('sp.thought.season.summer') as string
+  if (d < 270) return t('sp.thought.season.fall') as string
+  return t('sp.thought.season.winter') as string
 }
 
 export function generateLocalThought(npc: NPC, state: WorldState): string {
-  const role = npc.role
-  const stress = npc.stress ?? 0
-  const hunger = npc.hunger ?? 0
-  const exhaustion = npc.exhaustion ?? 0
-  const fear = npc.fear ?? 0
-  const grievance = npc.grievance ?? 0
-  const wealth = npc.wealth ?? 0
-  const happiness = npc.happiness ?? 50
-  const solidarity = npc.class_solidarity ?? 0
+  const role        = npc.role
+  const stress      = npc.stress ?? 0
+  const hunger      = npc.hunger ?? 0
+  const exhaustion  = npc.exhaustion ?? 0
+  const fear        = npc.fear ?? 0
+  const grievance   = npc.grievance ?? 0
+  const solidarity  = npc.class_solidarity ?? 0
+  const happiness   = npc.happiness ?? 50
 
   // Priority: most urgent need wins
-  if (hunger > 70) return _pickRandom([
-    `Bụng đói quá rồi... ${wealth < 50 ? 'Không có tiền mua đồ ăn.' : 'Phải tìm gì để ăn thôi.'}`,
-    'Lâu lắm rồi tôi chưa có một bữa no.',
-    `Năm nay mùa ${_getSeasonLabel(state.day)} mà lương thực vẫn thiếu.`,
-  ])
-
-  if (fear > 70) return _pickRandom([
-    'Tôi không dám ra ngoài... tình hình nguy hiểm quá.',
-    `${role === 'guard' ? 'Phải giữ trật tự nhưng chính tôi cũng sợ.' : 'Nghe nói ngoài kia đang có chuyện lớn.'}`,
-    'Mọi người đang trốn đâu hết rồi?',
-  ])
-
-  if (grievance > 70) return _pickRandom([
-    'Tôi đã làm việc cả đời mà vẫn không khá hơn được.',
-    `Người giàu thì ngày càng giàu, còn ${role === 'farmer' ? 'nông dân' : 'người lao động'} như tôi…`,
-    'Chính quyền này không quan tâm đến chúng tôi.',
-  ])
-
-  if (solidarity > 65 && (role === 'farmer' || role === 'craftsman')) return _pickRandom([
-    'Chúng tôi cần đoàn kết lại mới thay đổi được.',
-    'Một mình không làm được gì, nhưng cùng nhau...',
-    'Anh em trong xưởng đang bàn đến chuyện đình công rồi đấy.',
-  ])
-
-  if (exhaustion > 75) return _pickRandom([
-    'Mệt lắm rồi... làm việc quá nhiều mà không thấy khá hơn.',
-    `${role === 'leader' ? 'Gánh nặng quá lớn.' : 'Cần được nghỉ ngơi một chút.'}`,
-    'Cơ thể không còn chịu được nữa.',
-  ])
-
-  if (stress > 65) return _pickRandom([
-    'Mọi thứ đang quá áp lực, không biết chịu được đến bao giờ.',
-    'Đêm qua tôi không ngủ được.',
-    `${role === 'merchant' ? 'Thị trường bất ổn, tôi lo lắm.' : 'Tình hình không ổn chút nào.'}`,
-  ])
-
-  if (happiness > 70 && stress < 30) return _pickRandom([
-    `Cuộc sống ${role === 'farmer' ? 'nông thôn' : role === 'scholar' ? 'học thuật' : 'hiện tại'} thật bình yên.`,
-    `${wealth > 500 ? 'Dành dụm được chút, cảm giác an tâm hơn.' : 'Dù không giàu nhưng tôi vẫn hạnh phúc.'}`,
-    'Hôm nay là một ngày tốt.',
-  ])
+  if (hunger > 70) return _pickI18n('sp.thought.hunger').replace('{season}', _getSeasonLabel(state.day))
+  if (fear > 70)   return _pickI18n('sp.thought.fear')
+  if (grievance > 70) return _pickI18n('sp.thought.grievance')
+  if (solidarity > 65 && (role === 'farmer' || role === 'craftsman')) return _pickI18n('sp.thought.solidarity')
+  if (exhaustion > 75) return _pickI18n('sp.thought.exhaustion')
+  if (stress > 65)     return _pickI18n('sp.thought.stress')
+  if (happiness > 70 && stress < 30) return _pickI18n('sp.thought.happy')
 
   // Role-specific defaults
-  const roleThoughts: Record<string, string[]> = {
-    farmer:     ['Trời hôm nay thế nào nhỉ, mùa màng ra sao?', 'Phải cày sớm mới kịp vụ này.', 'Đất này năm nào cũng vậy...'],
-    craftsman:  ['Đơn hàng ngày hôm nay nhiều hay ít?', 'Tay nghề phải luyện mãi mới giỏi được.', 'Xưởng hôm nay ồn quá.'],
-    merchant:   ['Giá cả hôm nay thế nào nhỉ.', 'Cơ hội mua bán ở đâu cũng có.', 'Phải tính toán cho kỹ mới lời được.'],
-    scholar:    ['Có bao nhiêu điều chưa hiểu được...', 'Tri thức là thứ duy nhất không ai lấy đi được.', 'Học trò hôm nay có tiến bộ không?'],
-    guard:      ['Trật tự phải được duy trì.', 'Hôm nay tuần tra như thường lệ.', 'Nghe nói có chuyện ở khu chợ.'],
-    leader:     ['Quyết định nào cũng có hậu quả của nó.', 'Trách nhiệm quá nặng.', 'Phải làm sao cho dân tin tưởng hơn.'],
-    healthcare: ['Bệnh nhân hôm nay nhiều.', 'Làm sao có đủ thuốc cho tất cả mọi người?', 'Sức khỏe cộng đồng đang xuống.'],
-    gang:       ['Cơ hội đến thì phải nắm lấy.', 'Luật lệ là của kẻ mạnh.', 'Tối nay có việc cần làm.'],
-    child:      ['Hôm nay được chơi với ai nhỉ?', 'Muốn lớn nhanh để làm được nhiều thứ hơn.', 'Mẹ ơi con đói rồi.'],
-  }
-  const defaults = roleThoughts[role] ?? ['Một ngày bình thường.']
-  return _pickRandom(defaults)
+  const roleKey = `sp.thought.role.${role}`
+  const val = t(roleKey)
+  if (Array.isArray(val)) return val[Math.floor(Math.random() * val.length)] as string
+  return _pickI18n('sp.thought.role.default')
 }
 
 export async function handleNPCChat(

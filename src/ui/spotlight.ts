@@ -645,7 +645,7 @@ export async function openSpotlight(npc: NPC, state: WorldState, config: AIConfi
     const localThought = generateLocalThought(npc, state)
     thoughtEl.textContent = `"${localThought}"`
     thoughtEl.className = 'sp-thought sp-thought-local'
-    thoughtEl.title = 'Generated locally (AI off)'
+    thoughtEl.title = t('sp.thought_local.title') as string
     return
   }
 
