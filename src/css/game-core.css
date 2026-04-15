@@ -41,6 +41,15 @@
   background: rgba(74, 158, 255, 0.08);
 }
 
+.lang-select-game {
+  padding: 3px 4px;
+  font-size: 11px;
+  min-width: 0;
+  max-width: 80px;
+  background: none;
+  cursor: pointer;
+}
+
 #active-events {
   font-size: 10px;
   color: #ef9f27;
