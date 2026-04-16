@@ -618,6 +618,20 @@ export interface Objective {
   failed: boolean
 }
 
+// ── Dynasty ───────────────────────────────────────────────────────────────
+export interface Dynasty {
+  id: string
+  founder_id: number          // NPC id of first tracked ancestor
+  founder_name: string
+  current_head_id: number | null   // richest living member
+  member_ids: number[]         // all known descendants + founder
+  total_wealth: number         // sum of all living members' wealth
+  generation_depth: number     // how many generations tracked
+  peak_wealth: number          // highest total_wealth ever
+  founded_year: number
+  oligarchy_warned: boolean    // true if oligarchy warning already fired
+}
+
 // ── Charismatic NPC Choice ────────────────────────────────────────────────
 export interface CharismaticChoice {
   npc_id: number
@@ -705,7 +719,9 @@ export interface WorldState {
   last_election_day: number     // sim-day of last election (-1 = never)
 
   // Population collapse tracking
-  collapse_phase: 'normal' | 'critical' | 'collapse'
+  collapse_phase: 'normal' | 'critical' | 'collapse' | 'ruins'
+  collapse_days_streak: number     // consecutive days in 'collapse' phase
+  ruins_era: boolean               // true after society has been rebuilt from ruins
 
   // Starting population — used as reference for immigration cap (not a hard max, just a baseline)
   initial_population: number
@@ -720,6 +736,9 @@ export interface WorldState {
   // Player objectives (short-term goals with rewards)
   objectives?: Objective[]
   objectives_next_gen_day?: number
+
+  // Dynasty tracking
+  dynasties: Dynasty[]
 }
 
 export interface RunStats {

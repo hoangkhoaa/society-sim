@@ -1,11 +1,11 @@
-import type { WorldState, Objective } from '../types'
+import type { WorldState, Objective, Dynasty } from '../types'
 import type { IndividualEvent, TickEventFlags } from '../sim/npc'
 import { tickNPC } from '../sim/npc'
 import { checkEmergencyRoleReassignment, checkAdaptiveRoleSwitching } from '../sim/roles'
 import { checkFactions, checkFactionConflict } from '../sim/factions'
 import { accumulateResearch, checkDiscoveries } from '../sim/tech'
 import { checkNarrativeEvents, checkRumors, checkMilestones } from '../sim/narratives'
-import { addChronicle } from '../ui/feed'
+import { addChronicle, addFeedRaw } from '../ui/feed'
 import { tf } from '../i18n'
 import { tickEvents, spawnEvent, applyInstantEventDeaths, getEventDeathsThisDay, resetEventDeaths } from './events'
 import { applyInterventions, applyConstitutionPatch, applyWorldDelta, applyInstitutionDeltas, recordFormulaBreakthrough, GOD_AGENT_FORMULA_OVERRIDE_TITLE } from './interventions'
@@ -41,6 +41,29 @@ export {
   recordFormulaBreakthrough, GOD_AGENT_FORMULA_OVERRIDE_TITLE,
   computeMacroStats, getIncomeTaxRate,
   updatePublicHealth, runElection, updateRunStats,
+}
+
+// ── Collapse Finale ─────────────────────────────────────────────────────────
+
+// Callback set by main.ts to trigger the ruins era UI + world reset
+let onCollapseFinale: ((state: WorldState) => void) | null = null
+
+/** Register a callback to be invoked when the Collapse Finale triggers. */
+export function setCollapseFinaleCallback(cb: (state: WorldState) => void): void {
+  onCollapseFinale = cb
+}
+
+function checkCollapseFinale(state: WorldState): void {
+  if (state.collapse_phase === 'ruins') return
+
+  if (state.collapse_phase === 'collapse') {
+    state.collapse_days_streak = (state.collapse_days_streak ?? 0) + 1
+    if (state.collapse_days_streak >= 30 && onCollapseFinale) {
+      onCollapseFinale(state)
+    }
+  } else {
+    state.collapse_days_streak = 0
+  }
 }
 
 // ── Charismatic NPC Choice ───────────────────────────────────────────────────
@@ -340,6 +363,7 @@ export function tick(state: WorldState): void {
     checkRumors(state)
     checkMilestones(state)
     checkCrisisEnd(state)
+    checkCollapseFinale(state)
     checkImmigration(state)
     checkWealthMobility(state)
     checkGuardPatrol(state)
@@ -377,6 +401,9 @@ export function tick(state: WorldState): void {
     // Objectives: check progress then generate new ones if needed
     checkObjectives(state)
     generateObjectives(state)
+
+    // Dynasty tracking: runs every 30 days
+    trackDynasties(state)
   }
 }
 
@@ -498,4 +525,79 @@ function applyObjectiveReward(state: WorldState, obj: Objective): void {
   } else if (obj.stat === 'literacy') {
     state.research_points = (state.research_points || 0) + 200
   }
+}
+
+// ── Dynasty Tracking ─────────────────────────────────────────────────────────
+
+function trackDynasties(state: WorldState): void {
+  if (state.day % 30 !== 0) return  // every 30 days
+
+  if (!state.dynasties) state.dynasties = []
+
+  const living = state.npcs.filter(n => n.lifecycle.is_alive && n.wealth > 50)
+
+  // Build/update dynasties from existing lineages
+  for (const npc of living) {
+    if (npc.lifecycle.children_ids.length === 0) continue
+
+    const children = npc.lifecycle.children_ids
+      .map(id => state.npcs[id])
+      .filter((c): c is typeof state.npcs[0] => !!c && c.lifecycle.is_alive)
+
+    if (children.length === 0) continue
+    const familyWealth = npc.wealth + children.reduce((s, c) => s + c.wealth, 0)
+    if (familyWealth < 500) continue  // minimum threshold to track
+
+    // Check if dynasty already exists for this founder
+    let dynasty: Dynasty | undefined = state.dynasties.find(d => d.founder_id === npc.id)
+    if (!dynasty) {
+      dynasty = {
+        id: crypto.randomUUID(),
+        founder_id: npc.id,
+        founder_name: npc.name,
+        current_head_id: npc.id,
+        member_ids: [npc.id, ...children.map(c => c.id)],
+        total_wealth: familyWealth,
+        generation_depth: 2,
+        peak_wealth: familyWealth,
+        founded_year: state.year,
+        oligarchy_warned: false,
+      }
+      state.dynasties.push(dynasty)
+    } else {
+      // Update existing dynasty
+      dynasty.member_ids = [npc.id, ...children.map(c => c.id)]
+      dynasty.total_wealth = familyWealth
+      dynasty.peak_wealth = Math.max(dynasty.peak_wealth, familyWealth)
+      dynasty.current_head_id = [npc, ...children].sort((a, b) => b.wealth - a.wealth)[0]?.id ?? npc.id
+    }
+  }
+
+  // Keep only top 5 dynasties by total_wealth
+  state.dynasties.sort((a, b) => b.total_wealth - a.total_wealth)
+  state.dynasties = state.dynasties.slice(0, 5)
+
+  // Oligarchy warning: top dynasty holds > 25% of all wealth
+  const totalWealth = state.npcs
+    .filter(n => n.lifecycle.is_alive)
+    .reduce((s, n) => s + n.wealth, 0)
+
+  const top = state.dynasties[0]
+  if (top && totalWealth > 0 && top.total_wealth / totalWealth > 0.25 && !top.oligarchy_warned) {
+    top.oligarchy_warned = true
+    addChronicle(
+      `⚠️ The ${top.founder_name} family now controls over ${Math.round(top.total_wealth / totalWealth * 100)}% of society's wealth. Oligarchy is taking hold.`,
+      state.year, state.day, 'major'
+    )
+    addFeedRaw(`💰 Oligarchy alert: ${top.founder_name} dynasty holds ${Math.round(top.total_wealth / totalWealth * 100)}% of wealth`, 'warning', state.year, state.day)
+  }
+
+  // Remove dead dynasties (no living members with wealth > 20)
+  state.dynasties = state.dynasties.filter(d => {
+    const livingMembers = d.member_ids.filter(id => {
+      const n = state.npcs[id]
+      return n?.lifecycle.is_alive && n.wealth > 20
+    })
+    return livingMembers.length > 0
+  })
 }

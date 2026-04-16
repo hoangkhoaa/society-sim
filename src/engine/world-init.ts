@@ -160,6 +160,8 @@ export async function initWorld(constitution: Constitution, npcCount: number = D
     leader_id: null,
     last_election_day: -1,
     collapse_phase: 'normal',
+    collapse_days_streak: 0,
+    ruins_era: false,
     initial_population: population,
     public_health: {
       sanitation: 30,
@@ -181,5 +183,6 @@ export async function initWorld(constitution: Constitution, npcCount: number = D
       npc_edits: 0,
       achieved_days: [],
     },
+    dynasties: [],
   }
 }

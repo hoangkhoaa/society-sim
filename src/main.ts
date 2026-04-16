@@ -1722,6 +1722,39 @@ function updateEconomicsPanel() {
     discoveriesEl.textContent = count === 0 ? '–' : `${count} / ${5}`
     discoveriesEl.style.color = count >= 4 ? '#5dcaa5' : count >= 2 ? '#ef9f27' : '#aaa'
   }
+
+  // ── Dynasties section ─────────────────────────────────────────────────────
+  const dynastiesEl = document.getElementById('ep-dynasties-list')
+  if (dynastiesEl) {
+    dynastiesEl.innerHTML = renderDynastiesSection(world)
+  }
+}
+
+function renderDynastiesSection(state: WorldState): string {
+  const dynasties = state.dynasties ?? []
+  if (dynasties.length === 0) return '<p style="color:#666;font-size:12px">No significant dynasties yet.</p>'
+
+  const totalWealth = state.npcs
+    .filter(n => n.lifecycle.is_alive)
+    .reduce((s, n) => s + n.wealth, 0)
+
+  return dynasties.map((d, i) => {
+    const share = totalWealth > 0 ? Math.round(d.total_wealth / totalWealth * 100) : 0
+    const head = d.current_head_id !== null ? state.npcs.find(n => n.id === d.current_head_id) : null
+    return `
+      <div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #222">
+        <span style="color:#888;width:16px">${i + 1}</span>
+        <span style="flex:1;font-size:12px">
+          <b>${escapeHtml(d.founder_name)}</b> family
+          ${head ? `<span style="color:#777"> · ${escapeHtml(head.name)}</span>` : ''}
+        </span>
+        <span style="font-size:11px;color:#f0c050">${share}% wealth</span>
+        <div style="background:#333;border-radius:2px;width:60px;height:6px;overflow:hidden">
+          <div style="background:#c09020;height:100%;width:${Math.min(share * 2, 100)}%"></div>
+        </div>
+      </div>
+    `
+  }).join('')
 }
 
 // ── Goals Panel ─────────────────────────────────────────────────────────────
@@ -1762,6 +1795,53 @@ function renderGoalsPanel() {
         <span class="obj-deadline">${obj.completed || obj.failed ? '' : tf('goals.days_left', { n: daysLeft })}</span>
       </div>
     </div>`
+  }).join('')
+}
+
+// ── Objectives Overlay Panel ─────────────────────────────────────────────────
+
+function renderObjectivesPanel(state: WorldState): void {
+  const objs = state.objectives ?? []
+  let el = document.getElementById('objectives-panel')
+  if (!el) {
+    el = document.createElement('div')
+    el.id = 'objectives-panel'
+    el.style.cssText = `
+      position: fixed; top: 48px; right: 8px; z-index: 90;
+      display: flex; flex-direction: column; gap: 4px;
+      pointer-events: none;
+    `
+    document.body.appendChild(el)
+  }
+
+  if (objs.length === 0) { el.innerHTML = ''; return }
+
+  // Only show active (not completed/failed) objectives in the overlay, plus recently completed
+  const active = objs.filter(o => !o.completed && !o.failed)
+  const recentDone = objs.filter(o => (o.completed || o.failed) && (state.day - o.deadline_day < 3))
+  const display = [...active, ...recentDone]
+
+  if (display.length === 0) { el.innerHTML = ''; return }
+
+  el.innerHTML = display.map(obj => {
+    if (obj.completed) return `<div style="background:#1a3a1a;border:1px solid #2d6a2d;border-radius:4px;padding:4px 8px;font-size:11px;color:#6fcf6f">✓ ${escapeHtml(obj.label)}</div>`
+    if (obj.failed)    return `<div style="background:#3a1a1a;border:1px solid #6a2d2d;border-radius:4px;padding:4px 8px;font-size:11px;color:#cf6f6f">✗ ${escapeHtml(obj.label)}</div>`
+
+    const progress = obj.type === 'stat_above' || obj.type === 'stat_below'
+      ? Math.min(100, Math.round((state.macro[obj.stat] as number) / obj.target * 100))
+      : obj.duration_days > 0
+        ? Math.round(obj.progress_days / obj.duration_days * 100)
+        : 0
+
+    const daysLeft = obj.deadline_day - state.day
+    return `
+      <div style="background:#1a2030;border:1px solid #334;border-radius:4px;padding:4px 8px;font-size:11px;color:#aab">
+        <div style="margin-bottom:2px">${escapeHtml(obj.label)} <span style="color:#667;float:right">${daysLeft}d left</span></div>
+        <div style="background:#222;border-radius:2px;height:4px;overflow:hidden">
+          <div style="background:#4488cc;height:100%;width:${progress}%;transition:width 0.3s"></div>
+        </div>
+      </div>
+    `
   }).join('')
 }
 
@@ -2118,6 +2198,7 @@ function startSimLoop() {
       _lastSimDay = currentDay
       updateRumors()
       updateEconomicsPanel()
+      renderObjectivesPanel(world)
       if ((localStorage.getItem(UI_DASHBOARD_TAB_KEY) ?? 'demographics') === 'goals' && !dashboardPanel?.classList.contains('hidden')) renderGoalsPanel()
       flushConsequences()
       checkStatDeltas(world.macro)
