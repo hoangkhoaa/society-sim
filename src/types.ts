@@ -409,6 +409,21 @@ export interface Rumor {
   reach: number               // how many NPCs have been exposed
   born_tick: number
   expires_tick: number
+  planted_by_player?: boolean  // true = injected via God Agent
+  suppressed?: boolean         // true = censorship caught it before spreading
+}
+
+// ── Cultural Scar ─────────────────────────────────────────────────────────
+/** A collective trauma left by a major crisis — permanently shifts NPC worldviews */
+export interface CulturalScar {
+  id: string
+  type: 'famine' | 'epidemic' | 'collapse' | 'war' | 'massacre'
+  year: number
+  day: number
+  label: string            // e.g. "The Great Famine of Year 3"
+  severity: number         // 0–1, how bad it was
+  survivors: number        // how many NPCs were alive when it ended
+  worldview_effect: Partial<Worldview>  // permanent drift applied to survivors
 }
 
 // ── History Milestone ──────────────────────────────────────────────────────
@@ -494,6 +509,8 @@ export interface Institution {
   last_decided_tick: number
   decide_interval: number
   force_decide: boolean
+  corruption_level: number       // 0–1, accumulates over time
+  last_purge_tick: number        // tick of last player-initiated purge (-1 = never)
 }
 
 // ── Communication ──────────────────────────────────────────────────────────
@@ -640,6 +657,7 @@ export interface WorldState {
   // History & rumor
   rumors: Rumor[]
   milestones: HistoryMilestone[]
+  cultural_scars: CulturalScar[]
   /** Permanent formula / parameter breakthroughs — government reforms, science, god agent. */
   breakthrough_log: BreakthroughRecord[]
   births_total: number
@@ -783,6 +801,7 @@ export interface WorldDelta {
     subject: 'government' | 'guard' | 'market' | 'community'
     effect: 'trust_down' | 'trust_up' | 'fear_up' | 'grievance_up'
     duration_days?: number
+    planted_by_player?: boolean  // true = injected by player via God Agent chat
   }
   trigger_referendum?: {
     field: 'safety_net' | 'individual_rights_floor' | 'market_freedom' | 'state_power'

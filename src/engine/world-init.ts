@@ -135,6 +135,7 @@ export async function initWorld(constitution: Constitution, npcCount: number = D
     quarantine_zones: [],
     rumors: [],
     milestones: [],
+    cultural_scars: [],
     breakthrough_log: [],
     births_total: 0,
     immigration_total: 0,

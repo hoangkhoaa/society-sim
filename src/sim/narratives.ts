@@ -323,6 +323,24 @@ const STORIES: Story[] = [
     },
   },
 
+  {
+    id: 'scar_memory',
+    minTicks: 1440,
+    severity: 'minor',
+    check(state) {
+      if (!state.cultural_scars || state.cultural_scars.length === 0) return null
+      // Pick a random scar
+      const scar = state.cultural_scars[Math.floor(Math.random() * state.cultural_scars.length)]
+      const elder = state.npcs.find(n =>
+        n.lifecycle.is_alive && n.age > 45,
+      )
+      if (!elder) return null
+      const yearsAgo = state.year - scar.year
+      if (yearsAgo < 1) return null
+      return `${elder.name} (${elder.occupation}), who survived ${scar.label}, still carries the weight of those ${yearsAgo > 1 ? `${yearsAgo} years` : 'days'}. The memory never fully fades.`
+    },
+  },
+
 ]
 
 // ── Main export ───────────────────────────────────────────────────────────────
@@ -430,6 +448,17 @@ const RUMOR_TEMPLATES: Array<{
       }
     },
   },
+  {
+    condition: s => (s.cultural_scars?.length ?? 0) > 0 && s.macro.food < 40,
+    generate: s => {
+      const scar = s.cultural_scars[s.cultural_scars.length - 1]
+      return {
+        content: `Elders warn: "This feels like before ${scar.label}." Fear spreads through the markets.`,
+        subject: 'community',
+        effect: 'fear_up',
+      }
+    },
+  },
 ]
 
 let lastRumorTick = -9999
@@ -502,6 +531,16 @@ export function checkRumors(state: WorldState): void {
             npc.grievance = clamp(npc.grievance + 0.4, 0, 100)
             break
         }
+      }
+
+      // Fire a special feed entry the exact tick a player-planted rumor first crosses the threshold
+      if (rumor.planted_by_player && !rumor.suppressed && rumor.reach === threshold) {
+        addFeedRaw(
+          `A rumor seeded by outside forces has now reached ${rumor.reach} people: "${rumor.content.substring(0, 80)}..."`,
+          'warning',
+          state.year,
+          state.day,
+        )
       }
     }
   }

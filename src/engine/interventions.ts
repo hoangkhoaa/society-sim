@@ -176,6 +176,7 @@ export function applyWorldDelta(state: WorldState, delta: WorldDelta): void {
       reach: 0,
       born_tick: state.tick,
       expires_tick: state.tick + (r.duration_days ?? 15) * 24,
+      ...(r.planted_by_player ? { planted_by_player: true } : {}),
     })
   }
   if (delta.trigger_referendum && state.referendum === null) {

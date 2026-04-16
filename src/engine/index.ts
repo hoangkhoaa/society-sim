@@ -32,6 +32,7 @@ import { checkShadowEconomy, checkSyndicates, checkGuardPatrol } from './crime'
 import { checkEpidemicIntelligence, updatePublicHealth } from './health'
 import { runElection, updateRunStats } from './elections'
 import { MIN_NPC_COUNT, DEFAULT_NPC_COUNT, initWorld } from './world-init'
+import { tickCorruption } from '../sim/government'
 
 export {
   MIN_NPC_COUNT, DEFAULT_NPC_COUNT, initWorld,
@@ -40,6 +41,100 @@ export {
   recordFormulaBreakthrough, GOD_AGENT_FORMULA_OVERRIDE_TITLE,
   computeMacroStats, getIncomeTaxRate,
   updatePublicHealth, runElection, updateRunStats,
+}
+
+// ── Cultural Scar Detection ──────────────────────────────────────────────────
+
+let _prevFood = 100
+let _hadEpidemic = false
+let _prevCollapsePhase: string = 'normal'
+
+function checkCrisisEnd(state: WorldState): void {
+  if (!state.cultural_scars) state.cultural_scars = []
+
+  const living = state.npcs.filter(n => n.lifecycle.is_alive)
+  const survivors = living.length
+
+  function clampWv(v: number): number { return Math.min(1, Math.max(0, v)) }
+
+  function applyScarWorldview(effect: import('../types').CulturalScar['worldview_effect']): void {
+    for (const npc of living) {
+      if (effect.authority_trust !== undefined)
+        npc.worldview.authority_trust = clampWv(npc.worldview.authority_trust + effect.authority_trust)
+      if (effect.risk_tolerance !== undefined)
+        npc.worldview.risk_tolerance = clampWv(npc.worldview.risk_tolerance + effect.risk_tolerance)
+      if (effect.collectivism !== undefined)
+        npc.worldview.collectivism = clampWv(npc.worldview.collectivism + effect.collectivism)
+    }
+  }
+
+  // Detect famine end: food was < 15 last tick, now >= 25
+  const curFood = state.macro.food
+  if (_prevFood < 15 && curFood >= 25) {
+    const severity = Math.max(0, Math.min(1, 1 - _prevFood / 15))
+    const label = `The Famine of Year ${state.year}`
+    const effect = { authority_trust: 0, risk_tolerance: -0.06 }
+    const scar: import('../types').CulturalScar = {
+      id: crypto.randomUUID(),
+      type: 'famine',
+      year: state.year,
+      day: state.day,
+      label,
+      severity,
+      survivors,
+      worldview_effect: effect,
+    }
+    state.cultural_scars.push(scar)
+    applyScarWorldview(effect)
+    // Apply fear separately (it's a 0-100 need, not worldview)
+    for (const npc of living) npc.fear = Math.min(100, npc.fear + 8)
+    addChronicle(`Year ${state.year}: ${label} passes into collective memory. The survivors carry the weight of hunger for years to come.`, state.year, state.day, 'major')
+  }
+
+  // Detect epidemic end: had epidemic last tick, no longer active
+  const hasEpidemic = state.active_events.some(e => e.type === 'epidemic')
+  if (_hadEpidemic && !hasEpidemic) {
+    const label = `The Epidemic of Year ${state.year}`
+    const effect = { authority_trust: 0.04, risk_tolerance: 0 }
+    const scar: import('../types').CulturalScar = {
+      id: crypto.randomUUID(),
+      type: 'epidemic',
+      year: state.year,
+      day: state.day,
+      label,
+      severity: 0.6,
+      survivors,
+      worldview_effect: effect,
+    }
+    state.cultural_scars.push(scar)
+    applyScarWorldview(effect)
+    for (const npc of living) npc.fear = Math.min(100, npc.fear + 10)
+    addChronicle(`Year ${state.year}: ${label} passes into collective memory. Fear of disease lingers in every cough and crowd.`, state.year, state.day, 'major')
+  }
+
+  // Detect collapse recovery: collapse_phase was 'collapse', now 'critical'
+  if (_prevCollapsePhase === 'collapse' && state.collapse_phase === 'critical') {
+    const label = `The Collapse of Year ${state.year}`
+    const effect = { authority_trust: -0.10, risk_tolerance: -0.08 }
+    const scar: import('../types').CulturalScar = {
+      id: crypto.randomUUID(),
+      type: 'collapse',
+      year: state.year,
+      day: state.day,
+      label,
+      severity: 0.85,
+      survivors,
+      worldview_effect: effect,
+    }
+    state.cultural_scars.push(scar)
+    applyScarWorldview(effect)
+    addChronicle(`Year ${state.year}: ${label} passes into collective memory. Trust in authority lies shattered; the people remember.`, state.year, state.day, 'major')
+  }
+
+  // Update prev state for next tick
+  _prevFood = curFood
+  _hadEpidemic = hasEpidemic
+  _prevCollapsePhase = state.collapse_phase
 }
 
 // ── Tick ────────────────────────────────────────────────────────────────────
@@ -158,9 +253,11 @@ export function tick(state: WorldState): void {
     checkNarrativeEvents(state)
     checkRumors(state)
     checkMilestones(state)
+    checkCrisisEnd(state)
     checkImmigration(state)
     checkWealthMobility(state)
     checkGuardPatrol(state)
+    tickCorruption(state)
 
     // Network maintenance: prune dead links daily, organic tie formation daily
     maintainNetworkLinks(state)

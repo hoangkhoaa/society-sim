@@ -1,7 +1,7 @@
 import { callAI, extractJSON } from './provider'
 import type {
   AIConfig, Constitution, GodResponse, ConversationMessage,
-  WorldState, NPC,
+  WorldState, NPC, Rumor,
 } from '../types'
 import { getLang } from '../i18n'
 import {
@@ -15,6 +15,7 @@ import {
 import { getRegimeProfile } from '../sim/regime-config'
 import { isMarxistPresetEnabled } from '../build-features'
 import { GOD_CONSEQUENCE_PREDICTION_SYSTEM_PROMPT } from '../constants/god-consequence-prompt'
+import { addChronicle } from '../ui/feed'
 
 // ── Conversation history (persists for the session) ────────────────────────
 
@@ -411,6 +412,121 @@ export async function generateConstitutionText(
   return callAI(config, system, prompt, 256)
 }
 
+// ── Corruption Purge Detection ────────────────────────────────────────────
+// Detects player intent to purge/investigate an institution for corruption and
+// handles it locally without consuming an LLM call. Returns a GodResponse if
+// the message is a purge command, or null to fall through to the LLM.
+
+const PURGE_KEYWORDS = /\b(purge|clean\s*up|investigate|fire\s*officials?|anti[-\s]?corruption|root\s*out\s*corruption|stamp\s*out\s*corruption)\b/i
+const INSTITUTION_MATCH: Array<{ regex: RegExp; id: string; label: string }> = [
+  { regex: /\bgovernment\b|\bstate\b|\bministr/i,   id: 'government', label: 'Government'  },
+  { regex: /\bmarket\b|\bmerchant\b|\btrade\b/i,     id: 'market',     label: 'Market'      },
+  { regex: /\bguard\b|\bpolice\b|\bmilitar\b|\bforce\b/i, id: 'guard', label: 'Guard'       },
+  { regex: /\boppositi/i,                              id: 'opposition', label: 'Opposition'  },
+  { regex: /\bcommunity\b|\bcommunit/i,                id: 'community',  label: 'Community'   },
+]
+
+function tryPurgeInstitution(
+  userMessage: string,
+  state: WorldState,
+): GodResponse | null {
+  if (!PURGE_KEYWORDS.test(userMessage)) return null
+
+  // Identify which institution to purge
+  let instId: string | null = null
+  for (const entry of INSTITUTION_MATCH) {
+    if (entry.regex.test(userMessage)) {
+      instId = entry.id
+      break
+    }
+  }
+  if (!instId) return null   // no institution named — fall through to LLM
+
+  const inst = state.institutions.find(i => i.id === instId)
+  if (!inst) return null
+
+  // Apply purge effects directly
+  inst.corruption_level = Math.max(inst.corruption_level - 0.4, 0)
+  inst.last_purge_tick  = state.tick
+  inst.legitimacy       = Math.min(inst.legitimacy + 0.05, 1)
+  inst.resources        = Math.max(inst.resources - inst.resources * 0.1, 0)
+
+  const chronicleText = `[Player] Anti-corruption purge launched against ${inst.name}. Officials removed; operations disrupted.`
+  addChronicle(chronicleText, state.year, state.day, 'major')
+
+  const answer = `Purge initiated. ${inst.name}'s corruption reduced, but operations will be disrupted for several days.`
+
+  return {
+    type: 'intervention',
+    event: null,
+    answer,
+    requires_confirm: false,
+  }
+}
+
+// ── Rumor Planting Detection ───────────────────────────────────────────────
+// Detects player intent to plant a rumor from the God Agent chat and handles
+// it locally without consuming an LLM call. Returns a GodResponse if the
+// message is a rumor-planting command, or null to fall through to the LLM.
+
+const RUMOR_KEYWORDS = /\b(rumor|rumour|spread|plant|whisper|leak)\b/i
+
+function tryPlantRumor(
+  userMessage: string,
+  state: WorldState,
+): GodResponse | null {
+  if (!RUMOR_KEYWORDS.test(userMessage)) return null
+
+  // Parse subject from message
+  let subject: Rumor['subject'] = 'community'
+  if (/\bgovernment\b|\bstate\b|\bauthorit/i.test(userMessage)) subject = 'government'
+  else if (/\bguard\b|\bsoldier\b|\bpolice\b|\bmilitar/i.test(userMessage)) subject = 'guard'
+  else if (/\bmerchant\b|\bmarket\b|\btrade\b|\bpric/i.test(userMessage)) subject = 'market'
+
+  // Parse effect from message
+  let effect: Rumor['effect'] = 'fear_up'
+  if (/\bcorrupt\b|\bbetra\b|\btrust\b|\blie\b|\blied\b|\bdishonest\b/i.test(userMessage)) effect = 'trust_down'
+  else if (/\binequal\b|\brich\b|\bmoney\b|\bwealth\b|\bgreed\b|\bhoarding\b|\bpric/i.test(userMessage)) effect = 'grievance_up'
+  else if (/\bfear\b|\bdanger\b|\bthreat\b|\battack\b|\bkill\b|\bscary\b/i.test(userMessage)) effect = 'fear_up'
+
+  // Extract the rumor content: strip leading verb patterns and use remainder
+  const contentMatch = userMessage.match(
+    /(?:spread(?:\s+a)?\s+rumor\s+(?:that\s+)?|plant(?:\s+a)?\s+rumor[:\s]+(?:that\s+)?|whisper\s+(?:that\s+)?|leak\s+(?:that\s+)?|rumor:\s*)(.+)/i,
+  )
+  const content = contentMatch
+    ? contentMatch[1].trim()
+    : userMessage.replace(/\b(rumor|spread|plant|whisper|leak)\b/gi, '').trim()
+
+  // Check censorship — suppressed rumors never reach the population
+  const restrictions = getRegimeProfile(state.constitution).simRestrictions
+  if (Math.random() < restrictions.censorship_prob) {
+    return {
+      type: 'answer',
+      event: null,
+      answer: 'Your rumor was intercepted by authorities before it could spread.',
+      requires_confirm: false,
+    }
+  }
+
+  const answer = `Rumor planted: "${content.substring(0, 100)}" — it will spread through info networks over the coming days.`
+
+  return {
+    type: 'intervention',
+    event: null,
+    answer,
+    requires_confirm: false,
+    world_delta: {
+      seed_rumor: {
+        content,
+        subject,
+        effect,
+        duration_days: 20,
+        planted_by_player: true,
+      },
+    },
+  }
+}
+
 // ── In-game chat ───────────────────────────────────────────────────────────
 
 export async function handlePlayerChat(
@@ -418,6 +534,22 @@ export async function handlePlayerChat(
   state: WorldState,
   config: AIConfig,
 ): Promise<GodResponse> {
+  // Fast-path: detect purge commands locally without an LLM call.
+  const purgeResponse = tryPurgeInstitution(userMessage, state)
+  if (purgeResponse) {
+    inGameHistory.push({ user: userMessage, answer: purgeResponse.answer })
+    if (inGameHistory.length > 20) inGameHistory.splice(0, 1)
+    return purgeResponse
+  }
+
+  // Fast-path: detect rumor-planting commands locally without an LLM call.
+  const rumorResponse = tryPlantRumor(userMessage, state)
+  if (rumorResponse) {
+    inGameHistory.push({ user: userMessage, answer: rumorResponse.answer })
+    if (inGameHistory.length > 20) inGameHistory.splice(0, 1)
+    return rumorResponse
+  }
+
   const context = buildWorldContext(state, config)
 
   // Include recent in-game conversation turns for context.

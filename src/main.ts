@@ -2,7 +2,7 @@ import './css/main.css'
 import type { AIConfig, AIProvider, Constitution, NPC, WorldState } from './types'
 import { setupGreeting, setupChat, applyPreset, handlePlayerChat, resetInGameHistory, predictConsequences, generateConstitutionText, scheduleBackgroundThoughts } from './ai/god-agent'
 import { listAvailableModels, PROVIDER_MODELS, getAIUsage, getRemainingRPM, initKeyRing } from './ai/provider'
-import { addFeedRaw, addFeedThinking, setFeedFilter, setChronicleFilter, refreshChronicleTimestamps, addBreakthroughToLog } from './ui/feed'
+import { addFeedRaw, addFeedThinking, setFeedFilter, setChronicleFilter, refreshChronicleTimestamps, addBreakthroughToLog, addChronicle } from './ui/feed'
 import { showConfirm, showInfo, showPolicyChoice, type PolicyDisplayCard } from './ui/modal'
 import { initWorld, tick, spawnEvent, applyInterventions, applyInstantEventDeaths, getIncomeTaxRate, MIN_NPC_COUNT, DEFAULT_NPC_COUNT, applyConstitutionPatch, applyWorldDelta, applyInstitutionDeltas, recordFormulaBreakthrough, GOD_AGENT_FORMULA_OVERRIDE_TITLE } from './engine'
 import {
@@ -2788,7 +2788,12 @@ function applySideChannels(response: Awaited<ReturnType<typeof handlePlayerChat>
     if (wd.tax_pool_delta)             parts.push(`treasury ${wd.tax_pool_delta > 0 ? '+' : ''}${Math.round(wd.tax_pool_delta)}`)
     if (wd.quarantine_add?.length)     parts.push(`quarantine added: ${wd.quarantine_add.join(', ')}`)
     if (wd.quarantine_remove?.length)  parts.push(`quarantine lifted: ${wd.quarantine_remove.join(', ')}`)
-    if (wd.seed_rumor)                 parts.push(`rumor seeded`)
+    if (wd.seed_rumor) {
+      parts.push(`rumor seeded`)
+      if (wd.seed_rumor.planted_by_player) {
+        addChronicle(`🗣️ [Player] ${wd.seed_rumor.content}`, world.year, world.day, 'minor')
+      }
+    }
     if (wd.trigger_referendum) {
       const proposal = wd.trigger_referendum.proposal_text
       addFeedRaw(tf('referendum.triggered', { proposal }) as string, 'political', world.year, world.day)

@@ -144,6 +144,8 @@ export function initInstitutions(c: Constitution): Institution[] {
     last_decided_tick: 0,
     decide_interval: 720,   // 30 sim-days
     force_decide: false,
+    corruption_level: 0,
+    last_purge_tick: -1,
   })
 
   return [

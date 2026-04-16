@@ -904,3 +904,25 @@ export async function runGovernmentCycle(
     _governmentBusy = false
   }
 }
+
+// ── Corruption Drift ──────────────────────────────────────────────────────────
+// Called every sim-day. Each institution slowly accumulates corruption based on
+// inequality pressure, state power (authoritarian proxy), and market freedom.
+// High corruption gradually erodes legitimacy.
+
+export function tickCorruption(state: WorldState): void {
+  for (const inst of state.institutions) {
+    // Drift rate: 0.0002/tick baseline
+    // Higher under: high inequality (gini > 0.5), high state_power (authoritarian)
+    const giniPressure = state.macro.gini > 0.5 ? (state.macro.gini - 0.5) * 0.0004 : 0
+    // Use state_power as authoritarian proxy (no press_freedom in Constitution)
+    const authorityMult = 1 + state.constitution.state_power * 0.5
+    const drift = (0.0002 + giniPressure) * authorityMult
+    inst.corruption_level = Math.min(inst.corruption_level + drift, 1)
+
+    // Corruption erodes legitimacy slowly
+    if (inst.corruption_level > 0.3) {
+      inst.legitimacy = Math.max(inst.legitimacy - 0.0001 * inst.corruption_level, 0)
+    }
+  }
+}
