@@ -1,5 +1,20 @@
 # Society Sim
+---
+A complex societal simulation built for the [Gamedev.js Jam 2026](https://itch.io/jam/gamedevjs-2026). The theme for this year's jam is **"Machines"**.
 
+### ⚖️ Development & Fair Play
+I want to be transparent about the timeline of this project. I began working on the core mechanics of this simulation **one week before the Jam officially started**. 
+
+However, since the announced theme "Machines" aligns perfectly with the systemic nature of my project, I decided to enter the competition. To maintain a level playing field and respect the spirit of the jam, **I am submitting this game one week before the final deadline**. This ensures that the total active development period remains within the fair 13-day window allocated to all participants.
+
+### ⚙️ The "Machine" Interpretation
+In this game, the concept of a **"Machine"** is interpreted as a **Social Engine**. 
+
+* **Society as a Mechanism:** Instead of literal gears, every agent and building functions as a logic gate or a component in a massive, automated social apparatus.
+* **Technocratic Systems:** The world is structured into specialized zones—Industrial, Technocratic, and Feudal—where resource flows and agent behaviors are governed by rigid, machine-like rules.
+* **Emergent Logic:** Much like a clockwork device, small individual actions trigger large-scale systemic shifts, turning the entire map into a living, breathing motherboard.
+
+---
 <div align="center">
 
 [![Live Demo](https://img.shields.io/badge/▶%20Play%20Live-GitHub%20Pages-4A90E2?style=for-the-badge&logo=github)](https://hoangkhoaa.github.io/society-sim/)
