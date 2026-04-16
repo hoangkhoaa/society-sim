@@ -4,7 +4,7 @@ import { setupGreeting, setupChat, applyPreset, handlePlayerChat, resetInGameHis
 import { listAvailableModels, PROVIDER_MODELS, getAIUsage, getRemainingRPM, initKeyRing } from './ai/provider'
 import { addFeedRaw, addFeedThinking, setFeedFilter, setChronicleFilter, refreshChronicleTimestamps, addBreakthroughToLog, addChronicle } from './ui/feed'
 import { showConfirm, showInfo, showPolicyChoice, type PolicyDisplayCard } from './ui/modal'
-import { initWorld, tick, spawnEvent, applyInterventions, applyInstantEventDeaths, getIncomeTaxRate, MIN_NPC_COUNT, DEFAULT_NPC_COUNT, applyConstitutionPatch, applyWorldDelta, applyInstitutionDeltas, recordFormulaBreakthrough, GOD_AGENT_FORMULA_OVERRIDE_TITLE } from './engine'
+import { initWorld, tick, spawnEvent, applyInterventions, applyInstantEventDeaths, getIncomeTaxRate, MIN_NPC_COUNT, DEFAULT_NPC_COUNT, applyConstitutionPatch, applyWorldDelta, applyInstitutionDeltas, recordFormulaBreakthrough, GOD_AGENT_FORMULA_OVERRIDE_TITLE, applyCharismaticChoice } from './engine'
 import {
   setLang,
   t,
@@ -2008,6 +2008,79 @@ async function triggerGovernment() {
 btnGov.addEventListener('click', () => { void triggerGovernment() })
 document.getElementById('btn-ref-details')!.addEventListener('click', openReferendumDetails)
 
+// ── Charismatic NPC Choice Modal ──────────────────────────────────────────
+
+let _charismaticModalShown = false
+
+function checkAndShowCharismaticChoiceModal(state: WorldState): void {
+  if (!state.pending_charismatic_choice) {
+    _charismaticModalShown = false
+    return
+  }
+  if (_charismaticModalShown) return
+  // Don't stack on top of another modal
+  if (!document.getElementById('modal-overlay')!.classList.contains('hidden')) return
+  _charismaticModalShown = true
+
+  const { npc_name, npc_role, npc_zone } = state.pending_charismatic_choice
+
+  const overlay = document.getElementById('modal-overlay')!
+  const modalBox = document.getElementById('modal-box')!
+  const modalTitle = document.getElementById('modal-title')!
+  const modalBody = document.getElementById('modal-body')!
+  const modalActions = document.getElementById('modal-actions')!
+  const btnConfirm = document.getElementById('modal-confirm')!
+  const btnCancel = document.getElementById('modal-cancel')!
+
+  modalTitle.textContent = '⭐ A Rising Figure'
+  modalBody.innerHTML = `
+    <p><strong>${npc_name}</strong> (${npc_role}, ${npc_zone}) has risen to extraordinary influence.<br>
+    The people look to them for guidance. What will you do?</p>
+  `
+
+  // Replace default 2-button layout with 3-button layout
+  modalActions.style.display = 'none'
+  btnConfirm.style.display = 'none'
+  btnCancel.style.display = 'none'
+
+  const customActions = document.createElement('div')
+  customActions.id = 'charismatic-actions'
+  customActions.style.cssText = 'display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap'
+  customActions.innerHTML = `
+    <button id="btn-champion" class="btn-primary">⭐ Champion</button>
+    <button id="btn-suppress" class="btn-ghost" style="color:#f87171">🔒 Suppress</button>
+    <button id="btn-ignore" class="btn-ghost">👁 Ignore</button>
+  `
+  modalBox.appendChild(customActions)
+  overlay.classList.remove('hidden')
+
+  const wasPaused = paused
+  setPaused(true)
+
+  function cleanup() {
+    overlay.classList.add('hidden')
+    customActions.remove()
+    modalActions.style.display = ''
+    btnConfirm.style.display = ''
+    btnCancel.style.display = ''
+    _charismaticModalShown = false
+    if (!wasPaused) setPaused(false)
+  }
+
+  document.getElementById('btn-champion')!.onclick = () => {
+    cleanup()
+    applyCharismaticChoice(state, 'champion')
+  }
+  document.getElementById('btn-suppress')!.onclick = () => {
+    cleanup()
+    applyCharismaticChoice(state, 'suppress')
+  }
+  document.getElementById('btn-ignore')!.onclick = () => {
+    cleanup()
+    applyCharismaticChoice(state, 'ignore')
+  }
+}
+
 // 1 tick = 1 sim-hour; 1000ms interval = 1 tick/second at 1× → 1 real second = 1 sim-hour
 
 function setPaused(value: boolean) {
@@ -2061,6 +2134,8 @@ function startSimLoop() {
         const cardDef = buildCrisisCards(world)
         if (cardDef) showCrisisCard(cardDef)
       }
+      // Charismatic NPC choice modal (once per trigger, pauses sim for player input)
+      checkAndShowCharismaticChoiceModal(world)
       // Reduced-tax drain
       if (qaReducedTaxDays.active && world.day <= qaReducedTaxDays.end_day) {
         world.tax_pool = Math.max(0, world.tax_pool - 50)

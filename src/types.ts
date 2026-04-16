@@ -362,6 +362,8 @@ export interface Faction {
   power: number               // sum of member influence_scores
   founded_tick: number
   last_action_tick: number
+  rival_faction_id?: number      // id of primary opposing faction (set when conflict detected)
+  conflict_score: number         // 0–100, escalates over time when rivals coexist
 }
 
 // ── Organized Crime Syndicate ─────────────────────────────────────────────
@@ -616,6 +618,16 @@ export interface Objective {
   failed: boolean
 }
 
+// ── Charismatic NPC Choice ────────────────────────────────────────────────
+export interface CharismaticChoice {
+  npc_id: number
+  npc_name: string
+  npc_role: string
+  npc_zone: string
+  triggered_day: number
+  expires_day: number          // auto-resolves to 'ignore' after 5 days
+}
+
 // ── World State ────────────────────────────────────────────────────────────
 
 export interface PublicHealth {
@@ -646,6 +658,8 @@ export interface WorldState {
   crisis_pending: boolean
 
   // Extended systems
+  civil_war_phase: 'none' | 'escalating' | 'active' | 'resolved'
+  civil_war_start_day?: number
   factions: Faction[]
   syndicates: Syndicate[]
   research_points: number
@@ -662,6 +676,7 @@ export interface WorldState {
   breakthrough_log: BreakthroughRecord[]
   births_total: number
   immigration_total: number
+  pending_charismatic_choice: CharismaticChoice | null
 
   // Economy
   tax_pool: number              // government treasury — collected from income tax, spent by regime

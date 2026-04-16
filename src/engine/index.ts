@@ -2,7 +2,7 @@ import type { WorldState, Objective } from '../types'
 import type { IndividualEvent, TickEventFlags } from '../sim/npc'
 import { tickNPC } from '../sim/npc'
 import { checkEmergencyRoleReassignment, checkAdaptiveRoleSwitching } from '../sim/roles'
-import { checkFactions } from '../sim/factions'
+import { checkFactions, checkFactionConflict } from '../sim/factions'
 import { accumulateResearch, checkDiscoveries } from '../sim/tech'
 import { checkNarrativeEvents, checkRumors, checkMilestones } from '../sim/narratives'
 import { addChronicle } from '../ui/feed'
@@ -41,6 +41,90 @@ export {
   recordFormulaBreakthrough, GOD_AGENT_FORMULA_OVERRIDE_TITLE,
   computeMacroStats, getIncomeTaxRate,
   updatePublicHealth, runElection, updateRunStats,
+}
+
+// ── Charismatic NPC Choice ───────────────────────────────────────────────────
+
+// Track which NPC IDs have already triggered a choice event (module-level, lives for the session)
+const _triggeredCharismaticNPCs = new Set<number>()
+
+function checkCharismaticNPC(state: WorldState): void {
+  // Skip if already pending a choice
+  if (state.pending_charismatic_choice !== null) {
+    // Auto-resolve expired choices to 'ignore'
+    if (state.day >= state.pending_charismatic_choice.expires_day) {
+      applyCharismaticChoice(state, 'ignore')
+    }
+    return
+  }
+
+  const candidate = state.npcs.find(n =>
+    n.lifecycle.is_alive &&
+    n.legendary &&
+    n.influence_score > 0.75 &&
+    !_triggeredCharismaticNPCs.has(n.id)
+  )
+  if (!candidate) return
+
+  _triggeredCharismaticNPCs.add(candidate.id)
+  state.pending_charismatic_choice = {
+    npc_id: candidate.id,
+    npc_name: candidate.name,
+    npc_role: candidate.occupation,
+    npc_zone: candidate.zone,
+    triggered_day: state.day,
+    expires_day: state.day + 5,
+  }
+
+  addChronicle(
+    `A new figure rises: ${candidate.name} (${candidate.occupation}) has gained extraordinary influence in ${candidate.zone}. The people look to them for guidance.`,
+    state.year, state.day, 'major'
+  )
+}
+
+export function applyCharismaticChoice(state: WorldState, choice: 'champion' | 'suppress' | 'ignore'): void {
+  const pending = state.pending_charismatic_choice
+  if (!pending) return
+
+  const npc = state.npcs.find(n => n.id === pending.npc_id)
+  state.pending_charismatic_choice = null
+
+  if (choice === 'champion') {
+    // NPC becomes co-leader: massive influence boost, government loses some power
+    if (npc) {
+      npc.influence_score = Math.min(npc.influence_score + 0.2, 1)
+      npc.happiness = Math.min(npc.happiness + 30, 100)
+    }
+    const govt = state.institutions.find(i => i.id === 'government')
+    if (govt) govt.power = Math.max(govt.power - 0.1, 0)
+    // Trust boost among community in the same zone
+    for (const n of state.npcs) {
+      if (n.lifecycle.is_alive && n.zone === pending.npc_zone) {
+        n.trust_in.community.intention = Math.min(n.trust_in.community.intention + 0.05, 1)
+      }
+    }
+    addChronicle(`${pending.npc_name} has been championed by the people. Their influence now rivals the government.`, state.year, state.day, 'major')
+
+  } else if (choice === 'suppress') {
+    if (npc) {
+      npc.lifecycle.is_alive = false
+      npc.lifecycle.death_cause = 'violence'
+      npc.lifecycle.death_tick = state.tick
+    }
+    // Martyr effect: opposition surges, trust collapses
+    for (const n of state.npcs) {
+      if (!n.lifecycle.is_alive) continue
+      n.trust_in.government.intention = Math.max(n.trust_in.government.intention - 0.08, 0)
+      n.grievance = Math.min(n.grievance + 20, 100)
+    }
+    const opp = state.institutions.find(i => i.id === 'opposition')
+    if (opp) opp.power = Math.min(opp.power + 0.2, 1)
+    addChronicle(`${pending.npc_name} has been silenced by the authorities — but martyrdom may prove more powerful than the person.`, state.year, state.day, 'critical')
+
+  } else {
+    // ignore: emergent — NPC develops naturally, no intervention
+    addChronicle(`The rising influence of ${pending.npc_name} was left unchecked. Their story will unfold on its own terms.`, state.year, state.day, 'minor')
+  }
 }
 
 // ── Cultural Scar Detection ──────────────────────────────────────────────────
@@ -241,7 +325,9 @@ export function tick(state: WorldState): void {
     applyTheocracyEffect(state)
     applyCommuneEffect(state)
     checkLegendaryNPCs(state)
+    checkCharismaticNPC(state)
     checkFactions(state)
+    checkFactionConflict(state)
     accumulateResearch(state)
     checkDiscoveries(state)
     checkShadowEconomy(state)
