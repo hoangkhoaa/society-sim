@@ -912,7 +912,7 @@ export async function runGovernmentCycle(
 
 export function tickCorruption(state: WorldState): void {
   for (const inst of state.institutions) {
-    // Drift rate: 0.0002/tick baseline
+    // Drift rate: 0.0002/sim-day baseline
     // Higher under: high inequality (gini > 0.5), high state_power (authoritarian)
     const giniPressure = state.macro.gini > 0.5 ? (state.macro.gini - 0.5) * 0.0004 : 0
     // Use state_power as authoritarian proxy (no press_freedom in Constitution)

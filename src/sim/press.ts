@@ -442,10 +442,11 @@ export async function runPressCycle(
             r => r.id.startsWith(`corruption_${inst.id}`) && r.expires_tick > state.tick,
           )
           if (!alreadyScandalRumor) {
+            const rumorSubject: Rumor['subject'] = inst.id === 'opposition' ? 'community' : inst.id
             state.rumors.push({
               id: `corruption_${inst.id}_${state.tick}`,
               content: `Witnesses report officials from the ${inst.name} diverting public funds for personal enrichment.`,
-              subject: inst.id as 'government' | 'guard' | 'market' | 'community',
+              subject: rumorSubject,
               effect: 'trust_down',
               reach: 20,
               born_tick: state.tick,

@@ -24,6 +24,15 @@ import { getRegimeProfile } from './regime-config'
 
 const _cooldowns = new Map<string, number>()
 
+function escapeHtml(text: string): string {
+  return text
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
 function cooldown(id: string, minTicks: number, tick: number): boolean {
   return tick - (_cooldowns.get(id) ?? -99999) < minTicks
 }
@@ -337,7 +346,7 @@ const STORIES: Story[] = [
       if (!elder) return null
       const yearsAgo = state.year - scar.year
       if (yearsAgo < 1) return null
-      return `${elder.name} (${elder.occupation}), who survived ${scar.label}, still carries the weight of those ${yearsAgo > 1 ? `${yearsAgo} years` : 'days'}. The memory never fully fades.`
+      return `${elder.name} (${elder.occupation}), who survived ${scar.label}, still carries the weight of those ${yearsAgo === 1 ? '1 year' : `${yearsAgo} years`}. The memory never fully fades.`
     },
   },
 
@@ -506,6 +515,7 @@ export function checkRumors(state: WorldState): void {
       (n.dissonance_acc > 25 || n.influence_score > 0.55),
     )
     const leaderBonus = spreaders.filter(n => n.influence_score > 0.65).length * 0.6
+    const prevReach = rumor.reach
     const newReach  = Math.floor((spreaders.length * 0.08 + leaderBonus) * restrictions.info_spread_mult)
     rumor.reach = Math.min(rumor.reach + newReach, living.length)
 
@@ -534,9 +544,10 @@ export function checkRumors(state: WorldState): void {
       }
 
       // Fire a special feed entry the exact tick a player-planted rumor first crosses the threshold
-      if (rumor.planted_by_player && !rumor.suppressed && rumor.reach === threshold) {
+      if (rumor.planted_by_player && !rumor.suppressed && prevReach < threshold && rumor.reach >= threshold) {
+        const safePreview = escapeHtml(rumor.content.substring(0, 80))
         addFeedRaw(
-          `A rumor seeded by outside forces has now reached ${rumor.reach} people: "${rumor.content.substring(0, 80)}..."`,
+          `A rumor seeded by outside forces has now reached ${rumor.reach} people: "${safePreview}..."`,
           'warning',
           state.year,
           state.day,

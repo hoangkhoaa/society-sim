@@ -4,7 +4,7 @@ import { setupGreeting, setupChat, applyPreset, handlePlayerChat, resetInGameHis
 import { listAvailableModels, PROVIDER_MODELS, getAIUsage, getRemainingRPM, initKeyRing } from './ai/provider'
 import { addFeedRaw, addFeedThinking, setFeedFilter, setChronicleFilter, refreshChronicleTimestamps, addBreakthroughToLog, addChronicle } from './ui/feed'
 import { showConfirm, showInfo, showPolicyChoice, type PolicyDisplayCard } from './ui/modal'
-import { initWorld, tick, spawnEvent, applyInterventions, applyInstantEventDeaths, getIncomeTaxRate, MIN_NPC_COUNT, DEFAULT_NPC_COUNT, applyConstitutionPatch, applyWorldDelta, applyInstitutionDeltas, recordFormulaBreakthrough, GOD_AGENT_FORMULA_OVERRIDE_TITLE, applyCharismaticChoice } from './engine'
+import { initWorld, tick, spawnEvent, applyInterventions, applyInstantEventDeaths, getIncomeTaxRate, MIN_NPC_COUNT, DEFAULT_NPC_COUNT, applyConstitutionPatch, applyWorldDelta, applyInstitutionDeltas, recordFormulaBreakthrough, GOD_AGENT_FORMULA_OVERRIDE_TITLE, applyCharismaticChoice, resetEngineRuntimeState } from './engine'
 import {
   setLang,
   t,
@@ -652,6 +652,7 @@ async function startGame(constitution: Constitution) {
   resetNarrativeRuntimeState()
   resetPressRuntimeState()
   resetScienceRuntimeState()
+  resetEngineRuntimeState()
 
   // Show the game screen immediately so the user sees the UI rather than a frozen setup screen
   showScreen('screen-game')
@@ -1827,11 +1828,14 @@ function renderObjectivesPanel(state: WorldState): void {
     if (obj.completed) return `<div style="background:#1a3a1a;border:1px solid #2d6a2d;border-radius:4px;padding:4px 8px;font-size:11px;color:#6fcf6f">✓ ${escapeHtml(obj.label)}</div>`
     if (obj.failed)    return `<div style="background:#3a1a1a;border:1px solid #6a2d2d;border-radius:4px;padding:4px 8px;font-size:11px;color:#cf6f6f">✗ ${escapeHtml(obj.label)}</div>`
 
-    const progress = obj.type === 'stat_above' || obj.type === 'stat_below'
-      ? Math.min(100, Math.round((state.macro[obj.stat] as number) / obj.target * 100))
-      : obj.duration_days > 0
-        ? Math.round(obj.progress_days / obj.duration_days * 100)
-        : 0
+    const val = state.macro[obj.stat] as number
+    const progress = obj.type === 'stat_above'
+      ? Math.min(100, Math.max(0, Math.round(val / obj.target * 100)))
+      : obj.type === 'stat_below'
+        ? (val <= obj.target ? 100 : Math.max(0, Math.round(obj.target / Math.max(val, 1e-6) * 100)))
+        : obj.duration_days > 0
+          ? Math.round(obj.progress_days / obj.duration_days * 100)
+          : 0
 
     const daysLeft = obj.deadline_day - state.day
     return `
@@ -2113,10 +2117,15 @@ function checkAndShowCharismaticChoiceModal(state: WorldState): void {
   const btnCancel = document.getElementById('modal-cancel')!
 
   modalTitle.textContent = '⭐ A Rising Figure'
-  modalBody.innerHTML = `
-    <p><strong>${npc_name}</strong> (${npc_role}, ${npc_zone}) has risen to extraordinary influence.<br>
-    The people look to them for guidance. What will you do?</p>
-  `
+  modalBody.replaceChildren()
+  const bodyParagraph = document.createElement('p')
+  const npcNameStrong = document.createElement('strong')
+  npcNameStrong.textContent = npc_name
+  bodyParagraph.appendChild(npcNameStrong)
+  bodyParagraph.appendChild(document.createTextNode(` (${npc_role}, ${npc_zone}) has risen to extraordinary influence.`))
+  bodyParagraph.appendChild(document.createElement('br'))
+  bodyParagraph.appendChild(document.createTextNode('The people look to them for guidance. What will you do?'))
+  modalBody.appendChild(bodyParagraph)
 
   // Replace default 2-button layout with 3-button layout
   modalActions.style.display = 'none'
@@ -2947,7 +2956,7 @@ function applySideChannels(response: Awaited<ReturnType<typeof handlePlayerChat>
     if (wd.seed_rumor) {
       parts.push(`rumor seeded`)
       if (wd.seed_rumor.planted_by_player) {
-        addChronicle(`🗣️ [Player] ${wd.seed_rumor.content}`, world.year, world.day, 'minor')
+        addChronicle(`🗣️ [Player] ${escapeHtml(wd.seed_rumor.content)}`, world.year, world.day, 'minor')
       }
     }
     if (wd.trigger_referendum) {
@@ -3220,4 +3229,3 @@ chronicleResizer.addEventListener('pointerdown', (e: PointerEvent) => {
   window.addEventListener('pointermove', onMove)
   window.addEventListener('pointerup', onUp)
 })
-

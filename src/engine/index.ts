@@ -68,7 +68,7 @@ function checkCollapseFinale(state: WorldState): void {
 
 // ── Charismatic NPC Choice ───────────────────────────────────────────────────
 
-// Track which NPC IDs have already triggered a choice event (module-level, lives for the session)
+// Track which NPC IDs have already triggered a choice event.
 const _triggeredCharismaticNPCs = new Set<number>()
 
 function checkCharismaticNPC(state: WorldState): void {
@@ -155,6 +155,13 @@ export function applyCharismaticChoice(state: WorldState, choice: 'champion' | '
 let _prevFood = 100
 let _hadEpidemic = false
 let _prevCollapsePhase: string = 'normal'
+
+export function resetEngineRuntimeState(): void {
+  _triggeredCharismaticNPCs.clear()
+  _prevFood = 100
+  _hadEpidemic = false
+  _prevCollapsePhase = 'normal'
+}
 
 function checkCrisisEnd(state: WorldState): void {
   if (!state.cultural_scars) state.cultural_scars = []
@@ -536,7 +543,7 @@ function trackDynasties(state: WorldState): void {
 
   const living = state.npcs.filter(n => n.lifecycle.is_alive && n.wealth > 50)
 
-  // Build/update dynasties from existing lineages
+  // Build/update dynasties from founders and their direct living children.
   for (const npc of living) {
     if (npc.lifecycle.children_ids.length === 0) continue
 

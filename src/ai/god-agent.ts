@@ -470,6 +470,16 @@ function tryPurgeInstitution(
 // message is a rumor-planting command, or null to fall through to the LLM.
 
 const RUMOR_KEYWORDS = /\b(rumor|rumour|spread|plant|whisper|leak)\b/i
+const MAX_RUMOR_CONTENT_LENGTH = 280
+
+function sanitizeRumorContent(raw: string): string {
+  return raw
+    .replace(/[\u0000-\u001F\u007F]/g, ' ')
+    .replace(/[<>]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_RUMOR_CONTENT_LENGTH)
+}
 
 function tryPlantRumor(
   userMessage: string,
@@ -493,9 +503,18 @@ function tryPlantRumor(
   const contentMatch = userMessage.match(
     /(?:spread(?:\s+a)?\s+rumor\s+(?:that\s+)?|plant(?:\s+a)?\s+rumor[:\s]+(?:that\s+)?|whisper\s+(?:that\s+)?|leak\s+(?:that\s+)?|rumor:\s*)(.+)/i,
   )
-  const content = contentMatch
+  const rawContent = contentMatch
     ? contentMatch[1].trim()
     : userMessage.replace(/\b(rumor|spread|plant|whisper|leak)\b/gi, '').trim()
+  const content = sanitizeRumorContent(rawContent)
+  if (!content) {
+    return {
+      type: 'answer',
+      event: null,
+      answer: 'Please include the rumor text you want to spread.',
+      requires_confirm: false,
+    }
+  }
 
   // Check censorship — suppressed rumors never reach the population
   const restrictions = getRegimeProfile(state.constitution).simRestrictions

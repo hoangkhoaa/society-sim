@@ -624,9 +624,9 @@ export interface Dynasty {
   founder_id: number          // NPC id of first tracked ancestor
   founder_name: string
   current_head_id: number | null   // richest living member
-  member_ids: number[]         // all known descendants + founder
+  member_ids: number[]         // founder + currently tracked direct living children
   total_wealth: number         // sum of all living members' wealth
-  generation_depth: number     // how many generations tracked
+  generation_depth: number     // currently tracked depth (2 = founder + direct children)
   peak_wealth: number          // highest total_wealth ever
   founded_year: number
   oligarchy_warned: boolean    // true if oligarchy warning already fired

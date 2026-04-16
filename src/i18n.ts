@@ -169,6 +169,7 @@ const translations = {
     'econ.peak_gdp':    'Peak GDP',
     'econ.research':    'Research',
     'econ.discoveries': 'Discoveries',
+    'econ.dynasties':   'Dynasties',
     'econ.note_per_day': 'Note: values are aggregated per day',
     'econ.hospital_active': '🏥 Active',
     'econ.hospital_none': 'None (not funded)',
@@ -194,6 +195,7 @@ const translations = {
     'econ.tip_peak_gdp': 'Highest single-day GDP recorded in the current run.',
     'econ.tip_research': 'Current stock of research points from scholars and investments.',
     'econ.tip_discoveries': 'Number of technologies discovered so far.',
+    'econ.tip_dynasties': 'Leading family lines ranked by combined living wealth.',
 
     // Crisis banner + strike readiness feed
     'crisis.banner':           '⚠ CIVILIZATION IN CRISIS',
@@ -1097,6 +1099,7 @@ const translations = {
     'econ.peak_gdp':    'GDP đỉnh',
     'econ.research':    'Nghiên cứu',
     'econ.discoveries': 'Công nghệ',
+    'econ.dynasties':   'Dòng tộc',
     'econ.note_per_day': 'Ghi chú: số liệu tổng hợp theo ngày',
     'econ.hospital_active': '🏥 Đang hoạt động',
     'econ.hospital_none': 'Không có (chưa được cấp quỹ)',
@@ -1122,6 +1125,7 @@ const translations = {
     'econ.tip_peak_gdp': 'Mức GDP theo ngày cao nhất từng đạt được trong ván hiện tại.',
     'econ.tip_research': 'Điểm nghiên cứu hiện có từ học giả và các khoản đầu tư.',
     'econ.tip_discoveries': 'Số công nghệ đã được khám phá cho đến hiện tại.',
+    'econ.tip_dynasties': 'Các dòng tộc dẫn đầu được xếp theo tổng tài sản của thành viên còn sống.',
 
     // Crisis banner + strike readiness feed
     'crisis.banner':           '⚠ VĂN MINH ĐANG KHỦNG HOẢNG',

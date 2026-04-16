@@ -169,12 +169,12 @@ export function checkFactions(state: WorldState): void {
 // Opposition pairs: security ↔ freedom, equality ↔ growth
 
 export function checkFactionConflict(state: WorldState): void {
-  if (state.civil_war_phase === 'active') {
+  if (state.civil_war_phase === 'resolved') return
+  if (state.civil_war_phase === 'escalating' || state.civil_war_phase === 'active') {
     // Civil war tick: members attack opponents, unrest spreads
     tickCivilWar(state)
     return
   }
-  if (state.civil_war_phase === 'resolved') return
 
   const OPPONENT: Record<ValuePriority, ValuePriority> = {
     security: 'freedom',
@@ -234,6 +234,9 @@ export function checkFactionConflict(state: WorldState): void {
 }
 
 function startCivilWar(state: WorldState, factionA: Faction, factionB: Faction): void {
+  if (state.civil_war_phase === 'escalating' || state.civil_war_phase === 'active' || state.civil_war_phase === 'resolved') {
+    return
+  }
   state.civil_war_phase = 'escalating'
   state.civil_war_start_day = state.day
 
