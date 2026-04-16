@@ -127,6 +127,7 @@ export async function initWorld(constitution: Constitution, npcCount: number = D
     narrative_log: [],
     drift_score: 0,
     crisis_pending: false,
+    civil_war_phase: 'none',
     factions: [],
     syndicates: [],
     research_points: 0,
@@ -135,9 +136,11 @@ export async function initWorld(constitution: Constitution, npcCount: number = D
     quarantine_zones: [],
     rumors: [],
     milestones: [],
+    cultural_scars: [],
     breakthrough_log: [],
     births_total: 0,
     immigration_total: 0,
+    pending_charismatic_choice: null,
     active_strikes: [],
     tax_pool: initialTaxPool,
     money_supply: initialMoneySupply,
@@ -157,6 +160,8 @@ export async function initWorld(constitution: Constitution, npcCount: number = D
     leader_id: null,
     last_election_day: -1,
     collapse_phase: 'normal',
+    collapse_days_streak: 0,
+    ruins_era: false,
     initial_population: population,
     public_health: {
       sanitation: 30,
@@ -178,5 +183,6 @@ export async function initWorld(constitution: Constitution, npcCount: number = D
       npc_edits: 0,
       achieved_days: [],
     },
+    dynasties: [],
   }
 }

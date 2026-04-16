@@ -362,6 +362,8 @@ export interface Faction {
   power: number               // sum of member influence_scores
   founded_tick: number
   last_action_tick: number
+  rival_faction_id?: number      // id of primary opposing faction (set when conflict detected)
+  conflict_score: number         // 0–100, escalates over time when rivals coexist
 }
 
 // ── Organized Crime Syndicate ─────────────────────────────────────────────
@@ -409,6 +411,21 @@ export interface Rumor {
   reach: number               // how many NPCs have been exposed
   born_tick: number
   expires_tick: number
+  planted_by_player?: boolean  // true = injected via God Agent
+  suppressed?: boolean         // true = censorship caught it before spreading
+}
+
+// ── Cultural Scar ─────────────────────────────────────────────────────────
+/** A collective trauma left by a major crisis — permanently shifts NPC worldviews */
+export interface CulturalScar {
+  id: string
+  type: 'famine' | 'epidemic' | 'collapse' | 'war' | 'massacre'
+  year: number
+  day: number
+  label: string            // e.g. "The Great Famine of Year 3"
+  severity: number         // 0–1, how bad it was
+  survivors: number        // how many NPCs were alive when it ended
+  worldview_effect: Partial<Worldview>  // permanent drift applied to survivors
 }
 
 // ── History Milestone ──────────────────────────────────────────────────────
@@ -494,6 +511,8 @@ export interface Institution {
   last_decided_tick: number
   decide_interval: number
   force_decide: boolean
+  corruption_level: number       // 0–1, accumulates over time
+  last_purge_tick: number        // tick of last player-initiated purge (-1 = never)
 }
 
 // ── Communication ──────────────────────────────────────────────────────────
@@ -599,6 +618,30 @@ export interface Objective {
   failed: boolean
 }
 
+// ── Dynasty ───────────────────────────────────────────────────────────────
+export interface Dynasty {
+  id: string
+  founder_id: number          // NPC id of first tracked ancestor
+  founder_name: string
+  current_head_id: number | null   // richest living member
+  member_ids: number[]         // founder + currently tracked direct living children
+  total_wealth: number         // sum of all living members' wealth
+  generation_depth: number     // currently tracked depth (2 = founder + direct children)
+  peak_wealth: number          // highest total_wealth ever
+  founded_year: number
+  oligarchy_warned: boolean    // true if oligarchy warning already fired
+}
+
+// ── Charismatic NPC Choice ────────────────────────────────────────────────
+export interface CharismaticChoice {
+  npc_id: number
+  npc_name: string
+  npc_role: string
+  npc_zone: string
+  triggered_day: number
+  expires_day: number          // auto-resolves to 'ignore' after 5 days
+}
+
 // ── World State ────────────────────────────────────────────────────────────
 
 export interface PublicHealth {
@@ -629,6 +672,8 @@ export interface WorldState {
   crisis_pending: boolean
 
   // Extended systems
+  civil_war_phase: 'none' | 'escalating' | 'active' | 'resolved'
+  civil_war_start_day?: number
   factions: Faction[]
   syndicates: Syndicate[]
   research_points: number
@@ -640,10 +685,12 @@ export interface WorldState {
   // History & rumor
   rumors: Rumor[]
   milestones: HistoryMilestone[]
+  cultural_scars: CulturalScar[]
   /** Permanent formula / parameter breakthroughs — government reforms, science, god agent. */
   breakthrough_log: BreakthroughRecord[]
   births_total: number
   immigration_total: number
+  pending_charismatic_choice: CharismaticChoice | null
 
   // Economy
   tax_pool: number              // government treasury — collected from income tax, spent by regime
@@ -672,7 +719,9 @@ export interface WorldState {
   last_election_day: number     // sim-day of last election (-1 = never)
 
   // Population collapse tracking
-  collapse_phase: 'normal' | 'critical' | 'collapse'
+  collapse_phase: 'normal' | 'critical' | 'collapse' | 'ruins'
+  collapse_days_streak: number     // consecutive days in 'collapse' phase
+  ruins_era: boolean               // true after society has been rebuilt from ruins
 
   // Starting population — used as reference for immigration cap (not a hard max, just a baseline)
   initial_population: number
@@ -687,6 +736,9 @@ export interface WorldState {
   // Player objectives (short-term goals with rewards)
   objectives?: Objective[]
   objectives_next_gen_day?: number
+
+  // Dynasty tracking
+  dynasties: Dynasty[]
 }
 
 export interface RunStats {
@@ -783,6 +835,7 @@ export interface WorldDelta {
     subject: 'government' | 'guard' | 'market' | 'community'
     effect: 'trust_down' | 'trust_up' | 'fear_up' | 'grievance_up'
     duration_days?: number
+    planted_by_player?: boolean  // true = injected by player via God Agent chat
   }
   trigger_referendum?: {
     field: 'safety_net' | 'individual_rights_floor' | 'market_freedom' | 'state_power'

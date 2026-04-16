@@ -2,9 +2,9 @@ import './css/main.css'
 import type { AIConfig, AIProvider, Constitution, NPC, WorldState } from './types'
 import { setupGreeting, setupChat, applyPreset, handlePlayerChat, resetInGameHistory, predictConsequences, generateConstitutionText, scheduleBackgroundThoughts } from './ai/god-agent'
 import { listAvailableModels, PROVIDER_MODELS, getAIUsage, getRemainingRPM, initKeyRing } from './ai/provider'
-import { addFeedRaw, addFeedThinking, setFeedFilter, setChronicleFilter, refreshChronicleTimestamps, addBreakthroughToLog } from './ui/feed'
+import { addFeedRaw, addFeedThinking, setFeedFilter, setChronicleFilter, refreshChronicleTimestamps, addBreakthroughToLog, addChronicle } from './ui/feed'
 import { showConfirm, showInfo, showPolicyChoice, type PolicyDisplayCard } from './ui/modal'
-import { initWorld, tick, spawnEvent, applyInterventions, applyInstantEventDeaths, getIncomeTaxRate, MIN_NPC_COUNT, DEFAULT_NPC_COUNT, applyConstitutionPatch, applyWorldDelta, applyInstitutionDeltas, recordFormulaBreakthrough, GOD_AGENT_FORMULA_OVERRIDE_TITLE } from './engine'
+import { initWorld, tick, spawnEvent, applyInterventions, applyInstantEventDeaths, getIncomeTaxRate, MIN_NPC_COUNT, DEFAULT_NPC_COUNT, applyConstitutionPatch, applyWorldDelta, applyInstitutionDeltas, recordFormulaBreakthrough, GOD_AGENT_FORMULA_OVERRIDE_TITLE, applyCharismaticChoice, resetEngineRuntimeState } from './engine'
 import {
   setLang,
   t,
@@ -652,6 +652,7 @@ async function startGame(constitution: Constitution) {
   resetNarrativeRuntimeState()
   resetPressRuntimeState()
   resetScienceRuntimeState()
+  resetEngineRuntimeState()
 
   // Show the game screen immediately so the user sees the UI rather than a frozen setup screen
   showScreen('screen-game')
@@ -1722,6 +1723,39 @@ function updateEconomicsPanel() {
     discoveriesEl.textContent = count === 0 ? '–' : `${count} / ${5}`
     discoveriesEl.style.color = count >= 4 ? '#5dcaa5' : count >= 2 ? '#ef9f27' : '#aaa'
   }
+
+  // ── Dynasties section ─────────────────────────────────────────────────────
+  const dynastiesEl = document.getElementById('ep-dynasties-list')
+  if (dynastiesEl) {
+    dynastiesEl.innerHTML = renderDynastiesSection(world)
+  }
+}
+
+function renderDynastiesSection(state: WorldState): string {
+  const dynasties = state.dynasties ?? []
+  if (dynasties.length === 0) return '<p style="color:#666;font-size:12px">No significant dynasties yet.</p>'
+
+  const totalWealth = state.npcs
+    .filter(n => n.lifecycle.is_alive)
+    .reduce((s, n) => s + n.wealth, 0)
+
+  return dynasties.map((d, i) => {
+    const share = totalWealth > 0 ? Math.round(d.total_wealth / totalWealth * 100) : 0
+    const head = d.current_head_id !== null ? state.npcs.find(n => n.id === d.current_head_id) : null
+    return `
+      <div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #222">
+        <span style="color:#888;width:16px">${i + 1}</span>
+        <span style="flex:1;font-size:12px">
+          <b>${escapeHtml(d.founder_name)}</b> family
+          ${head ? `<span style="color:#777"> · ${escapeHtml(head.name)}</span>` : ''}
+        </span>
+        <span style="font-size:11px;color:#f0c050">${share}% wealth</span>
+        <div style="background:#333;border-radius:2px;width:60px;height:6px;overflow:hidden">
+          <div style="background:#c09020;height:100%;width:${Math.min(share * 2, 100)}%"></div>
+        </div>
+      </div>
+    `
+  }).join('')
 }
 
 // ── Goals Panel ─────────────────────────────────────────────────────────────
@@ -1762,6 +1796,56 @@ function renderGoalsPanel() {
         <span class="obj-deadline">${obj.completed || obj.failed ? '' : tf('goals.days_left', { n: daysLeft })}</span>
       </div>
     </div>`
+  }).join('')
+}
+
+// ── Objectives Overlay Panel ─────────────────────────────────────────────────
+
+function renderObjectivesPanel(state: WorldState): void {
+  const objs = state.objectives ?? []
+  let el = document.getElementById('objectives-panel')
+  if (!el) {
+    el = document.createElement('div')
+    el.id = 'objectives-panel'
+    el.style.cssText = `
+      position: fixed; top: 48px; right: 8px; z-index: 90;
+      display: flex; flex-direction: column; gap: 4px;
+      pointer-events: none;
+    `
+    document.body.appendChild(el)
+  }
+
+  if (objs.length === 0) { el.innerHTML = ''; return }
+
+  // Only show active (not completed/failed) objectives in the overlay, plus recently completed
+  const active = objs.filter(o => !o.completed && !o.failed)
+  const recentDone = objs.filter(o => (o.completed || o.failed) && (state.day - o.deadline_day < 3))
+  const display = [...active, ...recentDone]
+
+  if (display.length === 0) { el.innerHTML = ''; return }
+
+  el.innerHTML = display.map(obj => {
+    if (obj.completed) return `<div style="background:#1a3a1a;border:1px solid #2d6a2d;border-radius:4px;padding:4px 8px;font-size:11px;color:#6fcf6f">✓ ${escapeHtml(obj.label)}</div>`
+    if (obj.failed)    return `<div style="background:#3a1a1a;border:1px solid #6a2d2d;border-radius:4px;padding:4px 8px;font-size:11px;color:#cf6f6f">✗ ${escapeHtml(obj.label)}</div>`
+
+    const val = state.macro[obj.stat] as number
+    const progress = obj.type === 'stat_above'
+      ? Math.min(100, Math.max(0, Math.round(val / obj.target * 100)))
+      : obj.type === 'stat_below'
+        ? (val <= obj.target ? 100 : Math.max(0, Math.round(obj.target / val * 100)))
+        : obj.duration_days > 0
+          ? Math.round(obj.progress_days / obj.duration_days * 100)
+          : 0
+
+    const daysLeft = obj.deadline_day - state.day
+    return `
+      <div style="background:#1a2030;border:1px solid #334;border-radius:4px;padding:4px 8px;font-size:11px;color:#aab">
+        <div style="margin-bottom:2px">${escapeHtml(obj.label)} <span style="color:#667;float:right">${daysLeft}d left</span></div>
+        <div style="background:#222;border-radius:2px;height:4px;overflow:hidden">
+          <div style="background:#4488cc;height:100%;width:${progress}%;transition:width 0.3s"></div>
+        </div>
+      </div>
+    `
   }).join('')
 }
 
@@ -2008,6 +2092,84 @@ async function triggerGovernment() {
 btnGov.addEventListener('click', () => { void triggerGovernment() })
 document.getElementById('btn-ref-details')!.addEventListener('click', openReferendumDetails)
 
+// ── Charismatic NPC Choice Modal ──────────────────────────────────────────
+
+let _charismaticModalShown = false
+
+function checkAndShowCharismaticChoiceModal(state: WorldState): void {
+  if (!state.pending_charismatic_choice) {
+    _charismaticModalShown = false
+    return
+  }
+  if (_charismaticModalShown) return
+  // Don't stack on top of another modal
+  if (!document.getElementById('modal-overlay')!.classList.contains('hidden')) return
+  _charismaticModalShown = true
+
+  const { npc_name, npc_role, npc_zone } = state.pending_charismatic_choice
+
+  const overlay = document.getElementById('modal-overlay')!
+  const modalBox = document.getElementById('modal-box')!
+  const modalTitle = document.getElementById('modal-title')!
+  const modalBody = document.getElementById('modal-body')!
+  const modalActions = document.getElementById('modal-actions')!
+  const btnConfirm = document.getElementById('modal-confirm')!
+  const btnCancel = document.getElementById('modal-cancel')!
+
+  modalTitle.textContent = '⭐ A Rising Figure'
+  modalBody.replaceChildren()
+  const bodyParagraph = document.createElement('p')
+  const npcNameStrong = document.createElement('strong')
+  npcNameStrong.textContent = npc_name
+  bodyParagraph.appendChild(npcNameStrong)
+  bodyParagraph.appendChild(document.createTextNode(` (${npc_role}, ${npc_zone}) has risen to extraordinary influence.`))
+  bodyParagraph.appendChild(document.createElement('br'))
+  bodyParagraph.appendChild(document.createTextNode('The people look to them for guidance. What will you do?'))
+  modalBody.appendChild(bodyParagraph)
+
+  // Replace default 2-button layout with 3-button layout
+  modalActions.style.display = 'none'
+  btnConfirm.style.display = 'none'
+  btnCancel.style.display = 'none'
+
+  const customActions = document.createElement('div')
+  customActions.id = 'charismatic-actions'
+  customActions.style.cssText = 'display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap'
+  customActions.innerHTML = `
+    <button id="btn-champion" class="btn-primary">⭐ Champion</button>
+    <button id="btn-suppress" class="btn-ghost" style="color:#f87171">🔒 Suppress</button>
+    <button id="btn-ignore" class="btn-ghost">👁 Ignore</button>
+  `
+  modalBox.appendChild(customActions)
+  overlay.classList.remove('hidden')
+
+  const wasPaused = paused
+  setPaused(true)
+
+  function cleanup() {
+    overlay.classList.add('hidden')
+    customActions.remove()
+    modalActions.style.display = ''
+    btnConfirm.style.display = ''
+    btnCancel.style.display = ''
+    _charismaticModalShown = false
+    if (!wasPaused) setPaused(false)
+  }
+
+  document.getElementById('btn-champion')!.onclick = () => {
+    cleanup()
+    applyCharismaticChoice(state, 'champion')
+  }
+  document.getElementById('btn-suppress')!.onclick = () => {
+    cleanup()
+    applyCharismaticChoice(state, 'suppress')
+  }
+  document.getElementById('btn-ignore')!.onclick = () => {
+    cleanup()
+    applyCharismaticChoice(state, 'ignore')
+  }
+}
+
 // 1 tick = 1 sim-hour; 1000ms interval = 1 tick/second at 1× → 1 real second = 1 sim-hour
 
 function setPaused(value: boolean) {
@@ -2045,6 +2207,7 @@ function startSimLoop() {
       _lastSimDay = currentDay
       updateRumors()
       updateEconomicsPanel()
+      renderObjectivesPanel(world)
       if ((localStorage.getItem(UI_DASHBOARD_TAB_KEY) ?? 'demographics') === 'goals' && !dashboardPanel?.classList.contains('hidden')) renderGoalsPanel()
       flushConsequences()
       checkStatDeltas(world.macro)
@@ -2061,6 +2224,8 @@ function startSimLoop() {
         const cardDef = buildCrisisCards(world)
         if (cardDef) showCrisisCard(cardDef)
       }
+      // Charismatic NPC choice modal (once per trigger, pauses sim for player input)
+      checkAndShowCharismaticChoiceModal(world)
       // Reduced-tax drain
       if (qaReducedTaxDays.active && world.day <= qaReducedTaxDays.end_day) {
         world.tax_pool = Math.max(0, world.tax_pool - 50)
@@ -2788,7 +2953,12 @@ function applySideChannels(response: Awaited<ReturnType<typeof handlePlayerChat>
     if (wd.tax_pool_delta)             parts.push(`treasury ${wd.tax_pool_delta > 0 ? '+' : ''}${Math.round(wd.tax_pool_delta)}`)
     if (wd.quarantine_add?.length)     parts.push(`quarantine added: ${wd.quarantine_add.join(', ')}`)
     if (wd.quarantine_remove?.length)  parts.push(`quarantine lifted: ${wd.quarantine_remove.join(', ')}`)
-    if (wd.seed_rumor)                 parts.push(`rumor seeded`)
+    if (wd.seed_rumor) {
+      parts.push(`rumor seeded`)
+      if (wd.seed_rumor.planted_by_player) {
+        addChronicle(`🗣️ [Player] ${escapeHtml(wd.seed_rumor.content)}`, world.year, world.day, 'minor')
+      }
+    }
     if (wd.trigger_referendum) {
       const proposal = wd.trigger_referendum.proposal_text
       addFeedRaw(tf('referendum.triggered', { proposal }) as string, 'political', world.year, world.day)
@@ -3059,4 +3229,3 @@ chronicleResizer.addEventListener('pointerdown', (e: PointerEvent) => {
   window.addEventListener('pointermove', onMove)
   window.addEventListener('pointerup', onUp)
 })
-

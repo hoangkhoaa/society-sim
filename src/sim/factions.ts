@@ -69,6 +69,7 @@ export function checkFactions(state: WorldState): void {
         power: aligned.reduce((s, n) => s + n.influence_score, 0),
         founded_tick: state.tick,
         last_action_tick: state.tick,
+        conflict_score: 0,
       }
       state.factions.push(faction)
       for (const npc of aligned) npc.faction_id = fid
@@ -161,4 +162,158 @@ export function checkFactions(state: WorldState): void {
     f.member_ids = f.member_ids.filter(id => state.npcs[id]?.lifecycle.is_alive)
     return true
   })
+}
+
+// ── Inter-Faction Conflict ──────────────────────────────────────────────────
+// Run after faction politics. Opposing factions escalate conflict when both are strong.
+// Opposition pairs: security ↔ freedom, equality ↔ growth
+
+export function checkFactionConflict(state: WorldState): void {
+  if (state.civil_war_phase === 'resolved') return
+  if (state.civil_war_phase === 'escalating' || state.civil_war_phase === 'active') {
+    // Civil war tick: members attack opponents, unrest spreads
+    tickCivilWar(state)
+    return
+  }
+
+  const OPPONENT: Record<ValuePriority, ValuePriority> = {
+    security: 'freedom',
+    freedom: 'security',
+    equality: 'growth',
+    growth: 'equality',
+  }
+
+  for (const faction of state.factions) {
+    const opponentValue = OPPONENT[faction.dominant_value]
+    const rival = state.factions.find(f =>
+      f.id !== faction.id && f.dominant_value === opponentValue && f.member_ids.length >= 5
+    )
+    if (!rival) continue
+
+    faction.rival_faction_id = rival.id
+    rival.rival_faction_id = faction.id
+
+    // Only escalate if both factions are strong (power > 8)
+    if (faction.power < 8 || rival.power < 8) continue
+
+    // Escalate conflict score
+    const escalationRate = Math.min(faction.power, rival.power) * 0.1
+    faction.conflict_score = Math.min(faction.conflict_score + escalationRate, 100)
+    rival.conflict_score = Math.min(rival.conflict_score + escalationRate, 100)
+
+    // Trigger warning at 50
+    if (faction.conflict_score >= 50 && faction.conflict_score - escalationRate < 50) {
+      addChronicle(
+        `Tensions between "${faction.name}" and "${rival.name}" are reaching a breaking point. Violence could erupt at any time.`,
+        state.year, state.day, 'major'
+      )
+      addFeedRaw(`⚠️ Faction conflict escalating: "${faction.name}" vs "${rival.name}"`, 'warning', state.year, state.day)
+    }
+
+    // Trigger civil war at 100
+    if (faction.conflict_score >= 100) {
+      startCivilWar(state, faction, rival)
+      return
+    }
+
+    // Skirmishes: opposing members sometimes confront each other
+    if (Math.random() < 0.15) {
+      const aggressor = state.npcs[faction.member_ids[Math.floor(Math.random() * faction.member_ids.length)]]
+      const target = state.npcs[rival.member_ids[Math.floor(Math.random() * rival.member_ids.length)]]
+      if (aggressor?.lifecycle.is_alive && target?.lifecycle.is_alive) {
+        aggressor.action_state = 'confront'
+        target.stress = Math.min(target.stress + 15, 100)
+        target.fear = Math.min(target.fear + 10, 100)
+        addFeedRaw(
+          `Skirmish: ${aggressor.name} (${faction.name}) confronts ${target.name} (${rival.name}) in ${aggressor.zone}.`,
+          'warning', state.year, state.day
+        )
+      }
+    }
+  }
+}
+
+function startCivilWar(state: WorldState, factionA: Faction, factionB: Faction): void {
+  if (state.civil_war_phase === 'escalating' || state.civil_war_phase === 'active' || state.civil_war_phase === 'resolved') {
+    return
+  }
+  state.civil_war_phase = 'escalating'
+  state.civil_war_start_day = state.day
+
+  // Force both factions into opposing mobilization
+  const living = state.npcs.filter(n => n.lifecycle.is_alive)
+  for (const npc of living) {
+    if (factionA.member_ids.includes(npc.id)) {
+      npc.action_state = 'organizing'
+      npc.grievance = Math.min(npc.grievance + 30, 100)
+    } else if (factionB.member_ids.includes(npc.id)) {
+      npc.action_state = 'organizing'
+      npc.grievance = Math.min(npc.grievance + 30, 100)
+    }
+  }
+
+  // After 3 days of escalation, transition to active
+  // (actual 'active' transition happens in tickCivilWar on day +3)
+
+  addChronicle(
+    `⚔️ CIVIL WAR BREAKS OUT — "${factionA.name}" and "${factionB.name}" take up arms. The city is divided.`,
+    state.year, state.day, 'critical'
+  )
+  addFeedRaw(`⚔️ CIVIL WAR: "${factionA.name}" vs "${factionB.name}"`, 'warning', state.year, state.day)
+}
+
+function tickCivilWar(state: WorldState): void {
+  // Transition escalating → active after 3 days
+  if (state.civil_war_phase === 'escalating') {
+    if (state.day - (state.civil_war_start_day ?? state.day) >= 3) {
+      state.civil_war_phase = 'active'
+    }
+    return
+  }
+
+  // Active civil war: daily casualties, food drain, trust collapse
+  const living = state.npcs.filter(n => n.lifecycle.is_alive)
+
+  // 1% daily casualty rate among faction members
+  for (const faction of state.factions) {
+    if (!faction.rival_faction_id) continue
+    const members = faction.member_ids
+      .map(id => state.npcs[id])
+      .filter((n): n is typeof state.npcs[0] => !!n && n.lifecycle.is_alive)
+
+    const casualties = Math.floor(members.length * 0.01)
+    for (let i = 0; i < casualties; i++) {
+      const victim = members[Math.floor(Math.random() * members.length)]
+      if (victim) {
+        victim.lifecycle.is_alive = false
+        victim.lifecycle.death_cause = 'violence'
+        victim.lifecycle.death_tick = state.tick
+      }
+    }
+  }
+
+  // Macro effects: food drain, trust collapse
+  state.food_stock = Math.max(state.food_stock - living.length * 0.5, 0)
+  for (const inst of state.institutions) {
+    inst.legitimacy = Math.max(inst.legitimacy - 0.002, 0)
+  }
+
+  // Resolution: civil war ends when one faction is eliminated or both < 3 members
+  const activeFactions = state.factions.filter(f => f.rival_faction_id !== undefined)
+  const allWeak = activeFactions.every(f =>
+    f.member_ids.filter(id => state.npcs[id]?.lifecycle.is_alive).length < 3
+  )
+  if (allWeak || activeFactions.length < 2) {
+    state.civil_war_phase = 'resolved'
+    addChronicle(
+      `The civil war has ended, leaving a fractured society in its wake. Survivors begin to rebuild.`,
+      state.year, state.day, 'critical'
+    )
+    addFeedRaw('🕊️ Civil war resolved. Rebuilding begins.', 'warning', state.year, state.day)
+    // Reset conflict scores
+    for (const faction of state.factions) {
+      faction.conflict_score = 0
+      faction.rival_faction_id = undefined
+    }
+  }
 }

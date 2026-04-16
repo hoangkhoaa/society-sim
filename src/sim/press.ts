@@ -425,6 +425,40 @@ export async function runPressCycle(
     // Spawn a rumor from critical headlines
     const criticalCount = headlines.filter(h => h.severity === 'critical').length
     spawnPressRumor(state, scan, criticalCount)
+
+    // ── Corruption whistleblower scandals ──────────────────────────────────
+    // If any institution has high corruption AND the press is relatively free,
+    // there is a 10% chance per press cycle that a scandal headline fires.
+    const pressFreedom = 1 - cProb   // derive press freedom from censorship probability
+    if (pressFreedom > 0.3) {
+      for (const inst of state.institutions) {
+        if (inst.corruption_level > 0.5 && Math.random() < 0.10) {
+          const scandalText = `SCANDAL: Sources allege widespread corruption within the ${inst.name} — officials accused of diverting resources for personal gain.`
+          addChronicle(scandalText, state.year, state.day, 'critical')
+          addFeedRaw(`📰 ${scandalText}`, 'critical', state.year, state.day)
+
+          // Seed a trust-down rumor targeting the corrupt institution
+          const alreadyScandalRumor = state.rumors.some(
+            r => r.id.startsWith(`corruption_${inst.id}`) && r.expires_tick > state.tick,
+          )
+          if (!alreadyScandalRumor) {
+            const rumorSubject: Rumor['subject'] = inst.id === 'opposition' ? 'community' : inst.id
+            state.rumors.push({
+              id: `corruption_${inst.id}_${state.tick}`,
+              content: `Witnesses report officials from the ${inst.name} diverting public funds for personal enrichment.`,
+              subject: rumorSubject,
+              effect: 'trust_down',
+              reach: 20,
+              born_tick: state.tick,
+              expires_tick: state.tick + 15 * 24,
+            })
+          }
+
+          // Exposure forces some cleanup — corruption slightly reduced
+          inst.corruption_level = Math.max(inst.corruption_level - 0.05, 0)
+        }
+      }
+    }
   } finally {
     _pressBusy = false
   }

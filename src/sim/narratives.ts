@@ -24,6 +24,15 @@ import { getRegimeProfile } from './regime-config'
 
 const _cooldowns = new Map<string, number>()
 
+function escapeHtml(text: string): string {
+  return text
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
 function cooldown(id: string, minTicks: number, tick: number): boolean {
   return tick - (_cooldowns.get(id) ?? -99999) < minTicks
 }
@@ -323,6 +332,24 @@ const STORIES: Story[] = [
     },
   },
 
+  {
+    id: 'scar_memory',
+    minTicks: 1440,
+    severity: 'minor',
+    check(state) {
+      if (!state.cultural_scars || state.cultural_scars.length === 0) return null
+      // Pick a random scar
+      const scar = state.cultural_scars[Math.floor(Math.random() * state.cultural_scars.length)]
+      const elder = state.npcs.find(n =>
+        n.lifecycle.is_alive && n.age > 45,
+      )
+      if (!elder) return null
+      const yearsAgo = state.year - scar.year
+      if (yearsAgo < 1) return null
+      return `${elder.name} (${elder.occupation}), who survived ${scar.label}, still carries the weight of those ${yearsAgo === 1 ? '1 year' : `${yearsAgo} years`}. The memory never fully fades.`
+    },
+  },
+
 ]
 
 // ── Main export ───────────────────────────────────────────────────────────────
@@ -430,6 +457,17 @@ const RUMOR_TEMPLATES: Array<{
       }
     },
   },
+  {
+    condition: s => (s.cultural_scars?.length ?? 0) > 0 && s.macro.food < 40,
+    generate: s => {
+      const scar = s.cultural_scars[s.cultural_scars.length - 1]
+      return {
+        content: `Elders warn: "This feels like before ${scar.label}." Fear spreads through the markets.`,
+        subject: 'community',
+        effect: 'fear_up',
+      }
+    },
+  },
 ]
 
 let lastRumorTick = -9999
@@ -477,6 +515,7 @@ export function checkRumors(state: WorldState): void {
       (n.dissonance_acc > 25 || n.influence_score > 0.55),
     )
     const leaderBonus = spreaders.filter(n => n.influence_score > 0.65).length * 0.6
+    const prevReach = rumor.reach
     const newReach  = Math.floor((spreaders.length * 0.08 + leaderBonus) * restrictions.info_spread_mult)
     rumor.reach = Math.min(rumor.reach + newReach, living.length)
 
@@ -502,6 +541,17 @@ export function checkRumors(state: WorldState): void {
             npc.grievance = clamp(npc.grievance + 0.4, 0, 100)
             break
         }
+      }
+
+      // Fire a special feed entry the exact tick a player-planted rumor first crosses the threshold
+      if (rumor.planted_by_player && !rumor.suppressed && prevReach < threshold && rumor.reach >= threshold) {
+        const safePreview = escapeHtml(rumor.content.substring(0, 80))
+        addFeedRaw(
+          `A rumor seeded by outside forces has now reached ${rumor.reach} people: "${safePreview}..."`,
+          'warning',
+          state.year,
+          state.day,
+        )
       }
     }
   }

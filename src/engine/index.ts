@@ -1,11 +1,11 @@
-import type { WorldState, Objective } from '../types'
+import type { WorldState, Objective, Dynasty } from '../types'
 import type { IndividualEvent, TickEventFlags } from '../sim/npc'
 import { tickNPC } from '../sim/npc'
 import { checkEmergencyRoleReassignment, checkAdaptiveRoleSwitching } from '../sim/roles'
-import { checkFactions } from '../sim/factions'
+import { checkFactions, checkFactionConflict } from '../sim/factions'
 import { accumulateResearch, checkDiscoveries } from '../sim/tech'
 import { checkNarrativeEvents, checkRumors, checkMilestones } from '../sim/narratives'
-import { addChronicle } from '../ui/feed'
+import { addChronicle, addFeedRaw } from '../ui/feed'
 import { tf } from '../i18n'
 import { tickEvents, spawnEvent, applyInstantEventDeaths, getEventDeathsThisDay, resetEventDeaths } from './events'
 import { applyInterventions, applyConstitutionPatch, applyWorldDelta, applyInstitutionDeltas, recordFormulaBreakthrough, GOD_AGENT_FORMULA_OVERRIDE_TITLE } from './interventions'
@@ -32,6 +32,7 @@ import { checkShadowEconomy, checkSyndicates, checkGuardPatrol } from './crime'
 import { checkEpidemicIntelligence, updatePublicHealth } from './health'
 import { runElection, updateRunStats } from './elections'
 import { MIN_NPC_COUNT, DEFAULT_NPC_COUNT, initWorld } from './world-init'
+import { tickCorruption } from '../sim/government'
 
 export {
   MIN_NPC_COUNT, DEFAULT_NPC_COUNT, initWorld,
@@ -40,6 +41,214 @@ export {
   recordFormulaBreakthrough, GOD_AGENT_FORMULA_OVERRIDE_TITLE,
   computeMacroStats, getIncomeTaxRate,
   updatePublicHealth, runElection, updateRunStats,
+}
+
+// ── Collapse Finale ─────────────────────────────────────────────────────────
+
+// Callback set by main.ts to trigger the ruins era UI + world reset
+let onCollapseFinale: ((state: WorldState) => void) | null = null
+
+/** Register a callback to be invoked when the Collapse Finale triggers. */
+export function setCollapseFinaleCallback(cb: (state: WorldState) => void): void {
+  onCollapseFinale = cb
+}
+
+function checkCollapseFinale(state: WorldState): void {
+  if (state.collapse_phase === 'ruins') return
+
+  if (state.collapse_phase === 'collapse') {
+    state.collapse_days_streak = (state.collapse_days_streak ?? 0) + 1
+    if (state.collapse_days_streak >= 30 && onCollapseFinale) {
+      onCollapseFinale(state)
+    }
+  } else {
+    state.collapse_days_streak = 0
+  }
+}
+
+// ── Charismatic NPC Choice ───────────────────────────────────────────────────
+
+// Track which NPC IDs have already triggered a choice event.
+const _triggeredCharismaticNPCs = new Set<number>()
+
+function checkCharismaticNPC(state: WorldState): void {
+  // Skip if already pending a choice
+  if (state.pending_charismatic_choice !== null) {
+    // Auto-resolve expired choices to 'ignore'
+    if (state.day >= state.pending_charismatic_choice.expires_day) {
+      applyCharismaticChoice(state, 'ignore')
+    }
+    return
+  }
+
+  const candidate = state.npcs.find(n =>
+    n.lifecycle.is_alive &&
+    n.legendary &&
+    n.influence_score > 0.75 &&
+    !_triggeredCharismaticNPCs.has(n.id)
+  )
+  if (!candidate) return
+
+  _triggeredCharismaticNPCs.add(candidate.id)
+  state.pending_charismatic_choice = {
+    npc_id: candidate.id,
+    npc_name: candidate.name,
+    npc_role: candidate.occupation,
+    npc_zone: candidate.zone,
+    triggered_day: state.day,
+    expires_day: state.day + 5,
+  }
+
+  addChronicle(
+    `A new figure rises: ${candidate.name} (${candidate.occupation}) has gained extraordinary influence in ${candidate.zone}. The people look to them for guidance.`,
+    state.year, state.day, 'major'
+  )
+}
+
+export function applyCharismaticChoice(state: WorldState, choice: 'champion' | 'suppress' | 'ignore'): void {
+  const pending = state.pending_charismatic_choice
+  if (!pending) return
+
+  const npc = state.npcs.find(n => n.id === pending.npc_id)
+  state.pending_charismatic_choice = null
+
+  if (choice === 'champion') {
+    // NPC becomes co-leader: massive influence boost, government loses some power
+    if (npc) {
+      npc.influence_score = Math.min(npc.influence_score + 0.2, 1)
+      npc.happiness = Math.min(npc.happiness + 30, 100)
+    }
+    const govt = state.institutions.find(i => i.id === 'government')
+    if (govt) govt.power = Math.max(govt.power - 0.1, 0)
+    // Trust boost among community in the same zone
+    for (const n of state.npcs) {
+      if (n.lifecycle.is_alive && n.zone === pending.npc_zone) {
+        n.trust_in.community.intention = Math.min(n.trust_in.community.intention + 0.05, 1)
+      }
+    }
+    addChronicle(`${pending.npc_name} has been championed by the people. Their influence now rivals the government.`, state.year, state.day, 'major')
+
+  } else if (choice === 'suppress') {
+    if (npc) {
+      npc.lifecycle.is_alive = false
+      npc.lifecycle.death_cause = 'violence'
+      npc.lifecycle.death_tick = state.tick
+    }
+    // Martyr effect: opposition surges, trust collapses
+    for (const n of state.npcs) {
+      if (!n.lifecycle.is_alive) continue
+      n.trust_in.government.intention = Math.max(n.trust_in.government.intention - 0.08, 0)
+      n.grievance = Math.min(n.grievance + 20, 100)
+    }
+    const opp = state.institutions.find(i => i.id === 'opposition')
+    if (opp) opp.power = Math.min(opp.power + 0.2, 1)
+    addChronicle(`${pending.npc_name} has been silenced by the authorities — but martyrdom may prove more powerful than the person.`, state.year, state.day, 'critical')
+
+  } else {
+    // ignore: emergent — NPC develops naturally, no intervention
+    addChronicle(`The rising influence of ${pending.npc_name} was left unchecked. Their story will unfold on its own terms.`, state.year, state.day, 'minor')
+  }
+}
+
+// ── Cultural Scar Detection ──────────────────────────────────────────────────
+
+let _prevFood = 100
+let _hadEpidemic = false
+let _prevCollapsePhase: string = 'normal'
+
+export function resetEngineRuntimeState(): void {
+  _triggeredCharismaticNPCs.clear()
+  _prevFood = 100
+  _hadEpidemic = false
+  _prevCollapsePhase = 'normal'
+}
+
+function checkCrisisEnd(state: WorldState): void {
+  if (!state.cultural_scars) state.cultural_scars = []
+
+  const living = state.npcs.filter(n => n.lifecycle.is_alive)
+  const survivors = living.length
+
+  function clampWv(v: number): number { return Math.min(1, Math.max(0, v)) }
+
+  function applyScarWorldview(effect: import('../types').CulturalScar['worldview_effect']): void {
+    for (const npc of living) {
+      if (effect.authority_trust !== undefined)
+        npc.worldview.authority_trust = clampWv(npc.worldview.authority_trust + effect.authority_trust)
+      if (effect.risk_tolerance !== undefined)
+        npc.worldview.risk_tolerance = clampWv(npc.worldview.risk_tolerance + effect.risk_tolerance)
+      if (effect.collectivism !== undefined)
+        npc.worldview.collectivism = clampWv(npc.worldview.collectivism + effect.collectivism)
+    }
+  }
+
+  // Detect famine end: food was < 15 last tick, now >= 25
+  const curFood = state.macro.food
+  if (_prevFood < 15 && curFood >= 25) {
+    const severity = Math.max(0, Math.min(1, 1 - _prevFood / 15))
+    const label = `The Famine of Year ${state.year}`
+    const effect = { authority_trust: 0, risk_tolerance: -0.06 }
+    const scar: import('../types').CulturalScar = {
+      id: crypto.randomUUID(),
+      type: 'famine',
+      year: state.year,
+      day: state.day,
+      label,
+      severity,
+      survivors,
+      worldview_effect: effect,
+    }
+    state.cultural_scars.push(scar)
+    applyScarWorldview(effect)
+    // Apply fear separately (it's a 0-100 need, not worldview)
+    for (const npc of living) npc.fear = Math.min(100, npc.fear + 8)
+    addChronicle(`Year ${state.year}: ${label} passes into collective memory. The survivors carry the weight of hunger for years to come.`, state.year, state.day, 'major')
+  }
+
+  // Detect epidemic end: had epidemic last tick, no longer active
+  const hasEpidemic = state.active_events.some(e => e.type === 'epidemic')
+  if (_hadEpidemic && !hasEpidemic) {
+    const label = `The Epidemic of Year ${state.year}`
+    const effect = { authority_trust: 0.04, risk_tolerance: 0 }
+    const scar: import('../types').CulturalScar = {
+      id: crypto.randomUUID(),
+      type: 'epidemic',
+      year: state.year,
+      day: state.day,
+      label,
+      severity: 0.6,
+      survivors,
+      worldview_effect: effect,
+    }
+    state.cultural_scars.push(scar)
+    applyScarWorldview(effect)
+    for (const npc of living) npc.fear = Math.min(100, npc.fear + 10)
+    addChronicle(`Year ${state.year}: ${label} passes into collective memory. Fear of disease lingers in every cough and crowd.`, state.year, state.day, 'major')
+  }
+
+  // Detect collapse recovery: collapse_phase was 'collapse', now 'critical'
+  if (_prevCollapsePhase === 'collapse' && state.collapse_phase === 'critical') {
+    const label = `The Collapse of Year ${state.year}`
+    const effect = { authority_trust: -0.10, risk_tolerance: -0.08 }
+    const scar: import('../types').CulturalScar = {
+      id: crypto.randomUUID(),
+      type: 'collapse',
+      year: state.year,
+      day: state.day,
+      label,
+      severity: 0.85,
+      survivors,
+      worldview_effect: effect,
+    }
+    state.cultural_scars.push(scar)
+    applyScarWorldview(effect)
+    addChronicle(`Year ${state.year}: ${label} passes into collective memory. Trust in authority lies shattered; the people remember.`, state.year, state.day, 'major')
+  }
+
+  // Update prev state for next tick
+  _prevFood = curFood
+  _hadEpidemic = hasEpidemic
+  _prevCollapsePhase = state.collapse_phase
 }
 
 // ── Tick ────────────────────────────────────────────────────────────────────
@@ -146,7 +355,9 @@ export function tick(state: WorldState): void {
     applyTheocracyEffect(state)
     applyCommuneEffect(state)
     checkLegendaryNPCs(state)
+    checkCharismaticNPC(state)
     checkFactions(state)
+    checkFactionConflict(state)
     accumulateResearch(state)
     checkDiscoveries(state)
     checkShadowEconomy(state)
@@ -158,9 +369,12 @@ export function tick(state: WorldState): void {
     checkNarrativeEvents(state)
     checkRumors(state)
     checkMilestones(state)
+    checkCrisisEnd(state)
+    checkCollapseFinale(state)
     checkImmigration(state)
     checkWealthMobility(state)
     checkGuardPatrol(state)
+    tickCorruption(state)
 
     // Network maintenance: prune dead links daily, organic tie formation daily
     maintainNetworkLinks(state)
@@ -194,6 +408,9 @@ export function tick(state: WorldState): void {
     // Objectives: check progress then generate new ones if needed
     checkObjectives(state)
     generateObjectives(state)
+
+    // Dynasty tracking: runs every 30 days
+    trackDynasties(state)
   }
 }
 
@@ -315,4 +532,79 @@ function applyObjectiveReward(state: WorldState, obj: Objective): void {
   } else if (obj.stat === 'literacy') {
     state.research_points = (state.research_points || 0) + 200
   }
+}
+
+// ── Dynasty Tracking ─────────────────────────────────────────────────────────
+
+function trackDynasties(state: WorldState): void {
+  if (state.day % 30 !== 0) return  // every 30 days
+
+  if (!state.dynasties) state.dynasties = []
+
+  const living = state.npcs.filter(n => n.lifecycle.is_alive && n.wealth > 50)
+
+  // Build/update dynasties from founders and their direct living children.
+  for (const npc of living) {
+    if (npc.lifecycle.children_ids.length === 0) continue
+
+    const children = npc.lifecycle.children_ids
+      .map(id => state.npcs[id])
+      .filter((c): c is typeof state.npcs[0] => !!c && c.lifecycle.is_alive)
+
+    if (children.length === 0) continue
+    const familyWealth = npc.wealth + children.reduce((s, c) => s + c.wealth, 0)
+    if (familyWealth < 500) continue  // minimum threshold to track
+
+    // Check if dynasty already exists for this founder
+    let dynasty: Dynasty | undefined = state.dynasties.find(d => d.founder_id === npc.id)
+    if (!dynasty) {
+      dynasty = {
+        id: crypto.randomUUID(),
+        founder_id: npc.id,
+        founder_name: npc.name,
+        current_head_id: npc.id,
+        member_ids: [npc.id, ...children.map(c => c.id)],
+        total_wealth: familyWealth,
+        generation_depth: 2,
+        peak_wealth: familyWealth,
+        founded_year: state.year,
+        oligarchy_warned: false,
+      }
+      state.dynasties.push(dynasty)
+    } else {
+      // Update existing dynasty
+      dynasty.member_ids = [npc.id, ...children.map(c => c.id)]
+      dynasty.total_wealth = familyWealth
+      dynasty.peak_wealth = Math.max(dynasty.peak_wealth, familyWealth)
+      dynasty.current_head_id = [npc, ...children].sort((a, b) => b.wealth - a.wealth)[0]?.id ?? npc.id
+    }
+  }
+
+  // Keep only top 5 dynasties by total_wealth
+  state.dynasties.sort((a, b) => b.total_wealth - a.total_wealth)
+  state.dynasties = state.dynasties.slice(0, 5)
+
+  // Oligarchy warning: top dynasty holds > 25% of all wealth
+  const totalWealth = state.npcs
+    .filter(n => n.lifecycle.is_alive)
+    .reduce((s, n) => s + n.wealth, 0)
+
+  const top = state.dynasties[0]
+  if (top && totalWealth > 0 && top.total_wealth / totalWealth > 0.25 && !top.oligarchy_warned) {
+    top.oligarchy_warned = true
+    addChronicle(
+      `⚠️ The ${top.founder_name} family now controls over ${Math.round(top.total_wealth / totalWealth * 100)}% of society's wealth. Oligarchy is taking hold.`,
+      state.year, state.day, 'major'
+    )
+    addFeedRaw(`💰 Oligarchy alert: ${top.founder_name} dynasty holds ${Math.round(top.total_wealth / totalWealth * 100)}% of wealth`, 'warning', state.year, state.day)
+  }
+
+  // Remove dead dynasties (no living members with wealth > 20)
+  state.dynasties = state.dynasties.filter(d => {
+    const livingMembers = d.member_ids.filter(id => {
+      const n = state.npcs[id]
+      return n?.lifecycle.is_alive && n.wealth > 20
+    })
+    return livingMembers.length > 0
+  })
 }
