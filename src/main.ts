@@ -1832,7 +1832,7 @@ function renderObjectivesPanel(state: WorldState): void {
     const progress = obj.type === 'stat_above'
       ? Math.min(100, Math.max(0, Math.round(val / obj.target * 100)))
       : obj.type === 'stat_below'
-        ? (val <= obj.target ? 100 : Math.max(0, Math.round(obj.target / Math.max(val, 1e-6) * 100)))
+        ? (val <= obj.target ? 100 : Math.max(0, Math.round(obj.target / val * 100)))
         : obj.duration_days > 0
           ? Math.round(obj.progress_days / obj.duration_days * 100)
           : 0
